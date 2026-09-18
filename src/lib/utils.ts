@@ -2,6 +2,7 @@
 export function normalizeMenuRoute(route: string): string {
   if (route === "/platform/overview") return "/platform";
   if (route === "/platform/product-access") return "/platform/access";
+  if (route === "/platform/email-logs") return "/platform/email-logs";
   return route;
 }
 

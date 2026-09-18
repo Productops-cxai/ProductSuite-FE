@@ -125,6 +125,19 @@ export interface Person {
   status: string;
   assigned_products: AssignedProduct[];
   created_at: string;
+  activation_link?: string | null;
+}
+
+export interface EmailLog {
+  id: number;
+  to_email: string;
+  subject: string;
+  body: string;
+  email_type: string;
+  action_link?: string | null;
+  related_user_id?: string | null;
+  status: string;
+  created_at: string;
 }
 
 export interface ProductSavePayload {
@@ -142,4 +155,9 @@ export interface PersonSavePayload {
   organization_id: number;
   status?: string;
   product_ids?: number[];
+}
+
+export interface ActivationPreview {
+  email: string;
+  full_name: string;
 }

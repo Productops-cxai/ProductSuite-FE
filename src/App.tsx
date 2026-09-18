@@ -2,11 +2,14 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { PlatformLayout } from "./components/layout/PlatformLayout";
 import { useAuth } from "./context/AuthContext";
 import { AccessPage } from "./pages/AccessPage";
+import { ActivatePage } from "./pages/ActivatePage";
+import { EmailLogsPage } from "./pages/EmailLogsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { OverviewPage } from "./pages/OverviewPage";
 import { PeoplePage } from "./pages/PeoplePage";
 import { NoAccessPage, ProductLauncherPage } from "./pages/ProductLauncherPage";
 import { ProductsPage } from "./pages/ProductsPage";
+import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import type { LoginNextStep } from "./types";
 
 function HomeRedirect() {
@@ -26,6 +29,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/activate" element={<ActivatePage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/no-access" element={<NoAccessPage />} />
       <Route path="/products" element={<ProductLauncherPage />} />
 
@@ -34,6 +39,7 @@ export default function App() {
         <Route path="products" element={<ProductsPage />} />
         <Route path="access" element={<AccessPage />} />
         <Route path="people" element={<PeoplePage />} />
+        <Route path="email-logs" element={<EmailLogsPage />} />
       </Route>
 
       <Route path="/" element={<HomeRedirect />} />

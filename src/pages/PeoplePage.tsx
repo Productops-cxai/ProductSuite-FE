@@ -6,6 +6,7 @@ import {
   listPeople,
   listProducts,
   removeProduct,
+  resendInvite,
   savePerson,
 } from "../api/platform";
 import { Badge } from "../components/ui/Badge";
@@ -21,6 +22,7 @@ export function PeoplePage() {
   const [search, setSearch] = useState("");
   const [orgFilter, setOrgFilter] = useState("");
   const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(true);
   const [busyKey, setBusyKey] = useState("");
   const [addOpen, setAddOpen] = useState(false);
@@ -92,6 +94,7 @@ export function PeoplePage() {
     e.preventDefault();
     setSaving(true);
     setError("");
+    setInfo("");
     try {
       await savePerson({
         full_name: form.full_name.trim(),
@@ -101,6 +104,7 @@ export function PeoplePage() {
       });
       setAddOpen(false);
       setForm({ full_name: "", email: "", organization_id: "", product_ids: [] });
+      setInfo("Person invited. Activation email has been sent (logged until SMTP is configured).");
       await load({
         search: search.trim() || undefined,
         organization_id: orgFilter ? Number(orgFilter) : undefined,
@@ -109,6 +113,20 @@ export function PeoplePage() {
       setError(err instanceof ApiError ? err.detail : "Failed to add person");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function onResend(person: Person) {
+    setBusyKey(`invite-${person.id}`);
+    setError("");
+    setInfo("");
+    try {
+      await resendInvite(person.id);
+      setInfo(`Invite resent to ${person.email}.`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail : "Resend invite failed");
+    } finally {
+      setBusyKey("");
     }
   }
 
@@ -156,6 +174,7 @@ export function PeoplePage() {
       </div>
 
       {error ? <div className="error-banner">{error}</div> : null}
+      {info ? <div className="success-banner">{info}</div> : null}
 
       <form className="toolbar" onSubmit={onSearchSubmit}>
         <div className="search-box">
@@ -193,6 +212,7 @@ export function PeoplePage() {
               <tr>
                 <th>PERSON</th>
                 <th>ORGANIZATION</th>
+                <th>STATUS</th>
                 <th>ASSIGNED PRODUCTS</th>
                 <th>ACTIONS</th>
               </tr>
@@ -210,6 +230,11 @@ export function PeoplePage() {
                     </td>
                     <td>{person.organization_name}</td>
                     <td>
+                      <Badge tone={person.status === "active" ? "success" : "danger"}>
+                        {person.status}
+                      </Badge>
+                    </td>
+                    <td>
                       <div className="badge-stack">
                         {person.assigned_products.length === 0 ? (
                           <span style={{ color: "var(--text-muted)" }}>—</span>
@@ -224,6 +249,16 @@ export function PeoplePage() {
                     </td>
                     <td>
                       <div className="actions-cell">
+                        {person.status !== "active" ? (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            disabled={busyKey === `invite-${person.id}`}
+                            onClick={() => void onResend(person)}
+                          >
+                            Resend invite
+                          </Button>
+                        ) : null}
                         {person.assigned_products.map((ap) => (
                           <Button
                             key={`rm-${ap.id}`}

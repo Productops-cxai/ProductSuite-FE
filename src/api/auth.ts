@@ -34,3 +34,34 @@ export async function forgotPassword(email: string): Promise<{ message: string }
     auth: false,
   });
 }
+
+export async function previewActivation(token: string) {
+  return apiRequest<{ email: string; full_name: string }>(
+    `/auth/activation/${encodeURIComponent(token)}`,
+    { auth: false },
+  );
+}
+
+export async function activateAccount(
+  token: string,
+  new_password: string,
+  confirm_password: string,
+) {
+  return apiRequest<{ message: string }>("/auth/activate", {
+    method: "POST",
+    body: { token, new_password, confirm_password },
+    auth: false,
+  });
+}
+
+export async function resetPassword(
+  token: string,
+  new_password: string,
+  confirm_password: string,
+) {
+  return apiRequest<{ message: string }>("/auth/reset-password", {
+    method: "POST",
+    body: { token, new_password, confirm_password },
+    auth: false,
+  });
+}

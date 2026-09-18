@@ -40,6 +40,12 @@ const paths: Record<string, ReactNode> = {
       <path d="M9 10h6M9 14h4" />
     </>
   ),
+  mail: (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="m3 7 9 7 9-7" />
+    </>
+  ),
   search: (
     <>
       <circle cx="11" cy="11" r="6" />
@@ -57,6 +63,8 @@ const alias: Record<string, string> = {
   document: "billing",
   product_access: "access",
   product: "products",
+  email_logs: "mail",
+  mail: "mail",
 };
 
 export function Icon({ name, className = "nav-icon" }: Props) {

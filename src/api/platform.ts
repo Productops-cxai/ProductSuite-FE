@@ -8,6 +8,7 @@ import type {
   Product,
   ProductAccessItem,
   ProductSavePayload,
+  EmailLog,
 } from "../types";
 
 export function getOverview() {
@@ -96,10 +97,23 @@ export function removeProduct(user_id: string, product_id: number) {
 }
 
 export function resendInvite(user_id: string) {
-  return apiRequest<{ message: string }>("/people/resend-invite", {
+  return apiRequest<{ message: string; activation_link?: string | null }>("/people/resend-invite", {
     method: "POST",
     body: { user_id },
   });
+}
+
+export function listEmailLogs(params?: {
+  search?: string;
+  email_type?: string;
+  limit?: number;
+}) {
+  const q = new URLSearchParams();
+  if (params?.search) q.set("search", params.search);
+  if (params?.email_type) q.set("email_type", params.email_type);
+  if (params?.limit) q.set("limit", String(params.limit));
+  const qs = q.toString();
+  return apiRequest<EmailLog[]>(`/email-logs${qs ? `?${qs}` : ""}`);
 }
 
 export function myProducts() {

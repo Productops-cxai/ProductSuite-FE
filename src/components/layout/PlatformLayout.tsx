@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Navigate, Outlet } from "react-router-dom";
 import { getMenus } from "../../api/platform";
 import { useAuth } from "../../context/AuthContext";
@@ -6,7 +6,12 @@ import type { MenuSection } from "../../types";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 
-const FALLBACK_MENUS: MenuSection[] = [
+/** Must match BE SEED_SUPER_ADMIN_EMAIL — Email Logs menu is private to this account. */
+export const EMAIL_LOGS_ADMIN_EMAIL = (
+  import.meta.env.VITE_EMAIL_LOGS_ADMIN_EMAIL || "admin@suitencri.com"
+).toLowerCase();
+
+const BASE_FALLBACK_MENUS: MenuSection[] = [
   {
     key: "platform",
     label: "PLATFORM",
@@ -44,6 +49,14 @@ const FALLBACK_MENUS: MenuSection[] = [
         sort_order: 4,
         is_coming_soon: false,
       },
+      {
+        key: "email_logs",
+        label: "Email Logs",
+        route: "/platform/email-logs",
+        icon: "mail",
+        sort_order: 5,
+        is_coming_soon: false,
+      },
     ],
   },
   {
@@ -64,9 +77,22 @@ const FALLBACK_MENUS: MenuSection[] = [
   },
 ];
 
+function menusForUser(email: string | undefined | null): MenuSection[] {
+  const allowEmailLogs = (email || "").toLowerCase() === EMAIL_LOGS_ADMIN_EMAIL;
+  return BASE_FALLBACK_MENUS.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => allowEmailLogs || item.key !== "email_logs"),
+  }));
+}
+
 export function PlatformLayout() {
   const { loading, user, isSuperAdmin } = useAuth();
-  const [sections, setSections] = useState<MenuSection[]>(FALLBACK_MENUS);
+  const fallback = useMemo(() => menusForUser(user?.email), [user?.email]);
+  const [sections, setSections] = useState<MenuSection[]>(fallback);
+
+  useEffect(() => {
+    setSections(fallback);
+  }, [fallback]);
 
   useEffect(() => {
     if (!isSuperAdmin) return;
@@ -77,7 +103,7 @@ export function PlatformLayout() {
       .catch(() => {
         /* keep fallback */
       });
-  }, [isSuperAdmin]);
+  }, [isSuperAdmin, user?.email]);
 
   if (loading) return <div className="app-loading">Loading…</div>;
   if (!user) return <Navigate to="/login" replace />;

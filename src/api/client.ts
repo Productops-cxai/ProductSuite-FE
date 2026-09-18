@@ -1,5 +1,5 @@
 const API_BASE =
-  import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") || "http://127.0.0.1:8000";
+  import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") || "/api";
 
 const ACCESS_KEY = "ps_access_token";
 const REFRESH_KEY = "ps_refresh_token";

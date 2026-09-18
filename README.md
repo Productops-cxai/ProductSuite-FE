@@ -7,10 +7,13 @@ React (Vite + TypeScript) frontend for **Platform Super Admin** — connected to
 | Path | Page |
 |------|------|
 | `/login` | Sign in |
+| `/activate` | Set password from invite link |
+| `/reset-password` | Reset password from email link |
 | `/platform` | Overview |
 | `/platform/products` | Products |
 | `/platform/access` | Product Access |
 | `/platform/people` | People & Product Assignment |
+| `/platform/email-logs` | Email logs (SMTP stub — copy action links) |
 | `/products` | Non-admin product launcher |
 
 ## Setup
