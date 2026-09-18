@@ -22,7 +22,7 @@ React (Vite + TypeScript) frontend for **Platform Super Admin** — connected to
 2. Start the API (ProductSuite-BE).
 3. Install and run the FE (ask if you want the exact commands pasted).
 
-Default admin (from BE seeder): `admin@payflow.ai` / `Admin@12345`
+Default admin (from BE seeder): `admin@suitencri.com` / `@123@123`
 
 ## Notes
 
