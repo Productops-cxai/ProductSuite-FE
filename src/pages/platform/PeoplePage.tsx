@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { ApiError } from "../api/client";
+import { ApiError } from "../../api/client";
 import {
   assignProduct,
   listOrganizations,
@@ -8,12 +8,12 @@ import {
   removeProduct,
   resendInvite,
   savePerson,
-} from "../api/platform";
-import { Badge } from "../components/ui/Badge";
-import { Button } from "../components/ui/Button";
-import { Icon } from "../components/ui/Icon";
-import { Modal } from "../components/ui/Modal";
-import type { Organization, Person, Product } from "../types";
+} from "../../api/platform";
+import { Badge } from "../../components/ui/Badge";
+import { Button } from "../../components/ui/Button";
+import { Icon } from "../../components/ui/Icon";
+import { Modal } from "../../components/ui/Modal";
+import type { Organization, Person, Product } from "../../types";
 
 export function PeoplePage() {
   const [people, setPeople] = useState<Person[]>([]);

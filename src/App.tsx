@@ -1,14 +1,17 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { PlatformLayout } from "./components/layout/PlatformLayout";
 import { useAuth } from "./context/AuthContext";
-import { AccessPage } from "./pages/AccessPage";
 import { ActivatePage } from "./pages/ActivatePage";
-import { EmailLogsPage } from "./pages/EmailLogsPage";
 import { LoginPage } from "./pages/LoginPage";
-import { OverviewPage } from "./pages/OverviewPage";
-import { PeoplePage } from "./pages/PeoplePage";
+import { AccessPage } from "./pages/platform/AccessPage";
+import { EmailLogsPage } from "./pages/platform/EmailLogsPage";
+import { OverviewPage } from "./pages/platform/OverviewPage";
+import { PeoplePage } from "./pages/platform/PeoplePage";
+import { ProductsPage } from "./pages/platform/ProductsPage";
+import { PayFlowDashboardPage } from "./pages/payflow/DashboardPage";
+import { InsightIqPlaceholderPage } from "./pages/payflow/InsightIqPlaceholder";
+import { PayFlowLayout } from "./pages/payflow/PayFlowLayout";
 import { NoAccessPage, ProductLauncherPage } from "./pages/ProductLauncherPage";
-import { ProductsPage } from "./pages/ProductsPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import type { LoginNextStep } from "./types";
 
@@ -41,6 +44,12 @@ export default function App() {
         <Route path="people" element={<PeoplePage />} />
         <Route path="email-logs" element={<EmailLogsPage />} />
       </Route>
+
+      <Route path="/payflow" element={<PayFlowLayout />}>
+        <Route index element={<PayFlowDashboardPage />} />
+      </Route>
+
+      <Route path="/insightiq" element={<InsightIqPlaceholderPage />} />
 
       <Route path="/" element={<HomeRedirect />} />
       <Route path="*" element={<HomeRedirect />} />

@@ -1,12 +1,12 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
-import { ApiError } from "../api/client";
-import { listEmailLogs } from "../api/platform";
-import { EMAIL_LOGS_ADMIN_EMAIL } from "../components/layout/PlatformLayout";
-import { Button } from "../components/ui/Button";
-import { Icon } from "../components/ui/Icon";
-import { useAuth } from "../context/AuthContext";
-import type { EmailLog } from "../types";
+import { ApiError } from "../../api/client";
+import { listEmailLogs } from "../../api/platform";
+import { EMAIL_LOGS_ADMIN_EMAIL } from "../../components/layout/PlatformLayout";
+import { Button } from "../../components/ui/Button";
+import { Icon } from "../../components/ui/Icon";
+import { useAuth } from "../../context/AuthContext";
+import type { EmailLog } from "../../types";
 
 export function EmailLogsPage() {
   const { user, loading: authLoading } = useAuth();

@@ -4,6 +4,7 @@ import { activateAccount, previewActivation } from "../api/auth";
 import { ApiError } from "../api/client";
 import { AuthShell } from "../components/auth/AuthShell";
 import { Button } from "../components/ui/Button";
+import { PasswordInput } from "../components/ui/PasswordInput";
 
 export function ActivatePage() {
   const [params] = useSearchParams();
@@ -80,30 +81,24 @@ export function ActivatePage() {
             <label htmlFor="act-email">Work Email</label>
             <input id="act-email" type="email" value={email} readOnly />
           </div>
-          <div className="form-field">
-            <label htmlFor="act-pass">New password</label>
-            <input
-              id="act-pass"
-              type="password"
-              autoComplete="new-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              minLength={8}
-              required
-            />
-          </div>
-          <div className="form-field">
-            <label htmlFor="act-confirm">Confirm password</label>
-            <input
-              id="act-confirm"
-              type="password"
-              autoComplete="new-password"
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-              minLength={8}
-              required
-            />
-          </div>
+          <PasswordInput
+            id="act-pass"
+            label="New password"
+            autoComplete="new-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            minLength={8}
+            required
+          />
+          <PasswordInput
+            id="act-confirm"
+            label="Confirm password"
+            autoComplete="new-password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            minLength={8}
+            required
+          />
           <Button type="submit" disabled={submitting} style={{ width: "100%" }}>
             {submitting ? "Saving…" : "Activate account"}
           </Button>

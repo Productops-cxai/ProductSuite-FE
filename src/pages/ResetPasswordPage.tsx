@@ -4,6 +4,7 @@ import { resetPassword } from "../api/auth";
 import { ApiError } from "../api/client";
 import { AuthShell } from "../components/auth/AuthShell";
 import { Button } from "../components/ui/Button";
+import { PasswordInput } from "../components/ui/PasswordInput";
 
 export function ResetPasswordPage() {
   const [params] = useSearchParams();
@@ -53,30 +54,24 @@ export function ResetPasswordPage() {
       {info ? <div className="success-banner">{info}</div> : null}
 
       <form onSubmit={onSubmit}>
-        <div className="form-field">
-          <label htmlFor="reset-pass">New password</label>
-          <input
-            id="reset-pass"
-            type="password"
-            autoComplete="new-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            minLength={8}
-            required
-          />
-        </div>
-        <div className="form-field">
-          <label htmlFor="reset-confirm">Confirm password</label>
-          <input
-            id="reset-confirm"
-            type="password"
-            autoComplete="new-password"
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            minLength={8}
-            required
-          />
-        </div>
+        <PasswordInput
+          id="reset-pass"
+          label="New password"
+          autoComplete="new-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          minLength={8}
+          required
+        />
+        <PasswordInput
+          id="reset-confirm"
+          label="Confirm password"
+          autoComplete="new-password"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          minLength={8}
+          required
+        />
         <Button type="submit" disabled={submitting} style={{ width: "100%" }}>
           {submitting ? "Saving…" : "Update password"}
         </Button>

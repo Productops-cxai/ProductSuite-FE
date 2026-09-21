@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ApiError } from "../api/client";
-import { getOverview } from "../api/platform";
-import { Badge } from "../components/ui/Badge";
-import { Button } from "../components/ui/Button";
-import { titleCaseStatus } from "../lib/utils";
-import type { OverviewResponse } from "../types";
+import { ApiError } from "../../api/client";
+import { getOverview } from "../../api/platform";
+import { Badge } from "../../components/ui/Badge";
+import { Button } from "../../components/ui/Button";
+import { titleCaseStatus } from "../../lib/utils";
+import type { OverviewResponse } from "../../types";
 
 export function OverviewPage() {
   const [data, setData] = useState<OverviewResponse | null>(null);

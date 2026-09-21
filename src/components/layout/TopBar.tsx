@@ -1,19 +1,22 @@
 import { Button } from "../ui/Button";
+import { ProductSwitcher } from "../ProductSwitcher";
 import { useAuth } from "../../context/AuthContext";
 
 export function TopBar() {
-  const { user, logout } = useAuth();
-  const label =
-    user?.role === "platform_super_admin" ? "Platform Super Admin" : user?.full_name || "User";
+  const { logout, isSuperAdmin } = useAuth();
 
   return (
     <header className="topbar">
       <div className="topbar-hint">Platform administration — product entitlement only</div>
       <div className="topbar-right">
-        <button type="button" className="role-pill" title={user?.email || ""}>
-          <span className="dot" />
-          {label}
-        </button>
+        {isSuperAdmin ? (
+          <ProductSwitcher current="platform" variant="platform" />
+        ) : (
+          <button type="button" className="role-pill">
+            <span className="dot" />
+            User
+          </button>
+        )}
         <Button variant="secondary" size="sm" onClick={() => void logout()}>
           Sign out
         </Button>

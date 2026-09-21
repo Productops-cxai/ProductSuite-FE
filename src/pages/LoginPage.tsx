@@ -4,6 +4,7 @@ import { ApiError } from "../api/client";
 import { forgotPassword } from "../api/auth";
 import { AuthShell } from "../components/auth/AuthShell";
 import { Button } from "../components/ui/Button";
+import { PasswordInput } from "../components/ui/PasswordInput";
 import { useAuth } from "../context/AuthContext";
 import type { LoginNextStep } from "../types";
 
@@ -84,17 +85,14 @@ export function LoginPage() {
             required
           />
         </div>
-        <div className="form-field">
-          <label htmlFor="password">Password</label>
-          <input
-            id="password"
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-        </div>
+        <PasswordInput
+          id="password"
+          label="Password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+        />
         <div className="form-row">
           <label>
             <input

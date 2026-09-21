@@ -1,11 +1,11 @@
 import { FormEvent, useEffect, useState } from "react";
-import { ApiError } from "../api/client";
-import { getProduct, listProducts, saveProduct } from "../api/platform";
-import { Badge } from "../components/ui/Badge";
-import { Button } from "../components/ui/Button";
-import { Modal } from "../components/ui/Modal";
-import { titleCaseStatus } from "../lib/utils";
-import type { Product } from "../types";
+import { ApiError } from "../../api/client";
+import { getProduct, listProducts, saveProduct } from "../../api/platform";
+import { Badge } from "../../components/ui/Badge";
+import { Button } from "../../components/ui/Button";
+import { Modal } from "../../components/ui/Modal";
+import { titleCaseStatus } from "../../lib/utils";
+import type { Product } from "../../types";
 
 export function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);

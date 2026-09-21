@@ -1,10 +1,17 @@
 import { useEffect, useState } from "react";
-import { Link, Navigate } from "react-router-dom";
+import { Link, Navigate, useNavigate } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { enterProduct, myProducts } from "../api/platform";
 import { Button } from "../components/ui/Button";
 import { useAuth } from "../context/AuthContext";
 import type { Product } from "../types";
+
+function productHome(code: string): string {
+  const upper = code.toUpperCase();
+  if (upper === "PAYFLOW") return "/payflow";
+  if (upper === "INSIGHTIQ") return "/insightiq";
+  return "/products";
+}
 
 function isPayFlow(product: Product) {
   return product.code.toUpperCase() === "PAYFLOW";
@@ -12,9 +19,9 @@ function isPayFlow(product: Product) {
 
 export function ProductLauncherPage() {
   const { user, loading, logout, isSuperAdmin } = useAuth();
+  const navigate = useNavigate();
   const [products, setProducts] = useState<Product[]>([]);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
   const [busy, setBusy] = useState("");
 
   useEffect(() => {
@@ -31,10 +38,9 @@ export function ProductLauncherPage() {
   async function onEnter(code: string) {
     setBusy(code);
     setError("");
-    setMessage("");
     try {
-      const res = await enterProduct(code);
-      setMessage(`${res.message} — ${res.product.name}`);
+      await enterProduct(code);
+      navigate(productHome(code), { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Unable to enter product");
     } finally {
@@ -71,7 +77,6 @@ export function ProductLauncherPage() {
         </p>
 
         {error ? <div className="error-banner">{error}</div> : null}
-        {message ? <div className="success-banner">{message}</div> : null}
 
         {products.length === 0 ? (
           <div className="empty-state">No entitled products yet.</div>

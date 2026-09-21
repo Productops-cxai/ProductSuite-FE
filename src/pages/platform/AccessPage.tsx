@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { ApiError } from "../api/client";
+import { ApiError } from "../../api/client";
 import {
   grantAccess,
   listOrganizations,
@@ -7,12 +7,12 @@ import {
   listProducts,
   revokeAccess,
   saveOrganization,
-} from "../api/platform";
-import { Badge } from "../components/ui/Badge";
-import { Button } from "../components/ui/Button";
-import { Icon } from "../components/ui/Icon";
-import { Modal } from "../components/ui/Modal";
-import type { Organization, Product, ProductAccessItem } from "../types";
+} from "../../api/platform";
+import { Badge } from "../../components/ui/Badge";
+import { Button } from "../../components/ui/Button";
+import { Icon } from "../../components/ui/Icon";
+import { Modal } from "../../components/ui/Modal";
+import type { Organization, Product, ProductAccessItem } from "../../types";
 
 export function AccessPage() {
   const [rows, setRows] = useState<ProductAccessItem[]>([]);
