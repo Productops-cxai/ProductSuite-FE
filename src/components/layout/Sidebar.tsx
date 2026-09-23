@@ -24,7 +24,7 @@ export function Sidebar({ sections }: Props) {
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
-        <div className="brand-mark">P</div>
+        <img src="/assets/payflow-mark.png" alt="" className="brand-mark-img" />
         <div className="brand-text">
           <strong>Platform</strong>
           <span>Super Admin</span>

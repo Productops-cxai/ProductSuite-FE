@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Navigate, Outlet } from "react-router-dom";
 import { getMenus } from "../../api/platform";
+import { AccessDenied } from "../auth/AccessDenied";
 import { useAuth } from "../../context/AuthContext";
 import type { MenuSection } from "../../types";
 import { Sidebar } from "./Sidebar";
@@ -107,7 +108,15 @@ export function PlatformLayout() {
 
   if (loading) return <div className="app-loading">Loading…</div>;
   if (!user) return <Navigate to="/login" replace />;
-  if (!isSuperAdmin) return <Navigate to="/products" replace />;
+  if (!isSuperAdmin) {
+    return (
+      <AccessDenied
+        title="Access denied"
+        message="Platform Super Admin access is required for this administration area. PayFlow Operations Admin and other product roles cannot open platform-level administration."
+        showProductsLink
+      />
+    );
+  }
 
   return (
     <div className="shell">

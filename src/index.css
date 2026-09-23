@@ -1,5 +1,5 @@
 :root {
-  --font: "Plus Jakarta Sans", system-ui, sans-serif;
+  --font: "Inter", system-ui, -apple-system, sans-serif;
   --sidebar-bg: #0b1220;
   --sidebar-text: #94a3b8;
   --sidebar-text-active: #f8fafc;
@@ -10,6 +10,7 @@
   --text: #0f172a;
   --text-muted: #64748b;
   --border: #e2e8f0;
+  --input-bg: #eef2f7;
   --primary: #3b82f6;
   --primary-hover: #2563eb;
   --primary-soft: #eff6ff;
@@ -67,11 +68,11 @@ button {
   color: var(--text-muted);
 }
 
-/* ??? Auth (sign-in / activate / reset) ??? */
+/* --- Auth (sign-in / activate / reset) --- */
 .auth-page {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 1.15fr 0.85fr;
+  grid-template-columns: 1fr 1fr;
   background: #0b1220;
 }
 
@@ -95,8 +96,8 @@ button {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(115deg, rgba(8, 15, 30, 0.88) 8%, rgba(8, 15, 30, 0.55) 55%, rgba(8, 15, 30, 0.72) 100%),
-    linear-gradient(to top, rgba(8, 15, 30, 0.75), transparent 45%);
+    linear-gradient(115deg, rgba(5, 12, 28, 0.9) 6%, rgba(5, 12, 28, 0.62) 52%, rgba(5, 12, 28, 0.78) 100%),
+    linear-gradient(to top, rgba(5, 12, 28, 0.8), transparent 42%);
 }
 
 .auth-hero-content {
@@ -125,11 +126,17 @@ button {
   place-items: center;
   font-weight: 700;
   font-size: 0.85rem;
-  letter-spacing: 0.04em;
   color: #fff;
   background: linear-gradient(145deg, #60a5fa, #1d4ed8);
-  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.35);
   flex-shrink: 0;
+}
+
+.platform-mark-img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  flex-shrink: 0;
+  border-radius: 8px;
 }
 
 .platform-mark strong {
@@ -137,21 +144,24 @@ button {
   color: #fff;
   font-size: 1rem;
   line-height: 1.2;
+  font-weight: 700;
 }
 
 .platform-mark span {
   display: block;
   font-size: 0.78rem;
   color: #94a3b8;
+  font-weight: 500;
 }
 
 .auth-hero-content h1 {
   margin: 0 0 14px;
-  font-size: clamp(1.8rem, 2.6vw, 2.35rem);
+  font-size: clamp(1.85rem, 2.7vw, 2.4rem);
   line-height: 1.15;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
   color: #fff;
-  max-width: 16ch;
+  font-weight: 700;
+  max-width: 14ch;
 }
 
 .auth-hero-content > p {
@@ -167,15 +177,26 @@ button {
   padding: 0;
   list-style: none;
   display: grid;
-  gap: 8px;
+  gap: 10px;
   color: #e2e8f0;
   font-size: 0.92rem;
 }
 
+.auth-hero-points li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
 .auth-hero-points li::before {
-  content: "· ";
-  color: #60a5fa;
-  font-weight: 700;
+  content: "";
+  width: 7px;
+  height: 7px;
+  margin-top: 0.45em;
+  border-radius: 2px;
+  background: #60a5fa;
+  transform: rotate(45deg);
+  flex-shrink: 0;
 }
 
 .auth-hero-foot {
@@ -200,7 +221,7 @@ button {
 .auth-card-eyebrow {
   font-size: 0.72rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: #64748b;
   margin-bottom: 14px;
@@ -208,9 +229,10 @@ button {
 
 .auth-card h2 {
   margin: 0 0 6px;
-  font-size: 1.7rem;
-  letter-spacing: -0.02em;
+  font-size: 1.75rem;
+  letter-spacing: -0.03em;
   color: var(--text);
+  font-weight: 700;
 }
 
 .auth-card .subtitle {
@@ -231,7 +253,67 @@ button {
   font-weight: 600;
 }
 
-/* ??? Product launcher ??? */
+.auth-card .form-field label {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.auth-card .form-field input,
+.auth-card .password-input-wrap input {
+  background: var(--input-bg);
+  border-color: transparent;
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.auth-card .password-input-wrap input {
+  padding-right: 44px;
+}
+
+.auth-card .form-field input:focus,
+.auth-card .password-input-wrap input:focus {
+  background: #fff;
+  border-color: #93c5fd;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.auth-card .form-row {
+  color: var(--primary);
+  font-weight: 500;
+}
+
+.auth-card .form-row label {
+  color: var(--primary);
+}
+
+.auth-card .form-row input[type="checkbox"] {
+  accent-color: var(--primary);
+  width: 16px;
+  height: 16px;
+}
+
+.auth-card .link-btn {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.auth-card .password-eye-btn {
+  color: var(--primary);
+}
+
+.auth-card .password-eye-btn:hover {
+  color: var(--primary-hover);
+  background: var(--primary-soft);
+}
+
+.auth-card .btn-primary {
+  margin-top: 4px;
+  height: 44px;
+  font-size: 0.95rem;
+  border-radius: 10px;
+}
+
 .launcher-page {
   min-height: 100vh;
   background:
@@ -304,6 +386,14 @@ button {
   max-width: 58ch;
   color: var(--text-muted);
   line-height: 1.5;
+}
+
+.access-denied-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  margin-top: 10px;
 }
 
 .launcher-user {
@@ -636,6 +726,14 @@ button {
   font-weight: 700;
   font-size: 1rem;
   flex-shrink: 0;
+}
+
+.brand-mark-img {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  flex-shrink: 0;
+  border-radius: 8px;
 }
 
 .brand-text strong {

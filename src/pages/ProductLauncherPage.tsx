@@ -52,7 +52,7 @@ export function ProductLauncherPage() {
     <div className="launcher-page">
       <header className="launcher-top">
         <div className="launcher-brand">
-          <span className="platform-mark-badge">PS</span>
+          <img src="/assets/payflow-mark.png" alt="" className="platform-mark-img" />
           <strong>Platform Suite</strong>
         </div>
         <div className="launcher-top-actions">
@@ -135,7 +135,7 @@ export function NoAccessPage() {
     <div className="launcher-page">
       <header className="launcher-top">
         <div className="launcher-brand">
-          <span className="platform-mark-badge">PS</span>
+          <img src="/assets/payflow-mark.png" alt="" className="platform-mark-img" />
           <strong>Platform Suite</strong>
         </div>
         <div className="launcher-top-actions">

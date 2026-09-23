@@ -7,22 +7,18 @@ type Props = {
   eyebrow?: string;
 };
 
-export function AuthShell({ title, subtitle, children, eyebrow = "Platform Suite" }: Props) {
+export function AuthShell({ title, subtitle, children, eyebrow = "PLATFORM SUITE" }: Props) {
   return (
     <div className="auth-page">
-      <section className="auth-hero" aria-hidden={false}>
-        <img
-          className="auth-hero-image"
-          src="/assets/platform-auth-hero.jpg"
-          alt=""
-        />
+      <section className="auth-hero">
+        <img className="auth-hero-image" src="/assets/platform-auth-hero.jpg" alt="" />
         <div className="auth-hero-overlay" />
         <div className="auth-hero-content">
           <div className="platform-mark">
-            <span className="platform-mark-badge">PS</span>
+            <img src="/assets/payflow-mark.png" alt="" className="platform-mark-img" />
             <div>
               <strong>Platform Suite</strong>
-              <span>Product entitlement & access</span>
+              <span>Product entitlement &amp; access</span>
             </div>
           </div>
           <h1>{title}</h1>

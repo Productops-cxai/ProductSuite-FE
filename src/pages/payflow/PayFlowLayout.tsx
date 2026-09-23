@@ -1,4 +1,5 @@
-import { NavLink, Navigate, Outlet } from "react-router-dom";
+import { NavLink, Outlet } from "react-router-dom";
+import { RequireProductAccess } from "../../components/auth/RequireProductAccess";
 import { ProductSwitcher } from "../../components/ProductSwitcher";
 import { Button } from "../../components/ui/Button";
 import { useAuth } from "../../context/AuthContext";
@@ -45,11 +46,9 @@ function initials(name: string) {
     .join("");
 }
 
-export function PayFlowLayout() {
-  const { user, loading, logout } = useAuth();
-
-  if (loading) return <div className="app-loading">Loading…</div>;
-  if (!user) return <Navigate to="/login" replace />;
+function PayFlowShell() {
+  const { user, logout } = useAuth();
+  if (!user) return null;
 
   return (
     <div className="pf-shell">
@@ -118,5 +117,13 @@ export function PayFlowLayout() {
         <Outlet />
       </div>
     </div>
+  );
+}
+
+export function PayFlowLayout() {
+  return (
+    <RequireProductAccess productCode="PAYFLOW" productLabel="PayFlow">
+      <PayFlowShell />
+    </RequireProductAccess>
   );
 }

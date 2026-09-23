@@ -1,7 +1,11 @@
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
+import { RequireProductAccess } from "../../components/auth/RequireProductAccess";
+import { useAuth } from "../../context/AuthContext";
 
 /** Placeholder until InsightIQ product screens are built. */
-export function InsightIqPlaceholderPage() {
+function InsightIqBody() {
+  const { isSuperAdmin } = useAuth();
+
   return (
     <div className="launcher-page">
       <main className="launcher-main narrow" style={{ paddingTop: 80 }}>
@@ -11,10 +15,22 @@ export function InsightIqPlaceholderPage() {
           InsightIQ is registered for multi-product access. Operational screens are not available
           yet. Use the product switcher or return to all products.
         </p>
-        <Link className="link-btn" to="/products">
-          ← Back to products
+        <Link className="link-btn" to={isSuperAdmin ? "/platform" : "/products"}>
+          ← {isSuperAdmin ? "Back to Platform Admin" : "Back to products"}
         </Link>
       </main>
     </div>
+  );
+}
+
+export function InsightIqPlaceholderPage() {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="app-loading">Loading…</div>;
+  if (!user) return <Navigate to="/login" replace />;
+
+  return (
+    <RequireProductAccess productCode="INSIGHTIQ" productLabel="InsightIQ">
+      <InsightIqBody />
+    </RequireProductAccess>
   );
 }
