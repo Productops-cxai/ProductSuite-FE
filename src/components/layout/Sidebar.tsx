@@ -17,41 +17,56 @@ function iconFor(key: string, icon?: string | null) {
   return "overview";
 }
 
+const item =
+  "mb-0.5 flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[0.92rem] font-medium text-slate-400";
+
 export function Sidebar({ sections }: Props) {
   return (
-    <aside className="sidebar">
-      <div className="sidebar-brand">
-        <img src="/assets/payflow-mark.png" alt="" className="brand-mark-img" />
-        <div className="brand-text">
-          <strong>Platform</strong>
-          <span>Super Admin</span>
+    <aside className="flex min-h-screen flex-col border-r border-white/10 bg-sidebar px-3.5 py-5 text-slate-400">
+      <div className="flex items-center gap-3 px-2.5 pb-[22px] pt-1.5">
+        <img src="/assets/payflow-mark.png" alt="" className="size-8 shrink-0 object-contain" />
+        <div>
+          <strong className="font-display block text-[0.98rem] font-bold leading-tight tracking-tight text-slate-50">
+            Platform
+          </strong>
+          <span className="text-[0.75rem] text-slate-400">Super Admin</span>
         </div>
       </div>
 
-      <div className="sidebar-nav">
+      <div className="min-h-0 flex-1">
         {sections.map((section) => (
-          <div className="nav-section" key={section.key}>
-            <div className="nav-section-label">{section.label}</div>
-            {section.items.map((item) => {
-              const route = normalizeMenuRoute(item.route);
-              if (item.is_coming_soon) {
+          <div className="mb-[18px]" key={section.key}>
+            <div className="px-3 pb-2 text-[0.68rem] font-bold tracking-[0.08em] text-slate-500">
+              {section.label}
+            </div>
+            {section.items.map((itemRow) => {
+              const route = normalizeMenuRoute(itemRow.route);
+              if (itemRow.is_coming_soon) {
                 return (
-                  <div className="nav-item soon" key={item.key}>
-                    <Icon name={iconFor(item.key, item.icon)} />
-                    <span>{item.label}</span>
-                    <span className="badge-soon">{item.badge || "Soon"}</span>
+                  <div className={`${item} cursor-default opacity-70`} key={itemRow.key}>
+                    <Icon name={iconFor(itemRow.key, itemRow.icon)} />
+                    <span>{itemRow.label}</span>
+                    <span className="ml-auto rounded-full border border-slate-700 px-2 py-0.5 text-[0.62rem] font-semibold text-slate-400">
+                      {itemRow.badge || "Soon"}
+                    </span>
                   </div>
                 );
               }
               return (
                 <NavLink
-                  key={item.key}
+                  key={itemRow.key}
                   to={route}
                   end={route === "/platform"}
-                  className={({ isActive }) => `nav-item${isActive ? " active" : ""}`}
+                  className={({ isActive }) =>
+                    `${item} ${
+                      isActive
+                        ? "bg-blue-500/15 text-slate-50"
+                        : "hover:bg-slate-400/10 hover:text-slate-200"
+                    }`
+                  }
                 >
-                  <Icon name={iconFor(item.key, item.icon)} />
-                  <span>{item.label}</span>
+                  <Icon name={iconFor(itemRow.key, itemRow.icon)} />
+                  <span>{itemRow.label}</span>
                 </NavLink>
               );
             })}
@@ -59,11 +74,12 @@ export function Sidebar({ sections }: Props) {
         ))}
       </div>
 
-      <div className="sidebar-footer">
-        <NavLink to="/products" className="sidebar-product-link">
-          <span className="sidebar-product-arrow" aria-hidden>
-            ←
-          </span>
+      <div className="mt-auto px-2.5 pt-3">
+        <NavLink
+          to="/products"
+          className="mb-2 flex items-center gap-2 rounded-lg px-3 py-2.5 text-[0.88rem] font-medium text-slate-400 hover:bg-slate-400/10 hover:text-slate-200"
+        >
+          <span aria-hidden>←</span>
           Product selection
         </NavLink>
       </div>

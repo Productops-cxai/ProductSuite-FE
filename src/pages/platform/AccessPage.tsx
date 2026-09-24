@@ -13,6 +13,7 @@ import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
 import { Modal } from "../../components/ui/Modal";
+import { ui } from "../../lib/ui";
 import type { Organization, Product, ProductAccessItem } from "../../types";
 
 export function AccessPage() {
@@ -127,12 +128,12 @@ export function AccessPage() {
   }
 
   return (
-    <div className="page">
-      <div className="page-header">
+    <div className={ui.page}>
+      <div className={ui.pageHeader}>
         <div>
-          <div className="breadcrumb">Platform / Product Access</div>
-          <h1>Product Access</h1>
-          <p>
+          <div className={ui.crumb}>Platform / Product Access</div>
+          <h1 className={ui.h1}>Product Access</h1>
+          <p className={ui.lead}>
             Controls which organization is entitled to which product. Granting a product does not
             assign any product role, client or portfolio scope, or functional permission — those stay
             inside the product.
@@ -140,13 +141,16 @@ export function AccessPage() {
         </div>
       </div>
 
-      {error ? <div className="error-banner">{error}</div> : null}
+      {error ? <div className={ui.error}>{error}</div> : null}
 
-      <div className="table-card">
-        <div className="toolbar in-card">
-          <div className="search-box">
-            <Icon name="search" />
+      <div className={ui.card}>
+        <div className={ui.toolbar}>
+          <div className={ui.search}>
+            <span className={ui.searchIcon}>
+              <Icon name="search" />
+            </span>
             <input
+              className={ui.searchInput}
               placeholder="Search organizations"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -155,10 +159,10 @@ export function AccessPage() {
               }}
             />
           </div>
-          <label className="filter-field">
-            <span>Product</span>
+          <label className={ui.filter}>
+            <span className="font-medium">Product</span>
             <select
-              className="filter-select"
+              className={ui.select}
               value={productFilter}
               onChange={(e) => setProductFilter(e.target.value)}
               aria-label="Product filter"
@@ -171,10 +175,10 @@ export function AccessPage() {
               ))}
             </select>
           </label>
-          <label className="filter-field">
-            <span>Access</span>
+          <label className={ui.filter}>
+            <span className="font-medium">Access</span>
             <select
-              className="filter-select"
+              className={ui.select}
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
               aria-label="Access status filter"
@@ -187,17 +191,17 @@ export function AccessPage() {
         </div>
 
         {loading ? (
-          <div className="empty-state">Loading access…</div>
+          <div className={ui.empty}>Loading access…</div>
         ) : filteredHint.length === 0 ? (
-          <div className="empty-state">No entitlement rows found.</div>
+          <div className={ui.empty}>No entitlement rows found.</div>
         ) : (
-          <table className="data">
+          <table className={ui.table}>
             <thead>
               <tr>
-                <th>ORGANIZATION</th>
-                <th>PRODUCT</th>
-                <th>ACCESS STATUS</th>
-                <th />
+                <th className={ui.th}>ORGANIZATION</th>
+                <th className={ui.th}>PRODUCT</th>
+                <th className={ui.th}>ACCESS STATUS</th>
+                <th className={ui.th} />
               </tr>
             </thead>
             <tbody>
@@ -206,19 +210,19 @@ export function AccessPage() {
                 const granted = row.access_status === "granted";
                 return (
                   <tr key={key}>
-                    <td>
+                    <td className={ui.td}>
                       <strong>{row.organization_name}</strong>
                     </td>
-                    <td className="muted-cell">
+                    <td className={`${ui.td} ${ui.muted}`}>
                       {row.product_name} · {row.product_code}
                     </td>
-                    <td>
+                    <td className={ui.td}>
                       <Badge tone={granted ? "success" : "danger"}>
                         {granted ? "Access granted" : "Access revoked"}
                       </Badge>
                     </td>
-                    <td>
-                      <div className="actions-cell">
+                    <td className={ui.td}>
+                      <div className={ui.cellActions}>
                         {granted ? (
                           <Button
                             variant="danger-outline"
@@ -246,14 +250,14 @@ export function AccessPage() {
           </table>
         )}
 
-        <p className="table-footnote">
+        <p className={ui.footnote}>
           Revoking access disables the organization&apos;s entry into the product. Operational data
           inside the product is retained.{" "}
-          <button type="button" className="link-btn" onClick={() => setOrgOpen(true)}>
+          <button type="button" className={ui.link} onClick={() => setOrgOpen(true)}>
             Add organization
           </button>
           {" · "}
-          <button type="button" className="link-btn" onClick={() => setGrantOpen(true)}>
+          <button type="button" className={ui.link} onClick={() => setGrantOpen(true)}>
             Grant access
           </button>
         </p>
@@ -265,7 +269,7 @@ export function AccessPage() {
         title="Grant product access"
         description="Allow an organization to use a registered product."
         footer={
-          <div className="modal-actions">
+          <div className="mt-2 flex justify-end gap-2.5">
             <Button variant="secondary" onClick={() => setGrantOpen(false)}>
               Cancel
             </Button>
@@ -276,9 +280,10 @@ export function AccessPage() {
         }
       >
         <form id="grant-access" onSubmit={onGrant}>
-          <div className="form-field">
-            <label htmlFor="grant-org">Organization</label>
+          <div className={ui.field}>
+            <label className={ui.label} htmlFor="grant-org">Organization</label>
             <select
+              className={ui.control}
               id="grant-org"
               value={grantForm.organization_id}
               onChange={(e) => setGrantForm((f) => ({ ...f, organization_id: e.target.value }))}
@@ -292,9 +297,10 @@ export function AccessPage() {
               ))}
             </select>
           </div>
-          <div className="form-field">
-            <label htmlFor="grant-prod">Product</label>
+          <div className={ui.field}>
+            <label className={ui.label} htmlFor="grant-prod">Product</label>
             <select
+              className={ui.control}
               id="grant-prod"
               value={grantForm.product_id}
               onChange={(e) => setGrantForm((f) => ({ ...f, product_id: e.target.value }))}
@@ -316,7 +322,7 @@ export function AccessPage() {
         onClose={() => setOrgOpen(false)}
         title="Add organization"
         footer={
-          <div className="modal-actions">
+          <div className="mt-2 flex justify-end gap-2.5">
             <Button variant="secondary" onClick={() => setOrgOpen(false)}>
               Cancel
             </Button>
@@ -327,16 +333,17 @@ export function AccessPage() {
         }
       >
         <form id="create-org" onSubmit={onCreateOrg}>
-          <div className="form-field">
-            <label htmlFor="org-name">Name</label>
+          <div className={ui.field}>
+            <label className={ui.label} htmlFor="org-name">Name</label>
             <input
+              className={ui.control}
               id="org-name"
               value={orgForm.name}
               onChange={(e) => setOrgForm((f) => ({ ...f, name: e.target.value }))}
               required
             />
           </div>
-          <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
+          <label className="mb-3 flex items-center gap-2">
             <input
               type="checkbox"
               checked={orgForm.is_internal}

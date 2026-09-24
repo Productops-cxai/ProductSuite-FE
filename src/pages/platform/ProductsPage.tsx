@@ -4,6 +4,7 @@ import { ApiError } from "../../api/client";
 import { listProducts, saveProduct } from "../../api/platform";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
+import { ui } from "../../lib/ui";
 import { titleCaseStatus } from "../../lib/utils";
 import type { Product } from "../../types";
 
@@ -63,12 +64,12 @@ export function ProductsPage() {
   }
 
   return (
-    <div className="page">
-      <div className="page-header">
+    <div className={ui.page}>
+      <div className={ui.pageHeader}>
         <div>
-          <div className="breadcrumb">Platform / Products</div>
-          <h1>Products</h1>
-          <p>
+          <div className={ui.crumb}>Platform / Products</div>
+          <h1 className={ui.h1}>Products</h1>
+          <p className={ui.lead}>
             Products registered under the platform. PayFlow is the only operational product in this
             phase.
           </p>
@@ -82,19 +83,20 @@ export function ProductsPage() {
         )}
       </div>
 
-      {error ? <div className="error-banner">{error}</div> : null}
+      {error ? <div className={ui.error}>{error}</div> : null}
 
       {registerOpen ? (
-        <section className="form-card">
-          <div className="form-card-head">
-            <h2>Register product</h2>
-            <p>Basic product information only — no plans, pricing or licensing.</p>
+        <section className={ui.formCard}>
+          <div className="mb-[18px]">
+            <h2 className={ui.formTitle}>Register product</h2>
+            <p className={ui.formText}>Basic product information only — no plans, pricing or licensing.</p>
           </div>
           <form onSubmit={onRegister}>
-            <div className="form-grid-2">
-              <div className="form-field">
-                <label htmlFor="prod-name">Product name</label>
+            <div className={ui.grid2}>
+              <div className={ui.field}>
+                <label className={ui.label} htmlFor="prod-name">Product name</label>
                 <input
+                  className={ui.control}
                   id="prod-name"
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
@@ -102,9 +104,10 @@ export function ProductsPage() {
                   required
                 />
               </div>
-              <div className="form-field">
-                <label htmlFor="prod-code">Product code</label>
+              <div className={ui.field}>
+                <label className={ui.label} htmlFor="prod-code">Product code</label>
                 <input
+                  className={ui.control}
                   id="prod-code"
                   value={form.code}
                   onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
@@ -113,9 +116,10 @@ export function ProductsPage() {
                 />
               </div>
             </div>
-            <div className="form-field">
-              <label htmlFor="prod-status">Status</label>
+            <div className={ui.field}>
+              <label className={ui.label} htmlFor="prod-status">Status</label>
               <select
+                className={ui.control}
                 id="prod-status"
                 value={form.status}
                 onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
@@ -125,9 +129,10 @@ export function ProductsPage() {
                 <option value="inactive">Inactive</option>
               </select>
             </div>
-            <div className="form-field">
-              <label htmlFor="prod-desc">Short description</label>
+            <div className={ui.field}>
+              <label className={ui.label} htmlFor="prod-desc">Short description</label>
               <textarea
+                className={ui.control}
                 id="prod-desc"
                 rows={3}
                 value={form.description}
@@ -135,7 +140,7 @@ export function ProductsPage() {
                 placeholder="What this product does for an organization."
               />
             </div>
-            <div className="form-card-actions">
+            <div className={ui.actions}>
               <Button type="submit" disabled={saving}>
                 {saving ? "Saving…" : "Save product"}
               </Button>
@@ -147,37 +152,37 @@ export function ProductsPage() {
         </section>
       ) : null}
 
-      <div className="table-card">
+      <div className={ui.card}>
         {loading ? (
-          <div className="empty-state">Loading products…</div>
+          <div className={ui.empty}>Loading products…</div>
         ) : products.length === 0 ? (
-          <div className="empty-state">No products registered yet.</div>
+          <div className={ui.empty}>No products registered yet.</div>
         ) : (
-          <table className="data">
+          <table className={ui.table}>
             <thead>
               <tr>
-                <th>PRODUCT</th>
-                <th>CODE</th>
-                <th>DESCRIPTION</th>
-                <th>STATUS</th>
-                <th />
+                <th className={ui.th}>PRODUCT</th>
+                <th className={ui.th}>CODE</th>
+                <th className={ui.th}>DESCRIPTION</th>
+                <th className={ui.th}>STATUS</th>
+                <th className={ui.th} />
               </tr>
             </thead>
             <tbody>
               {products.map((p) => (
                 <tr key={p.id}>
-                  <td>
+                  <td className={ui.td}>
                     <strong>{p.name}</strong>
                   </td>
-                  <td className="muted-cell">{p.code}</td>
-                  <td className="desc-cell">{p.description || "—"}</td>
-                  <td>
+                  <td className={`${ui.td} ${ui.muted}`}>{p.code}</td>
+                  <td className={`${ui.td} ${ui.desc}`}>{p.description || "—"}</td>
+                  <td className={ui.td}>
                     <Badge tone={p.status === "active" ? "success" : "danger"}>
                       {titleCaseStatus(p.status)}
                     </Badge>
                   </td>
-                  <td>
-                    <div className="actions-cell">
+                  <td className={ui.td}>
+                    <div className={ui.cellActions}>
                       <Link to={`/platform/products/${p.id}`}>
                         <Button variant="secondary" size="sm">
                           View

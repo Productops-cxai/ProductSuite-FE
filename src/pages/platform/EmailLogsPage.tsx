@@ -6,6 +6,7 @@ import { EMAIL_LOGS_ADMIN_EMAIL } from "../../components/layout/PlatformLayout";
 import { Button } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
 import { useAuth } from "../../context/AuthContext";
+import { ui } from "../../lib/ui";
 import type { EmailLog } from "../../types";
 
 export function EmailLogsPage() {
@@ -43,7 +44,7 @@ export function EmailLogsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [typeFilter, allowed]);
 
-  if (authLoading) return <div className="app-loading">Loading…</div>;
+  if (authLoading) return <div className={ui.loading}>Loading…</div>;
   if (!allowed) return <Navigate to="/platform" replace />;
 
   async function onSearch(e: FormEvent) {
@@ -61,12 +62,12 @@ export function EmailLogsPage() {
   }
 
   return (
-    <div className="page">
-      <div className="page-header">
+    <div className={ui.page}>
+      <div className={ui.pageHeader}>
         <div>
-          <div className="breadcrumb">Platform / Email Logs</div>
-          <h1>Email Logs</h1>
-          <p>
+          <div className={ui.crumb}>Platform / Email Logs</div>
+          <h1 className={ui.h1}>Email Logs</h1>
+          <p className={ui.lead}>
             SMTP is not configured yet. Outbound emails (activation, password reset) are saved here
             so you can open the action link and complete the flow. Visible only to{" "}
             {EMAIL_LOGS_ADMIN_EMAIL}.
@@ -77,20 +78,23 @@ export function EmailLogsPage() {
         </Button>
       </div>
 
-      {error ? <div className="error-banner">{error}</div> : null}
-      {info ? <div className="success-banner">{info}</div> : null}
+      {error ? <div className={ui.error}>{error}</div> : null}
+      {info ? <div className={ui.success}>{info}</div> : null}
 
-      <form className="toolbar" onSubmit={onSearch}>
-        <div className="search-box">
-          <Icon name="search" />
+      <form className="mb-3.5 flex flex-wrap gap-3" onSubmit={onSearch}>
+        <div className={ui.search}>
+          <span className={ui.searchIcon}>
+            <Icon name="search" />
+          </span>
           <input
+            className={ui.searchInput}
             placeholder="Search by email or subject"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
         <select
-          className="filter-select"
+          className={ui.select}
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value)}
         >
@@ -100,38 +104,38 @@ export function EmailLogsPage() {
         </select>
       </form>
 
-      <div className="table-card">
+      <div className={ui.card}>
         {loading ? (
-          <div className="empty-state">Loading email logs…</div>
+          <div className={ui.empty}>Loading email logs…</div>
         ) : rows.length === 0 ? (
-          <div className="empty-state">No emails logged yet. Add a person to generate an invite.</div>
+          <div className={ui.empty}>No emails logged yet. Add a person to generate an invite.</div>
         ) : (
-          <table className="data">
+          <table className={ui.table}>
             <thead>
               <tr>
-                <th>ID</th>
-                <th>TO</th>
-                <th>TYPE</th>
-                <th>SUBJECT</th>
-                <th>CREATED</th>
-                <th>ACTION LINK</th>
+                <th className={ui.th}>ID</th>
+                <th className={ui.th}>TO</th>
+                <th className={ui.th}>TYPE</th>
+                <th className={ui.th}>SUBJECT</th>
+                <th className={ui.th}>CREATED</th>
+                <th className={ui.th}>ACTION LINK</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((row) => (
                 <tr key={row.id}>
-                  <td>{row.id}</td>
-                  <td>
+                  <td className={ui.td}>{row.id}</td>
+                  <td className={ui.td}>
                     <strong>{row.to_email}</strong>
                   </td>
-                  <td>{row.email_type}</td>
-                  <td className="desc-cell">{row.subject}</td>
-                  <td style={{ whiteSpace: "nowrap", color: "var(--text-muted)" }}>
+                  <td className={ui.td}>{row.email_type}</td>
+                  <td className={`${ui.td} ${ui.desc}`}>{row.subject}</td>
+                  <td className={`${ui.td} whitespace-nowrap text-slate-500`}>
                     {new Date(row.created_at).toLocaleString()}
                   </td>
-                  <td>
+                  <td className={ui.td}>
                     {row.action_link ? (
-                      <div className="actions-cell">
+                      <div className={ui.cellActions}>
                         <a href={row.action_link} target="_blank" rel="noreferrer">
                           <Button variant="secondary" size="sm">
                             Open
@@ -146,7 +150,7 @@ export function EmailLogsPage() {
                         </Button>
                       </div>
                     ) : (
-                      <span style={{ color: "var(--text-muted)" }}>—</span>
+                      <span className="text-slate-500">—</span>
                     )}
                   </td>
                 </tr>

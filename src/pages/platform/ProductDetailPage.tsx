@@ -4,6 +4,7 @@ import { ApiError } from "../../api/client";
 import { getProduct, listProductAccess, saveProduct } from "../../api/platform";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
+import { ui } from "../../lib/ui";
 import { titleCaseStatus } from "../../lib/utils";
 import type { Product, ProductAccessItem } from "../../types";
 
@@ -99,16 +100,16 @@ export function ProductDetailPage() {
 
   if (loading) {
     return (
-      <div className="page">
-        <div className="empty-state">Loading product…</div>
+      <div className={ui.page}>
+        <div className={ui.empty}>Loading product…</div>
       </div>
     );
   }
 
   if (!product) {
     return (
-      <div className="page">
-        {error ? <div className="error-banner">{error}</div> : null}
+      <div className={ui.page}>
+        {error ? <div className={ui.error}>{error}</div> : null}
         <Button variant="secondary" onClick={() => navigate("/platform/products")}>
           Back to products
         </Button>
@@ -117,18 +118,18 @@ export function ProductDetailPage() {
   }
 
   return (
-    <div className="page">
-      <div className="page-header">
+    <div className={ui.page}>
+      <div className={ui.pageHeader}>
         <div>
-          <div className="breadcrumb">
-            <Link to="/platform">Platform</Link>
+          <div className={ui.crumb}>
+            <Link to="/platform" className="hover:text-primary">Platform</Link>
             {" / "}
-            <Link to="/platform/products">Products</Link>
+            <Link to="/platform/products" className="hover:text-primary">Products</Link>
             {" / "}
             {product.name}
           </div>
-          <h1>{product.name}</h1>
-          <p>{product.description || "No description provided."}</p>
+          <h1 className={ui.h1}>{product.name}</h1>
+          <p className={ui.lead}>{product.description || "No description provided."}</p>
         </div>
         {editing ? (
           <Button variant="secondary" onClick={cancelEdit}>
@@ -139,41 +140,43 @@ export function ProductDetailPage() {
         )}
       </div>
 
-      {error ? <div className="error-banner">{error}</div> : null}
+      {error ? <div className={ui.error}>{error}</div> : null}
 
-      <div className="product-detail-grid">
-        <section className="panel">
-          <div className="panel-head">
-            <h2>Product information</h2>
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[1.4fr_1fr]">
+        <section className={ui.panel}>
+          <div className={ui.panelHead}>
+            <h2 className={ui.panelTitle}>Product information</h2>
           </div>
 
           {editing ? (
             <form onSubmit={onSave}>
-              <div className="form-grid-2">
-                <div className="form-field">
-                  <label htmlFor="edit-prod-name">Product name</label>
+              <div className={ui.grid2}>
+                <div className={ui.field}>
+                  <label className={ui.label} htmlFor="edit-prod-name">Product name</label>
                   <input
+                    className={ui.control}
                     id="edit-prod-name"
                     value={form.name}
                     onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                     required
                   />
                 </div>
-                <div className="form-field">
-                  <label htmlFor="edit-prod-code">Product code</label>
+                <div className={ui.field}>
+                  <label className={ui.label} htmlFor="edit-prod-code">Product code</label>
                   <input
                     id="edit-prod-code"
                     value={form.code}
                     readOnly
                     disabled
                     title="Product code cannot be changed"
-                    className="input-readonly"
+                    className={`${ui.control} cursor-not-allowed bg-slate-50 text-slate-500`}
                   />
                 </div>
               </div>
-              <div className="form-field">
-                <label htmlFor="edit-prod-status">Status</label>
+              <div className={ui.field}>
+                <label className={ui.label} htmlFor="edit-prod-status">Status</label>
                 <select
+                  className={ui.control}
                   id="edit-prod-status"
                   value={form.status}
                   onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
@@ -183,9 +186,10 @@ export function ProductDetailPage() {
                   <option value="inactive">Inactive</option>
                 </select>
               </div>
-              <div className="form-field">
-                <label htmlFor="edit-prod-desc">Short description</label>
+              <div className={ui.field}>
+                <label className={ui.label} htmlFor="edit-prod-desc">Short description</label>
                 <textarea
+                  className={ui.control}
                   id="edit-prod-desc"
                   rows={4}
                   value={form.description}
@@ -193,33 +197,33 @@ export function ProductDetailPage() {
                   placeholder="What this product does for an organization."
                 />
               </div>
-              <div className="form-card-actions">
+              <div className={ui.actions}>
                 <Button type="submit" disabled={saving}>
                   {saving ? "Saving…" : "Save changes"}
                 </Button>
               </div>
             </form>
           ) : (
-            <div className="product-info-fields">
-              <div className="form-grid-2">
-                <div className="info-field">
-                  <span className="info-label">Product Name</span>
-                  <strong>{product.name}</strong>
+            <div className="grid gap-4">
+              <div className={ui.grid2}>
+                <div className="grid gap-1.5">
+                  <span className="text-[0.72rem] font-bold uppercase tracking-wide text-slate-500">Product Name</span>
+                  <strong className="text-[0.98rem] font-semibold">{product.name}</strong>
                 </div>
-                <div className="info-field">
-                  <span className="info-label">Product Code</span>
-                  <strong className="mono-code">{product.code}</strong>
+                <div className="grid gap-1.5">
+                  <span className="text-[0.72rem] font-bold uppercase tracking-wide text-slate-500">Product Code</span>
+                  <strong className="font-mono text-[0.98rem] font-semibold tracking-wide">{product.code}</strong>
                 </div>
               </div>
-              <div className="info-field">
-                <span className="info-label">Status</span>
+              <div className="grid gap-1.5">
+                <span className="text-[0.72rem] font-bold uppercase tracking-wide text-slate-500">Status</span>
                 <Badge tone={product.status === "active" ? "success" : "danger"}>
                   {titleCaseStatus(product.status)}
                 </Badge>
               </div>
-              <div className="info-field">
-                <span className="info-label">Description</span>
-                <p className="info-description">
+              <div className="grid gap-1.5">
+                <span className="text-[0.72rem] font-bold uppercase tracking-wide text-slate-500">Description</span>
+                <p className="text-[0.92rem] leading-relaxed text-slate-600">
                   {product.description || "No description."}
                 </p>
               </div>
@@ -227,11 +231,11 @@ export function ProductDetailPage() {
           )}
         </section>
 
-        <section className="panel">
-          <div className="panel-head">
+        <section className={ui.panel}>
+          <div className={ui.panelHead}>
             <div>
-              <h2>Entitled organizations</h2>
-              <p>
+              <h2 className={ui.panelTitle}>Entitled organizations</h2>
+              <p className={ui.panelText}>
                 Entitlement only. Roles, client scope and permissions remain inside the product.
               </p>
             </div>
@@ -242,12 +246,15 @@ export function ProductDetailPage() {
             </Link>
           </div>
           {entitlements.length === 0 ? (
-            <div className="empty-state compact">No organizations entitled yet.</div>
+            <div className="px-3 py-6 text-center text-slate-500">No organizations entitled yet.</div>
           ) : (
-            <ul className="entitlement-list">
+            <ul className="grid gap-2.5">
               {entitlements.map((row) => (
-                <li key={`${row.organization_id}-${row.product_id}`}>
-                  <span>{row.organization_name}</span>
+                <li
+                  key={`${row.organization_id}-${row.product_id}`}
+                  className="flex items-center justify-between gap-3 rounded-[10px] border border-slate-200 bg-white px-3.5 py-3"
+                >
+                  <span className="text-[0.92rem] font-semibold">{row.organization_name}</span>
                   <Badge tone="success">Granted</Badge>
                 </li>
               ))}

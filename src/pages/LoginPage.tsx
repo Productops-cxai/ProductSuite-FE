@@ -6,6 +6,7 @@ import { AuthShell } from "../components/auth/AuthShell";
 import { Button } from "../components/ui/Button";
 import { PasswordInput } from "../components/ui/PasswordInput";
 import { useAuth } from "../context/AuthContext";
+import { ui } from "../lib/ui";
 import type { LoginNextStep } from "../types";
 
 function routeForNextStep(step: LoginNextStep): string {
@@ -66,16 +67,17 @@ export function LoginPage() {
       title="One platform. Multiple products. Clear access."
       subtitle="Sign in to manage entitlements or enter the products your organization has granted."
     >
-      <h2>Sign in</h2>
-      <p className="subtitle">Continue to your Platform Suite workspace.</p>
+      <h2 className="font-display mb-1 text-[1.6rem] font-bold tracking-tight">Sign in</h2>
+      <p className="mb-5 text-[0.95rem] text-slate-500">Continue to your Platform Suite workspace.</p>
 
-      {error ? <div className="error-banner">{error}</div> : null}
-      {info ? <div className="success-banner">{info}</div> : null}
+      {error ? <div className={ui.error}>{error}</div> : null}
+      {info ? <div className={ui.success}>{info}</div> : null}
 
       <form onSubmit={onSubmit}>
-        <div className="form-field">
-          <label htmlFor="email">Work Email</label>
+        <div className={ui.field}>
+          <label className={ui.label} htmlFor="email">Work Email</label>
           <input
+            className={ui.control}
             id="email"
             type="email"
             autoComplete="username"
@@ -93,16 +95,17 @@ export function LoginPage() {
           onChange={(e) => setPassword(e.target.value)}
           required
         />
-        <div className="form-row">
-          <label>
+        <div className="mb-4 flex items-center justify-between gap-3 text-sm">
+          <label className="flex items-center gap-2 text-slate-600">
             <input
               type="checkbox"
+              className="size-4 accent-primary"
               checked={keepSignedIn}
               onChange={(e) => setKeepSignedIn(e.target.checked)}
             />
             Keep me signed in
           </label>
-          <button type="button" className="link-btn" onClick={() => void onForgot()}>
+          <button type="button" className={ui.link} onClick={() => void onForgot()}>
             Forgot password?
           </button>
         </div>

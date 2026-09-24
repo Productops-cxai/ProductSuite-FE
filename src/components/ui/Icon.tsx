@@ -67,7 +67,7 @@ const alias: Record<string, string> = {
   mail: "mail",
 };
 
-export function Icon({ name, className = "nav-icon" }: Props) {
+export function Icon({ name, className = "size-4 shrink-0" }: Props) {
   const key = alias[name] || name;
   const content = paths[key] || paths.overview;
   return (

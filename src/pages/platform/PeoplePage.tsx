@@ -13,6 +13,7 @@ import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
 import { useAuth } from "../../context/AuthContext";
+import { ui } from "../../lib/ui";
 import type { Organization, Person, Product } from "../../types";
 
 export function PeoplePage() {
@@ -167,12 +168,12 @@ export function PeoplePage() {
   }
 
   return (
-    <div className="page">
-      <div className="page-header">
+    <div className={ui.page}>
+      <div className={ui.pageHeader}>
         <div>
-          <div className="breadcrumb">Platform / People</div>
-          <h1>People &amp; Product Assignment</h1>
-          <p>
+          <div className={ui.crumb}>Platform / People</div>
+          <h1 className={ui.h1}>People &amp; Product Assignment</h1>
+          <p className={ui.lead}>
             Add a person with their email and organization, then select which products they may
             open. Assignment controls product entry only — roles, client scope and permissions stay
             inside each product.
@@ -187,19 +188,20 @@ export function PeoplePage() {
         )}
       </div>
 
-      {error ? <div className="error-banner">{error}</div> : null}
-      {info ? <div className="success-banner">{info}</div> : null}
+      {error ? <div className={ui.error}>{error}</div> : null}
+      {info ? <div className={ui.success}>{info}</div> : null}
 
       {addOpen ? (
-        <section className="form-card">
-          <div className="form-card-head">
-            <h2>New person</h2>
+        <section className={ui.formCard}>
+          <div className="mb-[18px]">
+            <h2 className={ui.formTitle}>New person</h2>
           </div>
           <form onSubmit={onAddPerson}>
-            <div className="form-grid-2">
-              <div className="form-field">
-                <label htmlFor="person-name">Full Name</label>
+            <div className={ui.grid2}>
+              <div className={ui.field}>
+                <label className={ui.label} htmlFor="person-name">Full Name</label>
                 <input
+                  className={ui.control}
                   id="person-name"
                   value={form.full_name}
                   onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))}
@@ -207,9 +209,10 @@ export function PeoplePage() {
                   required
                 />
               </div>
-              <div className="form-field">
-                <label htmlFor="person-email">Work Email</label>
+              <div className={ui.field}>
+                <label className={ui.label} htmlFor="person-email">Work Email</label>
                 <input
+                  className={ui.control}
                   id="person-email"
                   type="email"
                   value={form.email}
@@ -219,9 +222,10 @@ export function PeoplePage() {
                 />
               </div>
             </div>
-            <div className="form-field">
-              <label htmlFor="person-org">Organization</label>
+            <div className={ui.field}>
+              <label className={ui.label} htmlFor="person-org">Organization</label>
               <select
+                className={ui.control}
                 id="person-org"
                 value={form.organization_id}
                 onChange={(e) => setForm((f) => ({ ...f, organization_id: e.target.value }))}
@@ -236,28 +240,34 @@ export function PeoplePage() {
                 ))}
               </select>
             </div>
-            <div className="form-field assign-products-field">
-              <div className="assign-label">ASSIGN PRODUCTS</div>
-              <div className="product-pick-grid">
+            <div className={ui.field}>
+              <div className="mb-2.5 text-[0.68rem] font-bold tracking-[0.08em] text-slate-500">ASSIGN PRODUCTS</div>
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                 {products.map((p) => {
                   const checked = form.product_ids.includes(p.id);
                   return (
-                    <label key={p.id} className={`product-pick${checked ? " selected" : ""}`}>
+                    <label
+                      key={p.id}
+                      className={`flex cursor-pointer items-center gap-3 rounded-[10px] border px-3.5 py-3 ${
+                        checked ? "border-blue-300 bg-blue-50" : "border-slate-200 bg-white hover:border-slate-300"
+                      }`}
+                    >
                       <input
+                        className="size-4 accent-primary"
                         type="checkbox"
                         checked={checked}
                         onChange={() => toggleFormProduct(p.id)}
                       />
                       <span>
-                        <strong>{p.name}</strong>
-                        <em>{p.code}</em>
+                        <strong className="block text-[0.92rem] font-semibold text-slate-900">{p.name}</strong>
+                        <em className="block text-[0.72rem] font-semibold not-italic tracking-wide text-slate-500">{p.code}</em>
                       </span>
                     </label>
                   );
                 })}
               </div>
             </div>
-            <div className="form-card-actions">
+            <div className={ui.actions}>
               <Button type="submit" disabled={saving}>
                 {saving ? "Saving…" : "Add person"}
               </Button>
@@ -269,20 +279,23 @@ export function PeoplePage() {
         </section>
       ) : null}
 
-      <div className="table-card">
-        <form className="toolbar in-card" onSubmit={onSearchSubmit}>
-          <div className="search-box">
-            <Icon name="search" />
+      <div className={ui.card}>
+        <form className={ui.toolbar} onSubmit={onSearchSubmit}>
+          <div className={ui.search}>
+            <span className={ui.searchIcon}>
+              <Icon name="search" />
+            </span>
             <input
+              className={ui.searchInput}
               placeholder="Search people or emails"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <label className="filter-field">
-            <span>Organization</span>
+          <label className={ui.filter}>
+            <span className="font-medium">Organization</span>
             <select
-              className="filter-select"
+              className={ui.select}
               value={orgFilter}
               onChange={(e) => setOrgFilter(e.target.value)}
               aria-label="Organization"
@@ -299,18 +312,18 @@ export function PeoplePage() {
         </form>
 
         {loading ? (
-          <div className="empty-state">Loading people…</div>
+          <div className={ui.empty}>Loading people…</div>
         ) : visible.length === 0 ? (
-          <div className="empty-state">No people found.</div>
+          <div className={ui.empty}>No people found.</div>
         ) : (
-          <table className="data">
+          <table className={ui.table}>
             <thead>
               <tr>
-                <th>PERSON</th>
-                <th>ORGANIZATION</th>
-                <th>STATUS</th>
-                <th>ASSIGNED PRODUCTS</th>
-                <th>ACTIONS</th>
+                <th className={ui.th}>PERSON</th>
+                <th className={ui.th}>ORGANIZATION</th>
+                <th className={ui.th}>STATUS</th>
+                <th className={ui.th}>ASSIGNED PRODUCTS</th>
+                <th className={ui.th}>ACTIONS</th>
               </tr>
             </thead>
             <tbody>
@@ -318,22 +331,22 @@ export function PeoplePage() {
                 const assignedIds = new Set(person.assigned_products.map((p) => p.id));
                 return (
                   <tr key={person.id}>
-                    <td>
-                      <div className="person-cell">
-                        <strong>{person.full_name}</strong>
-                        <span>{person.email}</span>
+                    <td className={ui.td}>
+                      <div>
+                        <strong className={ui.person}>{person.full_name}</strong>
+                        <span className={ui.personSub}>{person.email}</span>
                       </div>
                     </td>
-                    <td>{person.organization_name}</td>
-                    <td>
+                    <td className={ui.td}>{person.organization_name}</td>
+                    <td className={ui.td}>
                       <Badge tone={person.status === "active" ? "success" : "danger"}>
                         {person.status}
                       </Badge>
                     </td>
-                    <td>
-                      <div className="badge-stack">
+                    <td className={ui.td}>
+                      <div className="flex flex-wrap gap-1.5">
                         {person.assigned_products.length === 0 ? (
-                          <span style={{ color: "var(--text-muted)" }}>—</span>
+                          <span className="text-slate-500">—</span>
                         ) : (
                           person.assigned_products.map((ap) => (
                             <Badge key={ap.id} tone="success">
@@ -343,8 +356,8 @@ export function PeoplePage() {
                         )}
                       </div>
                     </td>
-                    <td>
-                      <div className="actions-cell">
+                    <td className={ui.td}>
+                      <div className={ui.cellActions}>
                         {person.status !== "active" ? (
                           <Button
                             variant="secondary"

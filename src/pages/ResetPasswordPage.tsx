@@ -5,6 +5,7 @@ import { ApiError } from "../api/client";
 import { AuthShell } from "../components/auth/AuthShell";
 import { Button } from "../components/ui/Button";
 import { PasswordInput } from "../components/ui/PasswordInput";
+import { ui } from "../lib/ui";
 
 export function ResetPasswordPage() {
   const [params] = useSearchParams();
@@ -47,11 +48,11 @@ export function ResetPasswordPage() {
       subtitle="Use your reset link to secure your Platform Suite account, then continue to sign in."
       eyebrow="Password reset"
     >
-      <h2>Reset password</h2>
-      <p className="subtitle">Enter a new password to continue signing in.</p>
+      <h2 className="font-display mb-1 text-[1.6rem] font-bold tracking-tight">Reset password</h2>
+      <p className="mb-5 text-[0.95rem] text-slate-500">Enter a new password to continue signing in.</p>
 
-      {error ? <div className="error-banner">{error}</div> : null}
-      {info ? <div className="success-banner">{info}</div> : null}
+      {error ? <div className={ui.error}>{error}</div> : null}
+      {info ? <div className={ui.success}>{info}</div> : null}
 
       <form onSubmit={onSubmit}>
         <PasswordInput
@@ -77,8 +78,8 @@ export function ResetPasswordPage() {
         </Button>
       </form>
 
-      <p className="auth-footer-link">
-        <Link to="/login">Back to sign in</Link>
+      <p className="mt-4 text-sm">
+        <Link className={ui.link} to="/login">Back to sign in</Link>
       </p>
     </AuthShell>
   );

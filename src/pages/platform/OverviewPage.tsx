@@ -4,6 +4,7 @@ import { ApiError } from "../../api/client";
 import { getOverview } from "../../api/platform";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
+import { ui } from "../../lib/ui";
 import { titleCaseStatus } from "../../lib/utils";
 import type { OverviewResponse } from "../../types";
 
@@ -20,53 +21,53 @@ export function OverviewPage() {
   }, []);
 
   return (
-    <div className="page">
-      <div className="page-header">
+    <div className={ui.page}>
+      <div className={ui.pageHeader}>
         <div>
-          <h1>Platform Overview</h1>
-          <p>
+          <h1 className={ui.h1}>Platform Overview</h1>
+          <p className={ui.lead}>
             Products registered on the platform and which organizations are entitled to them.
             Product roles, scope and permissions stay inside each product.
           </p>
         </div>
       </div>
 
-      {error ? <div className="error-banner">{error}</div> : null}
-      {loading ? <div className="empty-state">Loading overview…</div> : null}
+      {error ? <div className={ui.error}>{error}</div> : null}
+      {loading ? <div className={ui.empty}>Loading overview…</div> : null}
 
       {data ? (
         <>
-          <div className="stats-row">
-            <div className="stat-card">
-              <div className="label">REGISTERED PRODUCTS</div>
-              <div className="value">{data.registered_products_count}</div>
+          <div className={ui.stats}>
+            <div className={ui.stat}>
+              <div className={ui.kicker}>REGISTERED PRODUCTS</div>
+              <div className={ui.statValue}>{data.registered_products_count}</div>
             </div>
-            <div className="stat-card highlight">
-              <div className="label">ACTIVE PRODUCTS</div>
-              <div className="value">{data.active_products_count}</div>
+            <div className={ui.statOn}>
+              <div className={ui.kicker}>ACTIVE PRODUCTS</div>
+              <div className={ui.statValueOn}>{data.active_products_count}</div>
             </div>
-            <div className="stat-card">
-              <div className="label">ORGANIZATIONS WITH ACCESS</div>
-              <div className="value">{data.organizations_with_access_label}</div>
+            <div className={ui.stat}>
+              <div className={ui.kicker}>ORGANIZATIONS WITH ACCESS</div>
+              <div className={ui.statValue}>{data.organizations_with_access_label}</div>
             </div>
           </div>
 
-          <div className="split-row">
-            <section className="panel">
-              <div className="panel-head">
+          <div className={ui.split}>
+            <section className={ui.panel}>
+              <div className={ui.panelHead}>
                 <div>
-                  <h2>Products</h2>
-                  <p>Register a product now so it can be entitled to organizations later.</p>
+                  <h2 className={ui.panelTitle}>Products</h2>
+                  <p className={ui.panelText}>Register a product now so it can be entitled to organizations later.</p>
                 </div>
                 <Link to="/platform/products">
                   <Button variant="secondary">Manage products</Button>
                 </Link>
               </div>
               {data.products_summary.map((p) => (
-                <div className="list-row" key={p.id}>
+                <div className={ui.row} key={p.id}>
                   <div>
-                    <span className="title">{p.name}</span>
-                    <span className="meta">· {p.code}</span>
+                    <span className={ui.rowTitle}>{p.name}</span>
+                    <span className={ui.rowMeta}>· {p.code}</span>
                   </div>
                   <Badge tone={p.status === "active" ? "success" : "danger"}>
                     {titleCaseStatus(p.status)}
@@ -75,11 +76,11 @@ export function OverviewPage() {
               ))}
             </section>
 
-            <section className="panel">
-              <div className="panel-head">
+            <section className={ui.panel}>
+              <div className={ui.panelHead}>
                 <div>
-                  <h2>Product Access</h2>
-                  <p>
+                  <h2 className={ui.panelTitle}>Product Access</h2>
+                  <p className={ui.panelText}>
                     Entitlement only — granting a product does not assign any in-product role or
                     client scope.
                   </p>
@@ -89,8 +90,8 @@ export function OverviewPage() {
                 </Link>
               </div>
               {data.org_access_summary.map((org) => (
-                <div className="list-row" key={org.id}>
-                  <div className="title">{org.name}</div>
+                <div className={ui.row} key={org.id}>
+                  <div className={ui.rowTitle}>{org.name}</div>
                   <Badge tone={org.has_access ? "success" : "danger"}>
                     {org.has_access ? "Has access" : "No access"}
                   </Badge>

@@ -18,7 +18,7 @@ import type { LoginNextStep } from "./types";
 
 function HomeRedirect() {
   const { loading, user, nextStep, isSuperAdmin } = useAuth();
-  if (loading) return <div className="app-loading">Loading…</div>;
+  if (loading) return <div className="grid min-h-screen place-items-center text-slate-500">Loading…</div>;
   if (!user) return <Navigate to="/login" replace />;
   return <Navigate to={routeFor(nextStep, isSuperAdmin)} replace />;
 }

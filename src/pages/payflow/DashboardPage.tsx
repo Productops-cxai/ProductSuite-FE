@@ -3,26 +3,26 @@ const KPIS = [
   {
     label: "Accounts Under Collection",
     value: "26,035",
-    hint: "+3.1% vs previous period",
+    hint: "↑ 3.1% vs previous period",
     tone: "up" as const,
   },
   {
     label: "Active Collection Cases",
     value: "4,440",
-    hint: "+1.6% vs previous period",
-    tone: "up" as const,
+    hint: "↓ 1.8% vs previous period",
+    tone: "down" as const,
   },
   {
     label: "Amount Recovered",
     value: "$2.48M",
-    hint: "+8.4% vs previous period",
+    hint: "↑ 8.4% vs previous period",
     tone: "up" as const,
     highlight: true,
   },
   {
     label: "Human Reviews Pending",
     value: "5",
-    hint: "— 2 high priority · open queue",
+    hint: "→ 2 high priority · open queue",
     tone: "muted" as const,
   },
 ];
@@ -115,12 +115,12 @@ const CLIENTS_ATTENTION = [
   {
     name: "Canadian Tire",
     detail: "Promise-to-pay follow-ups overdue on 38 accounts",
-    badge: "8 reviews",
+    badge: "9 reviews",
     tone: "amber" as const,
   },
   {
     name: "Northstar Utilities",
-    detail: "SMS delivery rate down 5% week over week",
+    detail: "SMS delivery rate down 6% week over week",
     badge: "5 reviews",
     tone: "tan" as const,
   },
@@ -131,42 +131,64 @@ const ACTIVITY = [
   { text: "Dispute flagged on Priya Nair (CT-22540), routed to human review", when: "48 min ago" },
   { text: "Partial payment of $1,150 received on PP-10482", when: "2 hours ago" },
   { text: "Early stage reminder batch sent to 412 accounts", when: "3 hours ago" },
-  { text: "Installment of $500 received on CT-21877", when: "5 hours ago" },
+  { text: "Installment of $1,100 received on CT-21877", when: "5 hours ago" },
   { text: "Promise-to-pay follow-up SMS sent to 186 accounts", when: "Yesterday" },
 ];
 
+const chip =
+  "inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[0.84rem] text-slate-500";
+const chipSelect =
+  "cursor-pointer border-0 bg-transparent p-0 font-semibold text-slate-900 outline-none";
+const panel = "mb-4 rounded-[14px] border border-slate-200 bg-white px-5 py-[18px] shadow-card";
+const panelTitle = "font-display text-[1.08rem] font-bold tracking-tight text-slate-900";
+
+const pillTone: Record<string, string> = {
+  peach: "bg-orange-50 text-orange-900",
+  amber: "bg-amber-50 text-amber-800",
+  coral: "bg-rose-50 text-rose-700",
+  rose: "bg-pink-50 text-pink-700",
+};
+
+const badgeTone: Record<string, string> = {
+  rose: "bg-pink-50 text-pink-700",
+  amber: "bg-orange-50 text-orange-800",
+  tan: "bg-amber-100 text-amber-800",
+};
+
 export function PayFlowDashboardPage() {
   return (
-    <div className="pf-page">
-      <div className="pf-page-header">
-        <div>
-          <h1>Operations Dashboard</h1>
-          <p>Operations Admin view · 9 sample accounts loaded</p>
-        </div>
+    <div className="px-8 pb-12 pt-7">
+      <div className="mb-5">
+        <h1 className="font-display text-[1.85rem] font-bold leading-tight tracking-tight text-slate-900">
+          Operations Dashboard
+        </h1>
+        <p className="mt-1 text-sm text-slate-500">
+          Operations Admin view · 9 sample accounts loaded
+        </p>
       </div>
 
-      <div className="pf-filters">
-        <label className="pf-chip-filter">
+      <div className="mb-4 flex flex-wrap gap-2.5">
+        <label className={chip}>
           <span>Date</span>
-          <select defaultValue="today" aria-label="Date">
+          <select className={chipSelect} defaultValue="today" aria-label="Date">
             <option value="today">Today</option>
             <option value="7d">Last 7 days</option>
             <option value="30d">Last 30 days</option>
             <option value="qtd">Quarter to date</option>
           </select>
         </label>
-        <label className="pf-chip-filter">
+        <label className={chip}>
           <span>Client</span>
-          <select defaultValue="all" aria-label="Client">
+          <select className={chipSelect} defaultValue="all" aria-label="Client">
             <option value="all">All Clients</option>
             <option value="paypal">PayPal</option>
             <option value="ct">Canadian Tire</option>
             <option value="northstar">Northstar Utilities</option>
           </select>
         </label>
-        <label className="pf-chip-filter">
+        <label className={chip}>
           <span>Channel</span>
-          <select defaultValue="all" aria-label="Channel">
+          <select className={chipSelect} defaultValue="all" aria-label="Channel">
             <option value="all">All Channels</option>
             <option value="email">Email</option>
             <option value="sms">SMS</option>
@@ -176,157 +198,187 @@ export function PayFlowDashboardPage() {
         </label>
       </div>
 
-      <div className="pf-kpi-row">
+      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {KPIS.map((k) => (
-          <div className={`pf-kpi-card${k.highlight ? " highlight" : ""}`} key={k.label}>
-            <div className="pf-kpi-label">{k.label}</div>
-            <div className="pf-kpi-value">{k.value}</div>
-            {k.hint ? (
-              <div
-                className={`pf-kpi-hint${
-                  k.tone === "up" ? " up" : k.tone === "muted" ? " muted" : ""
-                }`}
-              >
-                {k.hint}
-              </div>
-            ) : (
-              <div className="pf-kpi-hint spacer" />
-            )}
+          <div
+            className={`rounded-xl border bg-white px-4 py-3.5 shadow-card ${
+              k.highlight ? "border-blue-300 bg-blue-50" : "border-slate-200"
+            }`}
+            key={k.label}
+          >
+            <div className="mb-2 text-[0.68rem] font-semibold uppercase leading-snug tracking-[0.04em] text-slate-500">
+              {k.label}
+            </div>
+            <div
+              className={`font-display text-[1.7rem] font-bold leading-none tracking-tight ${
+                k.highlight ? "text-blue-600" : "text-slate-900"
+              }`}
+            >
+              {k.value}
+            </div>
+            <div
+              className={`mt-2 min-h-4 text-xs font-semibold ${
+                k.tone === "up" ? "text-emerald-600" : k.tone === "down" ? "text-red-500" : "text-slate-400"
+              }`}
+            >
+              {k.hint || "\u00a0"}
+            </div>
           </div>
         ))}
       </div>
 
-      <section className="pf-panel">
-        <div className="pf-panel-head">
-          <div>
-            <h2>Attention Required</h2>
-            <p>Open items that need an operations decision or follow-up.</p>
-          </div>
+      <section className={panel}>
+        <div className="mb-3.5">
+          <h2 className={panelTitle}>Attention Required</h2>
+          <p className="mt-1 text-[0.88rem] text-slate-500">
+            Open items that need an operations decision or follow-up.
+          </p>
         </div>
-        <div className="pf-attention-pills">
+        <div className="flex flex-wrap gap-2.5">
           {ATTENTION.map((a) => (
-            <button type="button" className={`pf-attention-pill ${a.tone}`} key={a.label}>
+            <button
+              type="button"
+              className={`rounded-full px-3.5 py-2 text-[0.84rem] font-semibold ${pillTone[a.tone]}`}
+              key={a.label}
+            >
               {a.label}
             </button>
           ))}
         </div>
       </section>
 
-      <section className="pf-panel">
-        <div className="pf-panel-head">
-          <div>
-            <h2>Communication to Payment Performance</h2>
-            <p>Conversion from outreach to completed payment.</p>
-          </div>
+      <section className={panel}>
+        <div className="mb-3.5">
+          <h2 className={panelTitle}>Communication to Payment Performance</h2>
+          <p className="mt-1 text-[0.88rem] text-slate-500">
+            Conversion from outreach to completed payment.
+          </p>
         </div>
-        <div className="pf-funnel-filters">
-          <label className="pf-chip-filter sm">
+        <div className="mb-3.5 flex flex-wrap gap-2">
+          <label className={`${chip} px-2.5 py-1 text-[0.8rem]`}>
             <span>Client</span>
-            <select defaultValue="all" aria-label="Funnel client">
+            <select className={chipSelect} defaultValue="all" aria-label="Funnel client">
               <option value="all">All Clients</option>
               <option value="paypal">PayPal</option>
               <option value="ct">Canadian Tire</option>
             </select>
           </label>
-          <label className="pf-chip-filter sm">
+          <label className={`${chip} px-2.5 py-1 text-[0.8rem]`}>
             <span>Date</span>
-            <select defaultValue="today" aria-label="Funnel date">
+            <select className={chipSelect} defaultValue="today" aria-label="Funnel date">
               <option value="today">Today</option>
               <option value="7d">Last 7 days</option>
             </select>
           </label>
-          <label className="pf-chip-filter sm">
+          <label className={`${chip} px-2.5 py-1 text-[0.8rem]`}>
             <span>Channel</span>
-            <select defaultValue="all" aria-label="Funnel channel">
+            <select className={chipSelect} defaultValue="all" aria-label="Funnel channel">
               <option value="all">All Channels</option>
               <option value="email">Email</option>
               <option value="sms">SMS</option>
             </select>
           </label>
-          <span className="pf-chip-soon">Channel: WhatsApp · soon</span>
-          <label className="pf-chip-filter sm">
+          <span className="inline-flex items-center rounded-full border border-dashed border-slate-300 bg-slate-50 px-3 py-1 text-[0.8rem] text-slate-400">
+            Channel: WhatsApp · soon
+          </span>
+          <label className={`${chip} px-2.5 py-1 text-[0.8rem]`}>
             <span>Workflow</span>
-            <select defaultValue="all" aria-label="Funnel workflow">
+            <select className={chipSelect} defaultValue="all" aria-label="Funnel workflow">
               <option value="all">All Workflows</option>
-              <option value="early">Early stage</option>
-              <option value="ptp">Promise to pay</option>
+              <option value="early">Early Stage Collection</option>
+              <option value="reminder">Progressive Reminder</option>
+              <option value="ptp">Promise-to-Pay Follow-Up</option>
+              <option value="plan">Payment Plan Monitoring</option>
+              <option value="escalated">Escalated Collection</option>
             </select>
           </label>
         </div>
-        <div className="pf-funnel">
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-6">
           {FUNNEL.map((step) => (
-            <div className={`pf-funnel-card${step.paid ? " paid" : ""}`} key={step.label}>
-              <div className="pf-funnel-step">
-                <span>{step.step}</span> {step.label}
+            <div className="rounded-xl border border-slate-200 bg-white px-2.5 py-3" key={step.label}>
+              <div className="mb-1.5 text-[0.68rem] font-semibold text-slate-500">
+                <span className="mr-1 font-bold text-slate-400">{step.step}</span>
+                {step.label}
               </div>
-              <div className="pf-funnel-value">{step.value}</div>
+              <div className="font-display text-[1.35rem] font-bold leading-none tracking-tight text-slate-900">
+                {step.value}
+              </div>
               {step.rate ? (
-                <div className="pf-funnel-meta">
-                  <strong>{step.rate}</strong>
-                  <span>{step.note}</span>
-                  {step.drop ? <em>{step.drop}</em> : null}
+                <div className="mt-2 flex items-baseline justify-between gap-1 text-[11px] leading-none text-slate-400">
+                  <span>
+                    <strong className="font-bold text-emerald-600">{step.rate}</strong>
+                    <span className="ml-1">{step.note}</span>
+                  </span>
+                  {step.drop ? <em className="shrink-0 font-medium not-italic">{step.drop}</em> : null}
                 </div>
               ) : (
-                <div className="pf-funnel-meta muted">{step.note}</div>
+                <div className="mt-2 text-[11px] leading-none text-slate-400">{step.note}</div>
               )}
-              <div className="pf-funnel-bar">
-                <span style={{ width: `${step.bar}%` }} />
+              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                <span
+                  className={`block h-full rounded-full ${
+                    step.paid ? "bg-emerald-500" : step.bar >= 100 ? "bg-slate-800" : "bg-blue-500"
+                  }`}
+                  style={{ width: `${step.bar}%` }}
+                />
               </div>
             </div>
           ))}
         </div>
       </section>
 
-      <section className="pf-panel">
-        <div className="pf-panel-head">
-          <div>
-            <h2>Payment Outcomes</h2>
-            <p>Outcomes received back from the customer payment experience.</p>
-          </div>
+      <section className={panel}>
+        <div className="mb-3.5">
+          <h2 className={panelTitle}>Payment Outcomes</h2>
+          <p className="mt-1 text-[0.88rem] text-slate-500">
+            Outcomes received back from the customer payment experience.
+          </p>
         </div>
-        <div className="pf-outcome-row">
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-5">
           {OUTCOMES.map((o) => (
-            <div className="pf-outcome-card" key={o.label}>
-              <div className="pf-outcome-label">{o.label}</div>
-              <div className="pf-outcome-value">{o.value}</div>
+            <div className="rounded-xl border border-slate-200 bg-white px-3.5 py-3.5" key={o.label}>
+              <div className="mb-2 text-[0.72rem] font-medium text-slate-500">{o.label}</div>
+              <div className="font-display text-[1.45rem] font-bold leading-none tracking-tight text-slate-900">
+                {o.value}
+              </div>
             </div>
           ))}
         </div>
       </section>
 
-      <div className="pf-split">
-        <section className="pf-panel">
-          <div className="pf-panel-head">
-            <div>
-              <h2>Clients Needing Attention</h2>
-              <p>Clients with open reviews or operational risk signals.</p>
-            </div>
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+        <section className="rounded-[14px] border border-slate-200 bg-white px-5 py-[18px] shadow-card">
+          <div className="mb-3.5">
+            <h2 className={panelTitle}>Clients Needing Attention</h2>
+            <p className="mt-1 text-[0.88rem] text-slate-500">
+              Clients with open reviews or operational risk signals.
+            </p>
           </div>
-          <ul className="pf-client-list">
+          <ul>
             {CLIENTS_ATTENTION.map((c) => (
-              <li key={c.name}>
+              <li key={c.name} className="flex items-start justify-between gap-3 border-t border-slate-100 py-3.5 first:border-t-0 first:pt-0.5">
                 <div>
-                  <strong>{c.name}</strong>
-                  <span>{c.detail}</span>
+                  <strong className="mb-1 block text-[0.92rem] text-slate-900">{c.name}</strong>
+                  <span className="block text-[0.84rem] leading-snug text-slate-500">{c.detail}</span>
                 </div>
-                <em className={`pf-client-badge ${c.tone}`}>{c.badge}</em>
+                <em className={`shrink-0 rounded-full px-2.5 py-1 text-[0.74rem] font-bold not-italic ${badgeTone[c.tone]}`}>
+                  {c.badge}
+                </em>
               </li>
             ))}
           </ul>
         </section>
 
-        <section className="pf-panel">
-          <div className="pf-panel-head">
-            <div>
-              <h2>Recent Operational Activity</h2>
-              <p>Illustrative operational events.</p>
-            </div>
+        <section className="rounded-[14px] border border-slate-200 bg-white px-5 py-[18px] shadow-card">
+          <div className="mb-3.5">
+            <h2 className={panelTitle}>Recent Operational Activity</h2>
+            <p className="mt-1 text-[0.88rem] text-slate-500">Illustrative operational events.</p>
           </div>
-          <ul className="pf-activity">
+          <ul>
             {ACTIVITY.map((a) => (
-              <li key={a.text}>
-                <span>{a.text}</span>
-                <time>{a.when}</time>
+              <li key={a.text} className="flex items-start justify-between gap-4 border-t border-slate-100 py-3 first:border-t-0 first:pt-0.5">
+                <span className="text-[0.9rem] leading-snug text-slate-900">{a.text}</span>
+                <time className="shrink-0 whitespace-nowrap text-[0.78rem] text-slate-400">{a.when}</time>
               </li>
             ))}
           </ul>

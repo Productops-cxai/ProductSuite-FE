@@ -1,26 +1,29 @@
 import { useState, type InputHTMLAttributes } from "react";
+import { ui } from "../../lib/ui";
 
 type Props = Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & {
   label: string;
 };
 
-export function PasswordInput({ label, id, className, ...rest }: Props) {
+export function PasswordInput({ label, id, className = "", ...rest }: Props) {
   const [visible, setVisible] = useState(false);
   const inputId = id || rest.name || "password";
 
   return (
-    <div className="form-field">
-      <label htmlFor={inputId}>{label}</label>
-      <div className="password-input-wrap">
+    <div className={ui.field}>
+      <label className={ui.label} htmlFor={inputId}>
+        {label}
+      </label>
+      <div className="relative">
         <input
           {...rest}
           id={inputId}
           type={visible ? "text" : "password"}
-          className={className}
+          className={`${ui.control} pr-10 ${className}`}
         />
         <button
           type="button"
-          className="password-eye-btn"
+          className="absolute right-2 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900"
           onClick={() => setVisible((v) => !v)}
           aria-label={visible ? "Hide password" : "Show password"}
           tabIndex={-1}

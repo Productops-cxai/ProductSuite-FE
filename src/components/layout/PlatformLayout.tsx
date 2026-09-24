@@ -106,7 +106,7 @@ export function PlatformLayout() {
       });
   }, [isSuperAdmin, user?.email]);
 
-  if (loading) return <div className="app-loading">Loading…</div>;
+  if (loading) return <div className="grid min-h-screen place-items-center text-slate-500">Loading…</div>;
   if (!user) return <Navigate to="/login" replace />;
   if (!isSuperAdmin) {
     return (
@@ -119,9 +119,9 @@ export function PlatformLayout() {
   }
 
   return (
-    <div className="shell">
+    <div className="grid min-h-screen grid-cols-[248px_1fr] bg-bg">
       <Sidebar sections={sections} />
-      <div className="shell-main">
+      <div className="flex min-w-0 flex-col">
         <TopBar />
         <Outlet />
       </div>

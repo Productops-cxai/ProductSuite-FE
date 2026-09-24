@@ -61,7 +61,7 @@ export function RequireProductAccess({ productCode, productLabel, children }: Pr
   }, [user?.id, loading, productCode, productLabel]);
 
   if (loading || status === "checking") {
-    return <div className="app-loading">Checking product access…</div>;
+    return <div className="grid min-h-screen place-items-center text-slate-500">Checking product access…</div>;
   }
   if (!user) return <Navigate to="/login" replace />;
   if (status === "denied") {

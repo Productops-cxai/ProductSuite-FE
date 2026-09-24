@@ -89,10 +89,17 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
   }
 
   const triggerClass =
-    variant === "platform" ? "role-pill role-pill-switch" : "pf-switcher-btn";
+    variant === "platform"
+      ? "inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1.5 text-[0.82rem] font-semibold text-blue-700"
+      : "inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2.5 py-1.5 text-[0.88rem] font-semibold text-slate-900 hover:bg-slate-50";
+
+  const itemClass = (active: boolean) =>
+    `flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-[0.9rem] ${
+      active ? "bg-blue-50 font-semibold text-blue-700" : "text-slate-900 hover:bg-slate-50"
+    }`;
 
   return (
-    <div className={`pf-switcher${variant === "platform" ? " platform-variant" : ""}`} ref={ref}>
+    <div className="relative" ref={ref}>
       <button
         type="button"
         className={triggerClass}
@@ -102,20 +109,20 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
       >
         {variant === "platform" ? (
           <>
-            <span className="dot" />
+            <span className="size-1.5 rounded-full bg-primary" />
             Platform Super Admin
-            <span className="pf-switcher-caret">▾</span>
+            <span className="text-blue-500">▾</span>
           </>
         ) : (
           <>
-            <span className="pf-switcher-grid" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-              <span />
+            <span className="grid size-3.5 grid-cols-2 gap-0.5" aria-hidden="true">
+              <span className="rounded-[1.5px] bg-slate-500" />
+              <span className="rounded-[1.5px] bg-slate-500" />
+              <span className="rounded-[1.5px] bg-slate-500" />
+              <span className="rounded-[1.5px] bg-slate-500" />
             </span>
             <span>{currentProduct?.name || String(current)}</span>
-            <span className="pf-switcher-carets" aria-hidden="true">
+            <span className="ml-0.5 text-slate-400" aria-hidden="true">
               <svg viewBox="0 0 12 16" width="10" height="14" fill="currentColor">
                 <path d="M6 2 L10 7 H2 Z" />
                 <path d="M6 14 L2 9 H10 Z" />
@@ -126,50 +133,52 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
       </button>
 
       {open ? (
-        <div className="pf-switcher-menu" role="menu">
-          <div className="pf-switcher-label">Open product</div>
+        <div
+          className="absolute right-0 top-[calc(100%+8px)] z-40 w-[220px] rounded-xl border border-slate-200 bg-white p-2 shadow-[0_12px_32px_rgba(15,23,42,0.12)]"
+          role="menu"
+        >
+          <div className="px-2 py-1.5 text-[0.7rem] font-bold tracking-[0.06em] text-slate-500">
+            Open product
+          </div>
           {products.length === 0 ? (
-            <div className="pf-switcher-empty">No products available</div>
+            <div className="px-2.5 py-2 text-[0.82rem] text-slate-500">No products available</div>
           ) : (
-            products.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                className={`pf-switcher-item${
-                  !isPlatform && p.code.toUpperCase() === String(current).toUpperCase()
-                    ? " active"
-                    : ""
-                }`}
-                disabled={busy === p.code}
-                onClick={() => void switchToProduct(p.code)}
-              >
-                <span>{p.name}</span>
-                {!isPlatform && p.code.toUpperCase() === String(current).toUpperCase() ? (
-                  <span className="pf-switcher-active">Active</span>
-                ) : null}
-              </button>
-            ))
+            products.map((p) => {
+              const active = !isPlatform && p.code.toUpperCase() === String(current).toUpperCase();
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  className={itemClass(active)}
+                  disabled={busy === p.code}
+                  onClick={() => void switchToProduct(p.code)}
+                >
+                  <span>{p.name}</span>
+                  {active ? (
+                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[0.72rem] font-bold text-emerald-600">
+                      Active
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })
           )}
-          {error ? <div className="pf-switcher-error">{error}</div> : null}
-          <div className="pf-switcher-sep" />
+          {error ? <div className="px-2.5 py-2 text-[0.82rem] text-red-700">{error}</div> : null}
+          <div className="mx-1 my-1.5 h-px bg-slate-200" />
           {isSuperAdmin ? (
-            <button
-              type="button"
-              className={`pf-switcher-item${isPlatform ? " active" : ""}`}
-              onClick={goPlatform}
-            >
+            <button type="button" className={itemClass(isPlatform)} onClick={goPlatform}>
               <span>Platform administration</span>
-              {isPlatform ? <span className="pf-switcher-check">✓</span> : null}
+              {isPlatform ? <span className="text-blue-600">✓</span> : null}
             </button>
           ) : (
-            <button type="button" className="pf-switcher-item" onClick={goLauncher}>
+            <button type="button" className={itemClass(false)} onClick={goLauncher}>
               All products…
             </button>
           )}
-          <div className="pf-switcher-sep" />
+          <div className="mx-1 my-1.5 h-px bg-slate-200" />
           <button
             type="button"
-            className="pf-switcher-item"
+            className={itemClass(false)}
             onClick={() => {
               setOpen(false);
               void logout();

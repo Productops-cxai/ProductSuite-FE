@@ -4,6 +4,7 @@ import { ApiError } from "../api/client";
 import { enterProduct, myProducts } from "../api/platform";
 import { Button } from "../components/ui/Button";
 import { useAuth } from "../context/AuthContext";
+import { ui } from "../lib/ui";
 import type { Product } from "../types";
 
 function productHome(code: string): string {
@@ -31,7 +32,7 @@ export function ProductLauncherPage() {
       .catch((err) => setError(err instanceof ApiError ? err.detail : "Failed to load products"));
   }, [user]);
 
-  if (loading) return <div className="app-loading">Loading…</div>;
+  if (loading) return <div className={ui.loading}>Loading…</div>;
   if (!user) return <Navigate to="/login" replace />;
 
   async function onEnter(code: string) {
@@ -50,61 +51,63 @@ export function ProductLauncherPage() {
   const orgLabel = user.organization_name || "your organization";
 
   return (
-    <div className="launcher-page">
-      <header className="launcher-top">
-        <div className="launcher-brand wordmark">
-          <img src="/assets/payflow-mark.png" alt="" className="launcher-mark" />
+    <div className="min-h-screen bg-bg">
+      <header className="flex items-center justify-between px-8 py-5">
+        <div className="flex items-center gap-3">
+          <img src="/assets/payflow-mark.png" alt="" className="h-9 w-auto" />
           <div>
-            <strong>PayFlow</strong>
-            <span>AUTOMATE. ENGAGE. RECOVER.</span>
+            <strong className="block text-[1.05rem] font-bold leading-tight text-primary">PayFlow</strong>
+            <span className="block text-[0.62rem] font-semibold tracking-[0.08em] text-slate-400">
+              AUTOMATE. ENGAGE. RECOVER.
+            </span>
           </div>
         </div>
-        <div className="launcher-top-actions">
+        <div className="flex items-center gap-3">
           {isSuperAdmin ? (
-            <Link to="/platform" className="btn btn-secondary btn-sm">
+            <Link to="/platform" className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[0.82rem] font-semibold text-slate-700 hover:bg-slate-50">
               Platform administration
             </Link>
           ) : null}
-          <button type="button" className="link-btn launcher-signout" onClick={() => void logout()}>
+          <button type="button" className={ui.link} onClick={() => void logout()}>
             Sign out
           </button>
         </div>
       </header>
 
-      <main className="launcher-main">
-        <p className="launcher-kicker">PLATFORM ACCESS</p>
-        <h1>Select a product</h1>
-        <p className="launcher-lead">
+      <main className="mx-auto w-full max-w-5xl px-8 pb-16">
+        <p className="mb-2 text-[0.72rem] font-bold tracking-[0.12em] text-slate-400">PLATFORM ACCESS</p>
+        <h1 className="font-display text-[2rem] font-bold tracking-tight text-slate-900">Select a product</h1>
+        <p className="mt-2 max-w-[62ch] text-[0.95rem] leading-relaxed text-slate-500">
           Products {orgLabel} is entitled to access. Roles, scope and permissions are managed inside
           each product.
         </p>
-        <p className="launcher-user">
-          Signed in as <strong>{user.full_name}</strong> · {user.email}
+        <p className="mt-3 text-sm text-slate-500">
+          Signed in as <strong className="text-slate-800">{user.full_name}</strong> · {user.email}
         </p>
 
-        {error ? <div className="error-banner">{error}</div> : null}
+        {error ? <div className={`${ui.error} mt-4`}>{error}</div> : null}
 
         {products.length === 0 ? (
-          <div className="empty-state">No entitled products yet.</div>
+          <div className={ui.empty}>No entitled products yet.</div>
         ) : (
-          <div className="product-cards">
+          <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-2">
             {products.map((p) => {
               const payflow = isPayFlow(p);
               return (
-                <article className="product-card" key={p.id}>
-                  <div className="product-card-head">
+                <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-card" key={p.id}>
+                  <div className="mb-4 flex items-start justify-between">
                     <img
-                      className="product-card-mark"
+                      className="size-9 object-contain"
                       src="/assets/payflow-mark.png"
                       alt=""
                     />
-                    <span className="product-available">
-                      <span className="dot" />
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[0.75rem] font-semibold text-emerald-700">
+                      <span className="size-1.5 rounded-full bg-emerald-500" />
                       Available
                     </span>
                   </div>
-                  <h2>{p.name}</h2>
-                  <p>
+                  <h2 className="font-display text-lg font-bold">{p.name}</h2>
+                  <p className="mt-2 text-sm leading-relaxed text-slate-500">
                     {p.description ||
                       (payflow
                         ? "Collections operations: client portfolios, customer accounts, collection cases, adaptive workflows and governed AI decisions."
@@ -112,7 +115,7 @@ export function ProductLauncherPage() {
                   </p>
                   <button
                     type="button"
-                    className="product-enter-link"
+                    className="mt-4 text-sm font-semibold text-primary hover:text-primary-hover disabled:opacity-55"
                     disabled={busy === p.code}
                     onClick={() => void onEnter(p.code)}
                   >
@@ -130,33 +133,35 @@ export function ProductLauncherPage() {
 
 export function NoAccessPage() {
   const { user, loading, logout, isSuperAdmin } = useAuth();
-  if (loading) return <div className="app-loading">Loading…</div>;
+  if (loading) return <div className={ui.loading}>Loading…</div>;
   if (!user) return <Navigate to="/login" replace />;
 
   return (
-    <div className="launcher-page">
-      <header className="launcher-top">
-        <div className="launcher-brand wordmark">
-          <img src="/assets/payflow-mark.png" alt="" className="launcher-mark" />
+    <div className="min-h-screen bg-bg">
+      <header className="flex items-center justify-between px-8 py-5">
+        <div className="flex items-center gap-3">
+          <img src="/assets/payflow-mark.png" alt="" className="h-9 w-auto" />
           <div>
-            <strong>PayFlow</strong>
-            <span>AUTOMATE. ENGAGE. RECOVER.</span>
+            <strong className="block text-[1.05rem] font-bold leading-tight text-primary">PayFlow</strong>
+            <span className="block text-[0.62rem] font-semibold tracking-[0.08em] text-slate-400">
+              AUTOMATE. ENGAGE. RECOVER.
+            </span>
           </div>
         </div>
-        <div className="launcher-top-actions">
+        <div className="flex items-center gap-3">
           {isSuperAdmin ? (
-            <Link to="/platform" className="btn btn-secondary btn-sm">
+            <Link to="/platform" className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[0.82rem] font-semibold text-slate-700 hover:bg-slate-50">
               Platform administration
             </Link>
           ) : null}
-          <button type="button" className="link-btn launcher-signout" onClick={() => void logout()}>
+          <button type="button" className={ui.link} onClick={() => void logout()}>
             Sign out
           </button>
         </div>
       </header>
-      <main className="launcher-main narrow">
-        <h1>Access unavailable</h1>
-        <p className="launcher-lead">
+      <main className="mx-auto w-full max-w-xl px-8 pb-16">
+        <h1 className="font-display text-[2rem] font-bold tracking-tight">Access unavailable</h1>
+        <p className="mt-2 text-[0.95rem] leading-relaxed text-slate-500">
           Your account is signed in, but no product entitlement is available yet. Contact your
           platform administrator.
         </p>

@@ -5,6 +5,7 @@ import { ApiError } from "../api/client";
 import { AuthShell } from "../components/auth/AuthShell";
 import { Button } from "../components/ui/Button";
 import { PasswordInput } from "../components/ui/PasswordInput";
+import { ui } from "../lib/ui";
 
 export function ActivatePage() {
   const [params] = useSearchParams();
@@ -65,21 +66,21 @@ export function ActivatePage() {
       subtitle="You were invited to Platform Suite. Finish setup once, then sign in to your entitled products."
       eyebrow="Account activation"
     >
-      <h2>Set password</h2>
-      <p className="subtitle">
+      <h2 className="font-display mb-1 text-[1.6rem] font-bold tracking-tight">Set password</h2>
+      <p className="mb-5 text-[0.95rem] text-slate-500">
         {fullName ? `Welcome, ${fullName}. ` : null}
         Choose a password for your work email.
       </p>
 
-      {loading ? <div className="empty-state">Validating invite…</div> : null}
-      {error ? <div className="error-banner">{error}</div> : null}
-      {info ? <div className="success-banner">{info}</div> : null}
+      {loading ? <div className={ui.empty}>Validating invite…</div> : null}
+      {error ? <div className={ui.error}>{error}</div> : null}
+      {info ? <div className={ui.success}>{info}</div> : null}
 
       {!loading && email ? (
         <form onSubmit={onSubmit}>
-          <div className="form-field">
-            <label htmlFor="act-email">Work Email</label>
-            <input id="act-email" type="email" value={email} readOnly />
+          <div className={ui.field}>
+            <label className={ui.label} htmlFor="act-email">Work Email</label>
+            <input id="act-email" className={`${ui.control} bg-slate-50 text-slate-500`} type="email" value={email} readOnly />
           </div>
           <PasswordInput
             id="act-pass"
@@ -105,8 +106,8 @@ export function ActivatePage() {
         </form>
       ) : null}
 
-      <p className="auth-footer-link">
-        Already activated? <Link to="/login">Sign in</Link>
+      <p className="mt-4 text-sm text-slate-500">
+        Already activated? <Link className={ui.link} to="/login">Sign in</Link>
       </p>
     </AuthShell>
   );

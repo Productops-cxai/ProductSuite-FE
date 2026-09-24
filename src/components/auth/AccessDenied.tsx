@@ -18,15 +18,15 @@ export function AccessDenied({
   const { user, logout, isSuperAdmin } = useAuth();
 
   return (
-    <div className="launcher-page">
-      <header className="launcher-top">
-        <div className="launcher-brand">
-          <img src="/assets/payflow-mark.png" alt="" className="platform-mark-img" />
-          <strong>Platform Suite</strong>
+    <div className="min-h-screen bg-bg">
+      <header className="flex items-center justify-between px-8 py-5">
+        <div className="flex items-center gap-3">
+          <img src="/assets/payflow-mark.png" alt="" className="size-9 rounded-lg object-contain" />
+          <strong className="font-display text-[1.05rem] font-bold">Platform Suite</strong>
         </div>
-        <div className="launcher-top-actions">
+        <div className="flex items-center gap-3">
           {user ? (
-            <span className="launcher-user-chip" title={user.email}>
+            <span className="text-sm text-slate-500" title={user.email}>
               {user.full_name}
             </span>
           ) : null}
@@ -35,15 +35,15 @@ export function AccessDenied({
           </Button>
         </div>
       </header>
-      <main className="launcher-main narrow">
-        <p className="launcher-kicker">AUTHORIZATION</p>
-        <h1>{title}</h1>
-        <p className="launcher-lead">{message}</p>
-        <div className="access-denied-actions">
+      <main className="mx-auto w-full max-w-xl px-8 pb-16">
+        <p className="mb-2 text-[0.72rem] font-bold tracking-[0.12em] text-slate-400">AUTHORIZATION</p>
+        <h1 className="font-display text-[2rem] font-bold tracking-tight">{title}</h1>
+        <p className="mt-2 text-[0.95rem] leading-relaxed text-slate-500">{message}</p>
+        <div className="mt-5">
           {showProductsLink ? (
             <Link
               to={isSuperAdmin ? "/platform" : "/products"}
-              className="btn btn-primary"
+              className="inline-flex items-center rounded-lg bg-primary px-3.5 py-2 text-[0.9rem] font-semibold text-white hover:bg-primary-hover"
             >
               {isSuperAdmin ? "Open Platform administration" : "Back to products"}
             </Link>
