@@ -15,6 +15,24 @@ export async function fetchMe(): Promise<MeResponse> {
   return apiRequest<MeResponse>("/auth/me");
 }
 
+export async function updateProfile(full_name: string): Promise<MeResponse> {
+  return apiRequest<MeResponse>("/auth/me", {
+    method: "PATCH",
+    body: { full_name },
+  });
+}
+
+export async function changePassword(
+  current_password: string,
+  new_password: string,
+  confirm_password: string,
+): Promise<{ message: string }> {
+  return apiRequest<{ message: string }>("/auth/change-password", {
+    method: "POST",
+    body: { current_password, new_password, confirm_password },
+  });
+}
+
 export async function logout(): Promise<void> {
   const refresh = getRefreshToken();
   try {

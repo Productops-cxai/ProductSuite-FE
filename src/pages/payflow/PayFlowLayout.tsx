@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import { RequireProductAccess } from "../../components/auth/RequireProductAccess";
 import { ProductSwitcher } from "../../components/ProductSwitcher";
@@ -115,17 +115,25 @@ function LogOutIcon() {
 
 function PayFlowShell() {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [headerAccountOpen, setHeaderAccountOpen] = useState(false);
   const accountRef = useRef<HTMLDivElement>(null);
+  const headerAccountRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!accountOpen) return;
+    if (!accountOpen && !headerAccountOpen) return;
     function onDoc(e: MouseEvent) {
-      if (!accountRef.current?.contains(e.target as Node)) setAccountOpen(false);
+      const target = e.target as Node;
+      if (accountOpen && !accountRef.current?.contains(target)) setAccountOpen(false);
+      if (headerAccountOpen && !headerAccountRef.current?.contains(target)) setHeaderAccountOpen(false);
     }
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setAccountOpen(false);
+      if (e.key === "Escape") {
+        setAccountOpen(false);
+        setHeaderAccountOpen(false);
+      }
     }
     document.addEventListener("mousedown", onDoc);
     document.addEventListener("keydown", onKey);
@@ -133,7 +141,7 @@ function PayFlowShell() {
       document.removeEventListener("mousedown", onDoc);
       document.removeEventListener("keydown", onKey);
     };
-  }, [accountOpen]);
+  }, [accountOpen, headerAccountOpen]);
 
   if (!user) return null;
 
@@ -142,7 +150,7 @@ function PayFlowShell() {
 
   return (
     <div
-      className={`grid min-h-screen bg-[#f3f5f9] transition-[grid-template-columns] duration-200 ${
+      className={`grid min-h-screen bg-[#f3f5f9] transition-[grid-template-columns] duration-200 dark:bg-[#0b1220] ${
         sidebarCollapsed ? "grid-cols-[0_1fr]" : "grid-cols-[280px_1fr]"
       }`}
     >
@@ -200,32 +208,35 @@ function PayFlowShell() {
           {accountOpen && (
             <div
               role="menu"
-              className="absolute bottom-full left-0 right-0 z-50 mb-2 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-slate-900 shadow-lg"
+              className="absolute bottom-full left-0 right-0 z-50 mb-2 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-slate-900 shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
             >
               <button
                 type="button"
                 role="menuitem"
-                className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-medium text-slate-800 hover:bg-slate-50"
-                onClick={() => setAccountOpen(false)}
+                className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-medium text-slate-800 hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-slate-800"
+                onClick={() => {
+                  setAccountOpen(false);
+                  navigate("/payflow/profile");
+                }}
               >
                 <UserIcon />
                 My Profile
               </button>
-              <div className="my-1 border-t border-slate-100" />
+              <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
               <div className="px-3 pb-1 pt-1.5 text-[0.65rem] font-semibold tracking-[0.08em] text-slate-400">
                 PREVIEW ROLE
               </div>
               <div className="flex items-center justify-between gap-3 px-3 py-1.5 text-sm">
-                <span className="font-medium text-slate-900">{roleLabel}</span>
+                <span className="font-medium text-slate-900 dark:text-slate-100">{roleLabel}</span>
                 <span className="shrink-0 text-sm font-medium text-primary">Active</span>
               </div>
-              <div className="px-3 pb-2 pt-0.5 text-sm text-slate-700">Supervisor · Zeeshan</div>
+              <div className="px-3 pb-2 pt-0.5 text-sm text-slate-700 dark:text-slate-300">Supervisor · Zeeshan</div>
               <p className="px-3 pb-2 text-xs leading-snug text-slate-400">Supervisors only see assigned clients.</p>
-              <div className="my-1 border-t border-slate-100" />
+              <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
               <button
                 type="button"
                 role="menuitem"
-                className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-medium text-red-500 hover:bg-red-50"
+                className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40"
                 onClick={() => void logout()}
               >
                 <LogOutIcon />
@@ -255,12 +266,12 @@ function PayFlowShell() {
         </div>
       </aside>
 
-      <div className="flex min-w-0 flex-col bg-[#f5f7fb]">
-        <header className="flex min-h-14 items-center justify-between gap-4 border-b border-slate-200 bg-white px-6 py-2.5">
+      <div className="flex min-w-0 flex-col bg-[#f5f7fb] dark:bg-[#0b1220]">
+        <header className="flex min-h-14 items-center justify-between gap-4 border-b border-slate-200 bg-white px-6 py-2.5 dark:border-slate-800 dark:bg-slate-900">
           <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
-              className="grid size-8 shrink-0 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+              className="grid size-8 shrink-0 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
               title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
               aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
               onClick={() => setSidebarCollapsed((v) => !v)}
@@ -268,26 +279,73 @@ function PayFlowShell() {
               <SidebarToggleIcon />
             </button>
             <span className="truncate text-[0.86rem] text-slate-400">
-              Collections operations · <strong className="font-bold text-slate-600">3 clients</strong> in view
+              Collections operations · <strong className="font-bold text-slate-600 dark:text-slate-300">3 clients</strong> in view
             </span>
           </div>
           <div className="flex shrink-0 items-center gap-3">
             <ProductSwitcher current="PAYFLOW" variant="product" />
-            <button type="button" className="relative grid size-9 place-items-center text-slate-500 hover:text-slate-900" title="Notifications" aria-label="Notifications">
+            <button type="button" className="relative grid size-9 place-items-center text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100" title="Notifications" aria-label="Notifications">
               <BellIcon />
-              <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[0.6rem] font-bold leading-none text-white ring-2 ring-white">
+              <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[0.6rem] font-bold leading-none text-white ring-2 ring-white dark:ring-slate-900">
                 5
               </span>
             </button>
-            <span className="h-8 w-px bg-slate-200" aria-hidden />
-            <div className="flex items-center gap-2.5">
-              <div className="font-display grid size-9 shrink-0 place-items-center rounded-full bg-blue-100 text-[0.75rem] font-bold text-blue-700">
-                {initials(user.full_name)}
-              </div>
-              <div>
-                <strong className="block text-[0.88rem] font-semibold leading-tight text-slate-900">{user.full_name}</strong>
-                <span className="block text-[0.75rem] leading-tight text-slate-400">{roleLabel}</span>
-              </div>
+            <span className="h-8 w-px bg-slate-200 dark:bg-slate-700" aria-hidden />
+            <div className="relative" ref={headerAccountRef}>
+              <button
+                type="button"
+                className="flex items-center gap-2.5 rounded-lg px-1 py-0.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800"
+                aria-haspopup="menu"
+                aria-expanded={headerAccountOpen}
+                onClick={() => setHeaderAccountOpen((open) => !open)}
+              >
+                <div className="font-display grid size-9 shrink-0 place-items-center rounded-full bg-blue-100 text-[0.75rem] font-bold text-blue-700 dark:bg-blue-500/20 dark:text-blue-300">
+                  {initials(user.full_name)}
+                </div>
+                <div>
+                  <strong className="block text-[0.88rem] font-semibold leading-tight text-slate-900 dark:text-slate-100">{user.full_name}</strong>
+                  <span className="block text-[0.75rem] leading-tight text-slate-400">{roleLabel}</span>
+                </div>
+              </button>
+              {headerAccountOpen ? (
+                <div
+                  role="menu"
+                  className="absolute right-0 top-[calc(100%+10px)] z-50 w-[280px] overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-slate-900 shadow-[0_12px_32px_rgba(15,23,42,0.12)] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:shadow-[0_12px_32px_rgba(0,0,0,0.45)]"
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm font-medium text-slate-800 hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-slate-800"
+                    onClick={() => {
+                      setHeaderAccountOpen(false);
+                      navigate("/payflow/profile");
+                    }}
+                  >
+                    <UserIcon />
+                    My Profile
+                  </button>
+                  <div className="mx-3 my-1 h-px bg-slate-100 dark:bg-slate-800" />
+                  <div className="px-4 pb-1 pt-1.5 text-[0.68rem] font-semibold tracking-[0.08em] text-slate-400">
+                    PREVIEW ROLE
+                  </div>
+                  <div className="flex items-center justify-between gap-3 px-4 py-1.5 text-sm">
+                    <span className="font-medium text-slate-900 dark:text-slate-100">{roleLabel}</span>
+                    <span className="shrink-0 text-sm font-medium text-primary">Active</span>
+                  </div>
+                  <div className="px-4 pb-1.5 pt-0.5 text-sm text-slate-700 dark:text-slate-300">Supervisor · Zeeshan</div>
+                  <p className="px-4 pb-2 text-xs leading-snug text-slate-400">Supervisors only see assigned clients.</p>
+                  <div className="mx-3 my-1 h-px bg-slate-100 dark:bg-slate-800" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40"
+                    onClick={() => void logout()}
+                  >
+                    <LogOutIcon />
+                    Log out
+                  </button>
+                </div>
+              ) : null}
             </div>
           </div>
         </header>

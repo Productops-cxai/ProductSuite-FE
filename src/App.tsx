@@ -12,6 +12,7 @@ import { ProductsPage } from "./pages/platform/ProductsPage";
 import { PayFlowDashboardPage } from "./pages/payflow/DashboardPage";
 import { InsightIqPlaceholderPage } from "./pages/payflow/InsightIqPlaceholder";
 import { PayFlowLayout } from "./pages/payflow/PayFlowLayout";
+import { PayFlowProfilePage } from "./pages/payflow/ProfilePage";
 import { NoAccessPage, ProductLauncherPage } from "./pages/ProductLauncherPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import type { LoginNextStep } from "./types";
@@ -49,6 +50,7 @@ export default function App() {
 
       <Route path="/payflow" element={<PayFlowLayout />}>
         <Route index element={<PayFlowDashboardPage />} />
+        <Route path="profile" element={<PayFlowProfilePage />} />
       </Route>
 
       <Route path="/insightiq" element={<InsightIqPlaceholderPage />} />

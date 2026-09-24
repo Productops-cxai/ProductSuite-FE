@@ -21,7 +21,7 @@ function homeForCode(code: string): string {
 }
 
 export function ProductSwitcher({ current, variant = "product" }: Props) {
-  const { isSuperAdmin, logout } = useAuth();
+  const { isSuperAdmin } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
@@ -90,13 +90,16 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
 
   const triggerClass =
     variant === "platform"
-      ? "inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1.5 text-[0.82rem] font-semibold text-blue-700"
-      : "inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2.5 py-1.5 text-[0.88rem] font-semibold text-slate-900 hover:bg-slate-50";
+      ? "inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1.5 text-[0.82rem] font-semibold text-blue-700 dark:bg-blue-500/15 dark:text-blue-300"
+      : "inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2.5 py-1.5 text-[0.88rem] font-semibold text-slate-900 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800";
 
-  const itemClass = (active: boolean) =>
-    `flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-[0.9rem] ${
-      active ? "bg-blue-50 font-semibold text-blue-700" : "text-slate-900 hover:bg-slate-50"
-    }`;
+  const rowClass =
+    "flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left text-[0.92rem] text-slate-900 hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-slate-800";
+
+  const otherProducts = products.filter(
+    (p) => isPlatform || p.code.toUpperCase() !== String(current).toUpperCase(),
+  );
+  const currentLabel = currentProduct?.name || (isPlatform ? "Platform" : String(current));
 
   return (
     <div className="relative" ref={ref}>
@@ -134,59 +137,57 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
 
       {open ? (
         <div
-          className="absolute right-0 top-[calc(100%+8px)] z-40 w-[220px] rounded-xl border border-slate-200 bg-white p-2 shadow-[0_12px_32px_rgba(15,23,42,0.12)]"
+          className="absolute left-0 top-[calc(100%+8px)] z-40 w-[280px] overflow-hidden rounded-xl border border-slate-200 bg-white py-1.5 shadow-[0_12px_32px_rgba(15,23,42,0.12)] dark:border-slate-700 dark:bg-slate-900 dark:shadow-[0_12px_32px_rgba(0,0,0,0.45)]"
           role="menu"
         >
-          <div className="px-2 py-1.5 text-[0.7rem] font-bold tracking-[0.06em] text-slate-500">
-            Open product
+          <div className="px-4 pb-1 pt-2 text-[0.68rem] font-semibold tracking-[0.06em] text-slate-400">
+            CURRENT PRODUCT
           </div>
-          {products.length === 0 ? (
-            <div className="px-2.5 py-2 text-[0.82rem] text-slate-500">No products available</div>
+          <div className="flex items-center justify-between gap-3 px-4 py-2 text-[0.95rem]">
+            <span className="font-medium text-slate-900 dark:text-slate-100">{currentLabel}</span>
+            {!isPlatform ? <span className="shrink-0 text-sm font-medium text-primary">Active</span> : null}
+          </div>
+
+          <div className="mx-3 my-1.5 h-px bg-slate-100 dark:bg-slate-800" />
+          <div className="px-4 pb-1 pt-1.5 text-[0.68rem] font-semibold tracking-[0.06em] text-slate-400">
+            OTHER PRODUCTS
+          </div>
+          {otherProducts.length === 0 ? (
+            <div className="px-4 py-2 text-[0.88rem] text-slate-400">No other products</div>
           ) : (
-            products.map((p) => {
-              const active = !isPlatform && p.code.toUpperCase() === String(current).toUpperCase();
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  className={itemClass(active)}
-                  disabled={busy === p.code}
-                  onClick={() => void switchToProduct(p.code)}
-                >
-                  <span>{p.name}</span>
-                  {active ? (
-                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[0.72rem] font-bold text-emerald-600">
-                      Active
-                    </span>
-                  ) : null}
-                </button>
-              );
-            })
+            otherProducts.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                role="menuitem"
+                className={rowClass}
+                disabled={busy === p.code}
+                onClick={() => void switchToProduct(p.code)}
+              >
+                <span>{p.name}</span>
+              </button>
+            ))
           )}
-          {error ? <div className="px-2.5 py-2 text-[0.82rem] text-red-700">{error}</div> : null}
-          <div className="mx-1 my-1.5 h-px bg-slate-200" />
-          {isSuperAdmin ? (
-            <button type="button" className={itemClass(isPlatform)} onClick={goPlatform}>
-              <span>Platform administration</span>
-              {isPlatform ? <span className="text-blue-600">✓</span> : null}
-            </button>
-          ) : (
-            <button type="button" className={itemClass(false)} onClick={goLauncher}>
-              All products…
-            </button>
-          )}
-          <div className="mx-1 my-1.5 h-px bg-slate-200" />
-          <button
-            type="button"
-            className={itemClass(false)}
-            onClick={() => {
-              setOpen(false);
-              void logout();
-              navigate("/login", { replace: true });
-            }}
-          >
-            Sign out
+          {error ? <div className="px-4 py-2 text-[0.82rem] text-red-700 dark:text-red-400">{error}</div> : null}
+
+          <div className="mx-3 my-1.5 h-px bg-slate-100 dark:bg-slate-800" />
+          <button type="button" role="menuitem" className={rowClass} onClick={goLauncher}>
+            Product selection
           </button>
+          {isSuperAdmin ? (
+            <button type="button" role="menuitem" className={rowClass} onClick={goPlatform}>
+              Platform administration
+            </button>
+          ) : null}
+
+          {!isPlatform ? (
+            <>
+              <div className="mx-3 my-1.5 h-px bg-slate-100 dark:bg-slate-800" />
+              <div className="px-4 py-2 text-[0.82rem] text-slate-400">
+                {currentLabel} Operations (internal)
+              </div>
+            </>
+          ) : null}
         </div>
       ) : null}
     </div>

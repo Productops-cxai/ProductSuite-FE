@@ -136,11 +136,13 @@ const ACTIVITY = [
 ];
 
 const chip =
-  "inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[0.84rem] text-slate-500";
+  "inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[0.84rem] text-slate-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300";
 const chipSelect =
-  "cursor-pointer border-0 bg-transparent p-0 font-semibold text-slate-900 outline-none";
-const panel = "mb-4 rounded-[14px] border border-slate-200 bg-white px-5 py-[18px] shadow-card";
-const panelTitle = "font-display text-[1.08rem] font-bold tracking-tight text-slate-900";
+  "cursor-pointer border-0 bg-transparent p-0 font-semibold text-slate-900 outline-none dark:text-slate-100";
+const panel =
+  "mb-4 rounded-[14px] border border-slate-200 bg-white px-5 py-[18px] shadow-card dark:border-slate-700 dark:bg-slate-900";
+const panelTitle =
+  "font-display text-[1.08rem] font-bold tracking-tight text-slate-900 dark:text-slate-50";
 
 const pillTone: Record<string, string> = {
   peach: "bg-orange-50 text-orange-900",
@@ -159,10 +161,10 @@ export function PayFlowDashboardPage() {
   return (
     <div className="px-8 pb-12 pt-7">
       <div className="mb-5">
-        <h1 className="font-display text-[1.85rem] font-bold leading-tight tracking-tight text-slate-900">
+        <h1 className="font-display text-[1.85rem] font-bold leading-tight tracking-tight text-slate-900 dark:text-slate-50">
           Operations Dashboard
         </h1>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
           Operations Admin view · 9 sample accounts loaded
         </p>
       </div>
@@ -201,17 +203,19 @@ export function PayFlowDashboardPage() {
       <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {KPIS.map((k) => (
           <div
-            className={`rounded-xl border bg-white px-4 py-3.5 shadow-card ${
-              k.highlight ? "border-blue-300 bg-blue-50" : "border-slate-200"
+            className={`rounded-xl border px-4 py-3.5 shadow-card ${
+              k.highlight
+                ? "border-blue-300 bg-blue-50 dark:border-blue-700 dark:bg-blue-950/40"
+                : "border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"
             }`}
             key={k.label}
           >
-            <div className="mb-2 text-[0.68rem] font-semibold uppercase leading-snug tracking-[0.04em] text-slate-500">
+            <div className="mb-2 text-[0.68rem] font-semibold uppercase leading-snug tracking-[0.04em] text-slate-500 dark:text-slate-400">
               {k.label}
             </div>
             <div
               className={`font-display text-[1.7rem] font-bold leading-none tracking-tight ${
-                k.highlight ? "text-blue-600" : "text-slate-900"
+                k.highlight ? "text-blue-600 dark:text-blue-400" : "text-slate-900 dark:text-slate-50"
               }`}
             >
               {k.value}
@@ -230,7 +234,7 @@ export function PayFlowDashboardPage() {
       <section className={panel}>
         <div className="mb-3.5">
           <h2 className={panelTitle}>Attention Required</h2>
-          <p className="mt-1 text-[0.88rem] text-slate-500">
+          <p className="mt-1 text-[0.88rem] text-slate-500 dark:text-slate-400">
             Open items that need an operations decision or follow-up.
           </p>
         </div>
@@ -250,7 +254,7 @@ export function PayFlowDashboardPage() {
       <section className={panel}>
         <div className="mb-3.5">
           <h2 className={panelTitle}>Communication to Payment Performance</h2>
-          <p className="mt-1 text-[0.88rem] text-slate-500">
+          <p className="mt-1 text-[0.88rem] text-slate-500 dark:text-slate-400">
             Conversion from outreach to completed payment.
           </p>
         </div>
@@ -278,7 +282,7 @@ export function PayFlowDashboardPage() {
               <option value="sms">SMS</option>
             </select>
           </label>
-          <span className="inline-flex items-center rounded-full border border-dashed border-slate-300 bg-slate-50 px-3 py-1 text-[0.8rem] text-slate-400">
+          <span className="inline-flex items-center rounded-full border border-dashed border-slate-300 bg-slate-50 px-3 py-1 text-[0.8rem] text-slate-400 dark:border-slate-600 dark:bg-slate-950">
             Channel: WhatsApp · soon
           </span>
           <label className={`${chip} px-2.5 py-1 text-[0.8rem]`}>
@@ -295,12 +299,12 @@ export function PayFlowDashboardPage() {
         </div>
         <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-6">
           {FUNNEL.map((step) => (
-            <div className="rounded-xl border border-slate-200 bg-white px-2.5 py-3" key={step.label}>
-              <div className="mb-1.5 text-[0.68rem] font-semibold text-slate-500">
+            <div className="rounded-xl border border-slate-200 bg-white px-2.5 py-3 dark:border-slate-700 dark:bg-slate-950" key={step.label}>
+              <div className="mb-1.5 text-[0.68rem] font-semibold text-slate-500 dark:text-slate-400">
                 <span className="mr-1 font-bold text-slate-400">{step.step}</span>
                 {step.label}
               </div>
-              <div className="font-display text-[1.35rem] font-bold leading-none tracking-tight text-slate-900">
+              <div className="font-display text-[1.35rem] font-bold leading-none tracking-tight text-slate-900 dark:text-slate-50">
                 {step.value}
               </div>
               {step.rate ? (
@@ -314,10 +318,10 @@ export function PayFlowDashboardPage() {
               ) : (
                 <div className="mt-2 text-[11px] leading-none text-slate-400">{step.note}</div>
               )}
-              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
+              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                 <span
                   className={`block h-full rounded-full ${
-                    step.paid ? "bg-emerald-500" : step.bar >= 100 ? "bg-slate-800" : "bg-blue-500"
+                    step.paid ? "bg-emerald-500" : step.bar >= 100 ? "bg-slate-800 dark:bg-slate-300" : "bg-blue-500"
                   }`}
                   style={{ width: `${step.bar}%` }}
                 />
@@ -330,15 +334,15 @@ export function PayFlowDashboardPage() {
       <section className={panel}>
         <div className="mb-3.5">
           <h2 className={panelTitle}>Payment Outcomes</h2>
-          <p className="mt-1 text-[0.88rem] text-slate-500">
+          <p className="mt-1 text-[0.88rem] text-slate-500 dark:text-slate-400">
             Outcomes received back from the customer payment experience.
           </p>
         </div>
         <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-5">
           {OUTCOMES.map((o) => (
-            <div className="rounded-xl border border-slate-200 bg-white px-3.5 py-3.5" key={o.label}>
-              <div className="mb-2 text-[0.72rem] font-medium text-slate-500">{o.label}</div>
-              <div className="font-display text-[1.45rem] font-bold leading-none tracking-tight text-slate-900">
+            <div className="rounded-xl border border-slate-200 bg-white px-3.5 py-3.5 dark:border-slate-700 dark:bg-slate-950" key={o.label}>
+              <div className="mb-2 text-[0.72rem] font-medium text-slate-500 dark:text-slate-400">{o.label}</div>
+              <div className="font-display text-[1.45rem] font-bold leading-none tracking-tight text-slate-900 dark:text-slate-50">
                 {o.value}
               </div>
             </div>
@@ -347,19 +351,19 @@ export function PayFlowDashboardPage() {
       </section>
 
       <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
-        <section className="rounded-[14px] border border-slate-200 bg-white px-5 py-[18px] shadow-card">
+        <section className="rounded-[14px] border border-slate-200 bg-white px-5 py-[18px] shadow-card dark:border-slate-700 dark:bg-slate-900">
           <div className="mb-3.5">
             <h2 className={panelTitle}>Clients Needing Attention</h2>
-            <p className="mt-1 text-[0.88rem] text-slate-500">
+            <p className="mt-1 text-[0.88rem] text-slate-500 dark:text-slate-400">
               Clients with open reviews or operational risk signals.
             </p>
           </div>
           <ul>
             {CLIENTS_ATTENTION.map((c) => (
-              <li key={c.name} className="flex items-start justify-between gap-3 border-t border-slate-100 py-3.5 first:border-t-0 first:pt-0.5">
+              <li key={c.name} className="flex items-start justify-between gap-3 border-t border-slate-100 py-3.5 first:border-t-0 first:pt-0.5 dark:border-slate-800">
                 <div>
-                  <strong className="mb-1 block text-[0.92rem] text-slate-900">{c.name}</strong>
-                  <span className="block text-[0.84rem] leading-snug text-slate-500">{c.detail}</span>
+                  <strong className="mb-1 block text-[0.92rem] text-slate-900 dark:text-slate-100">{c.name}</strong>
+                  <span className="block text-[0.84rem] leading-snug text-slate-500 dark:text-slate-400">{c.detail}</span>
                 </div>
                 <em className={`shrink-0 rounded-full px-2.5 py-1 text-[0.74rem] font-bold not-italic ${badgeTone[c.tone]}`}>
                   {c.badge}
@@ -369,15 +373,15 @@ export function PayFlowDashboardPage() {
           </ul>
         </section>
 
-        <section className="rounded-[14px] border border-slate-200 bg-white px-5 py-[18px] shadow-card">
+        <section className="rounded-[14px] border border-slate-200 bg-white px-5 py-[18px] shadow-card dark:border-slate-700 dark:bg-slate-900">
           <div className="mb-3.5">
             <h2 className={panelTitle}>Recent Operational Activity</h2>
-            <p className="mt-1 text-[0.88rem] text-slate-500">Illustrative operational events.</p>
+            <p className="mt-1 text-[0.88rem] text-slate-500 dark:text-slate-400">Illustrative operational events.</p>
           </div>
           <ul>
             {ACTIVITY.map((a) => (
-              <li key={a.text} className="flex items-start justify-between gap-4 border-t border-slate-100 py-3 first:border-t-0 first:pt-0.5">
-                <span className="text-[0.9rem] leading-snug text-slate-900">{a.text}</span>
+              <li key={a.text} className="flex items-start justify-between gap-4 border-t border-slate-100 py-3 first:border-t-0 first:pt-0.5 dark:border-slate-800">
+                <span className="text-[0.9rem] leading-snug text-slate-900 dark:text-slate-100">{a.text}</span>
                 <time className="shrink-0 whitespace-nowrap text-[0.78rem] text-slate-400">{a.when}</time>
               </li>
             ))}
