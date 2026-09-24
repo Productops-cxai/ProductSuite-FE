@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import {
   grantAccess,
@@ -15,11 +16,13 @@ import { Modal } from "../../components/ui/Modal";
 import type { Organization, Product, ProductAccessItem } from "../../types";
 
 export function AccessPage() {
+  const [searchParams] = useSearchParams();
+  const initialProduct = searchParams.get("product_id") || "";
   const [rows, setRows] = useState<ProductAccessItem[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [search, setSearch] = useState("");
-  const [productFilter, setProductFilter] = useState<string>("");
+  const [productFilter, setProductFilter] = useState<string>(initialProduct);
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -28,6 +31,14 @@ export function AccessPage() {
   const [orgOpen, setOrgOpen] = useState(false);
   const [grantForm, setGrantForm] = useState({ organization_id: "", product_id: "" });
   const [orgForm, setOrgForm] = useState({ name: "", is_internal: false });
+
+  useEffect(() => {
+    const fromQuery = searchParams.get("product_id") || "";
+    if (fromQuery && fromQuery !== productFilter) {
+      setProductFilter(fromQuery);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   async function load() {
     setLoading(true);
@@ -122,59 +133,59 @@ export function AccessPage() {
           <div className="breadcrumb">Platform / Product Access</div>
           <h1>Product Access</h1>
           <p>
-            Grant or revoke which organizations may use each product. Entitlement is org-level
-            only — people still need product assignment to enter.
+            Controls which organization is entitled to which product. Granting a product does not
+            assign any product role, client or portfolio scope, or functional permission — those stay
+            inside the product.
           </p>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <Button variant="secondary" onClick={() => setOrgOpen(true)}>
-            Add organization
-          </Button>
-          <Button onClick={() => setGrantOpen(true)}>Grant access</Button>
         </div>
       </div>
 
       {error ? <div className="error-banner">{error}</div> : null}
 
-      <div className="toolbar">
-        <div className="search-box">
-          <Icon name="search" />
-          <input
-            placeholder="Search organizations or products"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") void load();
-            }}
-          />
-        </div>
-        <select
-          className="filter-select"
-          value={productFilter}
-          onChange={(e) => setProductFilter(e.target.value)}
-        >
-          <option value="">All products</option>
-          {products.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-        <select
-          className="filter-select"
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-        >
-          <option value="">All statuses</option>
-          <option value="granted">Granted</option>
-          <option value="revoked">Revoked</option>
-        </select>
-        <Button variant="secondary" onClick={() => void load()}>
-          Refresh
-        </Button>
-      </div>
-
       <div className="table-card">
+        <div className="toolbar in-card">
+          <div className="search-box">
+            <Icon name="search" />
+            <input
+              placeholder="Search organizations"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void load();
+              }}
+            />
+          </div>
+          <label className="filter-field">
+            <span>Product</span>
+            <select
+              className="filter-select"
+              value={productFilter}
+              onChange={(e) => setProductFilter(e.target.value)}
+              aria-label="Product filter"
+            >
+              <option value="">All Products</option>
+              {products.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="filter-field">
+            <span>Access</span>
+            <select
+              className="filter-select"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              aria-label="Access status filter"
+            >
+              <option value="">All Statuses</option>
+              <option value="granted">Granted</option>
+              <option value="revoked">Revoked</option>
+            </select>
+          </label>
+        </div>
+
         {loading ? (
           <div className="empty-state">Loading access…</div>
         ) : filteredHint.length === 0 ? (
@@ -185,7 +196,7 @@ export function AccessPage() {
               <tr>
                 <th>ORGANIZATION</th>
                 <th>PRODUCT</th>
-                <th>STATUS</th>
+                <th>ACCESS STATUS</th>
                 <th />
               </tr>
             </thead>
@@ -198,13 +209,12 @@ export function AccessPage() {
                     <td>
                       <strong>{row.organization_name}</strong>
                     </td>
-                    <td>
-                      {row.product_name}{" "}
-                      <span style={{ color: "var(--text-muted)" }}>({row.product_code})</span>
+                    <td className="muted-cell">
+                      {row.product_name} · {row.product_code}
                     </td>
                     <td>
                       <Badge tone={granted ? "success" : "danger"}>
-                        {granted ? "Granted" : "Revoked"}
+                        {granted ? "Access granted" : "Access revoked"}
                       </Badge>
                     </td>
                     <td>
@@ -216,16 +226,15 @@ export function AccessPage() {
                             disabled={busyKey === key}
                             onClick={() => void toggleAccess(row)}
                           >
-                            Revoke
+                            Revoke access
                           </Button>
                         ) : (
                           <Button
-                            variant="secondary"
                             size="sm"
                             disabled={busyKey === key}
                             onClick={() => void toggleAccess(row)}
                           >
-                            Grant
+                            Grant access
                           </Button>
                         )}
                       </div>
@@ -236,6 +245,18 @@ export function AccessPage() {
             </tbody>
           </table>
         )}
+
+        <p className="table-footnote">
+          Revoking access disables the organization&apos;s entry into the product. Operational data
+          inside the product is retained.{" "}
+          <button type="button" className="link-btn" onClick={() => setOrgOpen(true)}>
+            Add organization
+          </button>
+          {" · "}
+          <button type="button" className="link-btn" onClick={() => setGrantOpen(true)}>
+            Grant access
+          </button>
+        </p>
       </div>
 
       <Modal

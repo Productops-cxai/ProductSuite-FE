@@ -12,10 +12,11 @@ import {
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
-import { Modal } from "../../components/ui/Modal";
+import { useAuth } from "../../context/AuthContext";
 import type { Organization, Person, Product } from "../../types";
 
 export function PeoplePage() {
+  const { user, refreshMe } = useAuth();
   const [people, setPeople] = useState<Person[]>([]);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -137,6 +138,7 @@ export function PeoplePage() {
     try {
       const updated = await assignProduct(userId, productId);
       setPeople((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      if (user?.id === userId) await refreshMe();
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Assign failed");
     } finally {
@@ -151,11 +153,17 @@ export function PeoplePage() {
     try {
       const updated = await removeProduct(userId, productId);
       setPeople((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      if (user?.id === userId) await refreshMe();
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Remove failed");
     } finally {
       setBusyKey("");
     }
+  }
+
+  function closeAdd() {
+    setAddOpen(false);
+    setForm({ full_name: "", email: "", organization_id: "", product_ids: [] });
   }
 
   return (
@@ -170,38 +178,126 @@ export function PeoplePage() {
             inside each product.
           </p>
         </div>
-        <Button onClick={() => setAddOpen(true)}>Add person</Button>
+        {addOpen ? (
+          <Button variant="secondary" onClick={closeAdd}>
+            Cancel
+          </Button>
+        ) : (
+          <Button onClick={() => setAddOpen(true)}>Add person</Button>
+        )}
       </div>
 
       {error ? <div className="error-banner">{error}</div> : null}
       {info ? <div className="success-banner">{info}</div> : null}
 
-      <form className="toolbar" onSubmit={onSearchSubmit}>
-        <div className="search-box">
-          <Icon name="search" />
-          <input
-            placeholder="Search people or emails"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-        <select
-          className="filter-select"
-          value={orgFilter}
-          onChange={(e) => setOrgFilter(e.target.value)}
-          aria-label="Organization"
-        >
-          <option value="">Organization: All Organizations</option>
-          {organizations.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.name}
-              {o.is_internal ? " (internal)" : ""}
-            </option>
-          ))}
-        </select>
-      </form>
+      {addOpen ? (
+        <section className="form-card">
+          <div className="form-card-head">
+            <h2>New person</h2>
+          </div>
+          <form onSubmit={onAddPerson}>
+            <div className="form-grid-2">
+              <div className="form-field">
+                <label htmlFor="person-name">Full Name</label>
+                <input
+                  id="person-name"
+                  value={form.full_name}
+                  onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))}
+                  placeholder="e.g. Aisha Rahman"
+                  required
+                />
+              </div>
+              <div className="form-field">
+                <label htmlFor="person-email">Work Email</label>
+                <input
+                  id="person-email"
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                  placeholder="person@company.com"
+                  required
+                />
+              </div>
+            </div>
+            <div className="form-field">
+              <label htmlFor="person-org">Organization</label>
+              <select
+                id="person-org"
+                value={form.organization_id}
+                onChange={(e) => setForm((f) => ({ ...f, organization_id: e.target.value }))}
+                required
+              >
+                <option value="">Select…</option>
+                {organizations.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                    {o.is_internal ? " (internal)" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="form-field assign-products-field">
+              <div className="assign-label">ASSIGN PRODUCTS</div>
+              <div className="product-pick-grid">
+                {products.map((p) => {
+                  const checked = form.product_ids.includes(p.id);
+                  return (
+                    <label key={p.id} className={`product-pick${checked ? " selected" : ""}`}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleFormProduct(p.id)}
+                      />
+                      <span>
+                        <strong>{p.name}</strong>
+                        <em>{p.code}</em>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="form-card-actions">
+              <Button type="submit" disabled={saving}>
+                {saving ? "Saving…" : "Add person"}
+              </Button>
+              <Button type="button" variant="secondary" onClick={closeAdd}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        </section>
+      ) : null}
 
       <div className="table-card">
+        <form className="toolbar in-card" onSubmit={onSearchSubmit}>
+          <div className="search-box">
+            <Icon name="search" />
+            <input
+              placeholder="Search people or emails"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <label className="filter-field">
+            <span>Organization</span>
+            <select
+              className="filter-select"
+              value={orgFilter}
+              onChange={(e) => setOrgFilter(e.target.value)}
+              aria-label="Organization"
+            >
+              <option value="">All Organizations</option>
+              {organizations.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name}
+                  {o.is_internal ? " (internal)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        </form>
+
         {loading ? (
           <div className="empty-state">Loading people…</div>
         ) : visible.length === 0 ? (
@@ -292,77 +388,6 @@ export function PeoplePage() {
           </table>
         )}
       </div>
-
-      <Modal
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-        title="Add person"
-        description="Invite someone with email and organization, optionally assigning products now."
-        wide
-        footer={
-          <div className="modal-actions">
-            <Button variant="secondary" onClick={() => setAddOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" form="add-person" disabled={saving}>
-              {saving ? "Saving…" : "Add person"}
-            </Button>
-          </div>
-        }
-      >
-        <form id="add-person" onSubmit={onAddPerson}>
-          <div className="form-field">
-            <label htmlFor="person-name">Full name</label>
-            <input
-              id="person-name"
-              value={form.full_name}
-              onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))}
-              required
-            />
-          </div>
-          <div className="form-field">
-            <label htmlFor="person-email">Email</label>
-            <input
-              id="person-email"
-              type="email"
-              value={form.email}
-              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-              required
-            />
-          </div>
-          <div className="form-field">
-            <label htmlFor="person-org">Organization</label>
-            <select
-              id="person-org"
-              value={form.organization_id}
-              onChange={(e) => setForm((f) => ({ ...f, organization_id: e.target.value }))}
-              required
-            >
-              <option value="">Select…</option>
-              {organizations.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="form-field">
-            <label>Products (optional)</label>
-            <div className="check-list">
-              {products.map((p) => (
-                <label key={p.id}>
-                  <input
-                    type="checkbox"
-                    checked={form.product_ids.includes(p.id)}
-                    onChange={() => toggleFormProduct(p.id)}
-                  />
-                  {p.name}
-                </label>
-              ))}
-            </div>
-          </div>
-        </form>
-      </Modal>
     </div>
   );
 }

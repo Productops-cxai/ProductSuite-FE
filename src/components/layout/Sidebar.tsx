@@ -1,6 +1,5 @@
 import { NavLink } from "react-router-dom";
 import { Icon } from "../ui/Icon";
-import { useAuth } from "../../context/AuthContext";
 import { normalizeMenuRoute } from "../../lib/utils";
 import type { MenuSection } from "../../types";
 
@@ -19,8 +18,6 @@ function iconFor(key: string, icon?: string | null) {
 }
 
 export function Sidebar({ sections }: Props) {
-  const { user } = useAuth();
-
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
@@ -62,9 +59,13 @@ export function Sidebar({ sections }: Props) {
         ))}
       </div>
 
-      <div className="sidebar-user">
-        <div className="sidebar-user-name">{user?.full_name || "User"}</div>
-        <div className="sidebar-user-email">{user?.email || ""}</div>
+      <div className="sidebar-footer">
+        <NavLink to="/products" className="sidebar-product-link">
+          <span className="sidebar-product-arrow" aria-hidden>
+            ←
+          </span>
+          Product selection
+        </NavLink>
       </div>
     </aside>
   );

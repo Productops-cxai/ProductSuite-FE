@@ -21,7 +21,7 @@ function homeForCode(code: string): string {
 }
 
 export function ProductSwitcher({ current, variant = "product" }: Props) {
-  const { isSuperAdmin } = useAuth();
+  const { isSuperAdmin, logout } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
@@ -31,10 +31,16 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
 
   const isPlatform = current === "platform";
 
+  async function loadProducts() {
+    try {
+      setProducts(await myProducts());
+    } catch {
+      setProducts([]);
+    }
+  }
+
   useEffect(() => {
-    void myProducts()
-      .then(setProducts)
-      .catch(() => setProducts([]));
+    void loadProducts();
   }, []);
 
   useEffect(() => {
@@ -45,6 +51,11 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
 
+  function toggleOpen() {
+    const next = !open;
+    setOpen(next);
+    if (next) void loadProducts();
+  }
   const currentProduct = !isPlatform
     ? products.find((p) => p.code.toUpperCase() === String(current).toUpperCase())
     : undefined;
@@ -85,7 +96,7 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
       <button
         type="button"
         className={triggerClass}
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggleOpen}
         aria-expanded={open}
         title="Switch product"
       >
@@ -97,15 +108,19 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
           </>
         ) : (
           <>
-            {String(current).toUpperCase() === "PAYFLOW" ? (
-              <img src="/assets/payflow-logo.png" alt="" className="pf-switcher-logo" />
-            ) : (
-              <span className="pf-switcher-fallback">
-                {(currentProduct?.name || String(current)).charAt(0)}
-              </span>
-            )}
+            <span className="pf-switcher-grid" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+              <span />
+            </span>
             <span>{currentProduct?.name || String(current)}</span>
-            <span className="pf-switcher-caret">▾</span>
+            <span className="pf-switcher-carets" aria-hidden="true">
+              <svg viewBox="0 0 12 16" width="10" height="14" fill="currentColor">
+                <path d="M6 2 L10 7 H2 Z" />
+                <path d="M6 14 L2 9 H10 Z" />
+              </svg>
+            </span>
           </>
         )}
       </button>
@@ -130,7 +145,7 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
               >
                 <span>{p.name}</span>
                 {!isPlatform && p.code.toUpperCase() === String(current).toUpperCase() ? (
-                  <span className="pf-switcher-check">✓</span>
+                  <span className="pf-switcher-active">Active</span>
                 ) : null}
               </button>
             ))
@@ -151,6 +166,18 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
               All products…
             </button>
           )}
+          <div className="pf-switcher-sep" />
+          <button
+            type="button"
+            className="pf-switcher-item"
+            onClick={() => {
+              setOpen(false);
+              void logout();
+              navigate("/login", { replace: true });
+            }}
+          >
+            Sign out
+          </button>
         </div>
       ) : null}
     </div>

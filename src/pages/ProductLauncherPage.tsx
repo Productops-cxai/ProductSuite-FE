@@ -25,15 +25,14 @@ export function ProductLauncherPage() {
   const [busy, setBusy] = useState("");
 
   useEffect(() => {
-    if (!user || isSuperAdmin) return;
+    if (!user) return;
     void myProducts()
       .then(setProducts)
       .catch((err) => setError(err instanceof ApiError ? err.detail : "Failed to load products"));
-  }, [user, isSuperAdmin]);
+  }, [user]);
 
   if (loading) return <div className="app-loading">Loading…</div>;
   if (!user) return <Navigate to="/login" replace />;
-  if (isSuperAdmin) return <Navigate to="/platform" replace />;
 
   async function onEnter(code: string) {
     setBusy(code);
@@ -48,20 +47,27 @@ export function ProductLauncherPage() {
     }
   }
 
+  const orgLabel = user.organization_name || "your organization";
+
   return (
     <div className="launcher-page">
       <header className="launcher-top">
-        <div className="launcher-brand">
-          <img src="/assets/payflow-mark.png" alt="" className="platform-mark-img" />
-          <strong>Platform Suite</strong>
+        <div className="launcher-brand wordmark">
+          <img src="/assets/payflow-mark.png" alt="" className="launcher-mark" />
+          <div>
+            <strong>PayFlow</strong>
+            <span>AUTOMATE. ENGAGE. RECOVER.</span>
+          </div>
         </div>
         <div className="launcher-top-actions">
-          <span className="launcher-user-chip" title={user.email}>
-            {user.full_name}
-          </span>
-          <Button variant="secondary" size="sm" onClick={() => void logout()}>
+          {isSuperAdmin ? (
+            <Link to="/platform" className="btn btn-secondary btn-sm">
+              Platform administration
+            </Link>
+          ) : null}
+          <button type="button" className="link-btn launcher-signout" onClick={() => void logout()}>
             Sign out
-          </Button>
+          </button>
         </div>
       </header>
 
@@ -69,11 +75,11 @@ export function ProductLauncherPage() {
         <p className="launcher-kicker">PLATFORM ACCESS</p>
         <h1>Select a product</h1>
         <p className="launcher-lead">
-          You have access to the products below. Roles, client scope and permissions are managed
-          inside each product.
+          Products {orgLabel} is entitled to access. Roles, scope and permissions are managed inside
+          each product.
         </p>
         <p className="launcher-user">
-          Signed in as <strong>{user.full_name}</strong> {user.email}
+          Signed in as <strong>{user.full_name}</strong> · {user.email}
         </p>
 
         {error ? <div className="error-banner">{error}</div> : null}
@@ -87,15 +93,11 @@ export function ProductLauncherPage() {
               return (
                 <article className="product-card" key={p.id}>
                   <div className="product-card-head">
-                    {payflow ? (
-                      <img
-                        className="product-card-logo"
-                        src="/assets/payflow-logo.png"
-                        alt="PayFlow"
-                      />
-                    ) : (
-                      <span className="product-card-fallback">{p.name.charAt(0)}</span>
-                    )}
+                    <img
+                      className="product-card-mark"
+                      src="/assets/payflow-mark.png"
+                      alt=""
+                    />
                     <span className="product-available">
                       <span className="dot" />
                       Available
@@ -105,7 +107,7 @@ export function ProductLauncherPage() {
                   <p>
                     {p.description ||
                       (payflow
-                        ? "Collections operations workspace."
+                        ? "Collections operations: client portfolios, customer accounts, collection cases, adaptive workflows and governed AI decisions."
                         : "Registered product available for entry.")}
                   </p>
                   <button
@@ -127,24 +129,29 @@ export function ProductLauncherPage() {
 }
 
 export function NoAccessPage() {
-  const { user, loading, logout } = useAuth();
+  const { user, loading, logout, isSuperAdmin } = useAuth();
   if (loading) return <div className="app-loading">Loading…</div>;
   if (!user) return <Navigate to="/login" replace />;
 
   return (
     <div className="launcher-page">
       <header className="launcher-top">
-        <div className="launcher-brand">
-          <img src="/assets/payflow-mark.png" alt="" className="platform-mark-img" />
-          <strong>Platform Suite</strong>
+        <div className="launcher-brand wordmark">
+          <img src="/assets/payflow-mark.png" alt="" className="launcher-mark" />
+          <div>
+            <strong>PayFlow</strong>
+            <span>AUTOMATE. ENGAGE. RECOVER.</span>
+          </div>
         </div>
         <div className="launcher-top-actions">
-          <span className="launcher-user-chip" title={user.email}>
-            {user.full_name}
-          </span>
-          <Button variant="secondary" size="sm" onClick={() => void logout()}>
+          {isSuperAdmin ? (
+            <Link to="/platform" className="btn btn-secondary btn-sm">
+              Platform administration
+            </Link>
+          ) : null}
+          <button type="button" className="link-btn launcher-signout" onClick={() => void logout()}>
             Sign out
-          </Button>
+          </button>
         </div>
       </header>
       <main className="launcher-main narrow">
@@ -153,9 +160,9 @@ export function NoAccessPage() {
           Your account is signed in, but no product entitlement is available yet. Contact your
           platform administrator.
         </p>
-        <Link to="/login" className="link-btn">
-          Back to sign in
-        </Link>
+        <Button variant="secondary" onClick={() => void logout()}>
+          Sign out
+        </Button>
       </main>
     </div>
   );

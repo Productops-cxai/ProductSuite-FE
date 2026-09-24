@@ -7,6 +7,7 @@ import { AccessPage } from "./pages/platform/AccessPage";
 import { EmailLogsPage } from "./pages/platform/EmailLogsPage";
 import { OverviewPage } from "./pages/platform/OverviewPage";
 import { PeoplePage } from "./pages/platform/PeoplePage";
+import { ProductDetailPage } from "./pages/platform/ProductDetailPage";
 import { ProductsPage } from "./pages/platform/ProductsPage";
 import { PayFlowDashboardPage } from "./pages/payflow/DashboardPage";
 import { InsightIqPlaceholderPage } from "./pages/payflow/InsightIqPlaceholder";
@@ -40,6 +41,7 @@ export default function App() {
       <Route path="/platform" element={<PlatformLayout />}>
         <Route index element={<OverviewPage />} />
         <Route path="products" element={<ProductsPage />} />
+        <Route path="products/:productId" element={<ProductDetailPage />} />
         <Route path="access" element={<AccessPage />} />
         <Route path="people" element={<PeoplePage />} />
         <Route path="email-logs" element={<EmailLogsPage />} />

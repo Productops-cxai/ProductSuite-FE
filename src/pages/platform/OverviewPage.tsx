@@ -66,7 +66,7 @@ export function OverviewPage() {
                 <div className="list-row" key={p.id}>
                   <div>
                     <span className="title">{p.name}</span>
-                    <span className="meta">{p.code}</span>
+                    <span className="meta">· {p.code}</span>
                   </div>
                   <Badge tone={p.status === "active" ? "success" : "danger"}>
                     {titleCaseStatus(p.status)}
