@@ -41,22 +41,51 @@ export function AccessPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
-  async function load() {
+  // One boot effect: catalogs once + access list (cache collapses StrictMode doubles).
+  useEffect(() => {
+    let cancelled = false;
+    async function boot() {
+      setLoading(true);
+      setError("");
+      try {
+        const [access, prods, orgs] = await Promise.all([
+          listProductAccess({
+            search: search.trim() || undefined,
+            product_id: productFilter ? Number(productFilter) : undefined,
+            access_status: statusFilter || undefined,
+          }),
+          listProducts(),
+          listOrganizations(),
+        ]);
+        if (cancelled) return;
+        setRows(access);
+        setProducts(prods);
+        setOrganizations(orgs);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof ApiError ? err.detail : "Failed to load product access");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    void boot();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productFilter, statusFilter]);
+
+  async function loadAccess() {
     setLoading(true);
     setError("");
     try {
-      const [access, prods, orgs] = await Promise.all([
-        listProductAccess({
-          search: search.trim() || undefined,
-          product_id: productFilter ? Number(productFilter) : undefined,
-          access_status: statusFilter || undefined,
-        }),
-        listProducts(),
-        listOrganizations(),
-      ]);
+      const access = await listProductAccess({
+        search: search.trim() || undefined,
+        product_id: productFilter ? Number(productFilter) : undefined,
+        access_status: statusFilter || undefined,
+      });
       setRows(access);
-      setProducts(prods);
-      setOrganizations(orgs);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Failed to load product access");
     } finally {
@@ -64,10 +93,15 @@ export function AccessPage() {
     }
   }
 
-  useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productFilter, statusFilter]);
+  async function loadCatalogs() {
+    try {
+      const [prods, orgs] = await Promise.all([listProducts(), listOrganizations()]);
+      setProducts(prods);
+      setOrganizations(orgs);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail : "Failed to load catalogs");
+    }
+  }
 
   const filteredHint = useMemo(() => {
     if (!search.trim()) return rows;
@@ -90,7 +124,7 @@ export function AccessPage() {
       } else {
         await grantAccess(row.organization_id, row.product_id);
       }
-      await load();
+      await loadAccess();
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Access update failed");
     } finally {
@@ -105,7 +139,7 @@ export function AccessPage() {
       await grantAccess(Number(grantForm.organization_id), Number(grantForm.product_id));
       setGrantOpen(false);
       setGrantForm({ organization_id: "", product_id: "" });
-      await load();
+      await loadAccess();
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Grant failed");
     }
@@ -121,7 +155,7 @@ export function AccessPage() {
       });
       setOrgOpen(false);
       setOrgForm({ name: "", is_internal: false });
-      await load();
+      await Promise.all([loadCatalogs(), loadAccess()]);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Failed to create organization");
     }
@@ -155,7 +189,7 @@ export function AccessPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") void load();
+                if (e.key === "Enter") void loadAccess();
               }}
             />
           </div>

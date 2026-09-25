@@ -9,16 +9,18 @@ import {
 } from "react";
 import * as authApi from "../api/auth";
 import { clearTokens, getAccessToken } from "../api/client";
-import type { LoginNextStep, PersonBrief, ProductBrief } from "../types";
+import type { LoginNextStep, LoginResponse, MeResponse, PersonBrief, ProductBrief } from "../types";
 
 type AuthState = {
   user: PersonBrief | null;
   products: ProductBrief[];
   nextStep: LoginNextStep | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<LoginNextStep>;
+  login: (email: string, password: string) => Promise<LoginResponse>;
   logout: () => Promise<void>;
   refreshMe: () => Promise<void>;
+  /** Apply an already-fetched /auth/me payload without another GET. */
+  applyMe: (me: MeResponse) => void;
   isSuperAdmin: boolean;
 };
 
@@ -30,6 +32,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [nextStep, setNextStep] = useState<LoginNextStep | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const applyMe = useCallback((me: MeResponse) => {
+    setUser(me.user);
+    setProducts(me.products);
+    setNextStep(me.next_step);
+  }, []);
+
   const refreshMe = useCallback(async () => {
     if (!getAccessToken()) {
       setUser(null);
@@ -40,9 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     try {
       const me = await authApi.fetchMe();
-      setUser(me.user);
-      setProducts(me.products);
-      setNextStep(me.next_step);
+      applyMe(me);
     } catch {
       clearTokens();
       setUser(null);
@@ -51,7 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [applyMe]);
 
   useEffect(() => {
     void refreshMe();
@@ -62,7 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(data.user);
     setProducts(data.products);
     setNextStep(data.next_step);
-    return data.next_step;
+    return data;
   }, []);
 
   const logout = useCallback(async () => {
@@ -85,9 +91,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       logout,
       refreshMe,
+      applyMe,
       isSuperAdmin: user?.role === "platform_super_admin",
     }),
-    [user, products, nextStep, loading, login, logout, refreshMe],
+    [user, products, nextStep, loading, login, logout, refreshMe, applyMe],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

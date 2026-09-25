@@ -1,4 +1,5 @@
 import { apiRequest } from "./client";
+import { cachedAsync, dedupeAsync, invalidateCache } from "../lib/dedupeAsync";
 import type {
   MenusResponse,
   Organization,
@@ -12,35 +13,44 @@ import type {
 } from "../types";
 
 export function getOverview() {
-  return apiRequest<OverviewResponse>("/platform/overview");
+  return cachedAsync("platform:overview", () => apiRequest<OverviewResponse>("/platform/overview"));
 }
 
 export function getMenus(context = "platform_admin") {
-  return apiRequest<MenusResponse>(`/menus?context=${encodeURIComponent(context)}`);
+  return cachedAsync(`menus:${context}`, () =>
+    apiRequest<MenusResponse>(`/menus?context=${encodeURIComponent(context)}`),
+  );
 }
 
 export function listProducts() {
-  return apiRequest<Product[]>("/products");
+  return cachedAsync("catalog:products", () => apiRequest<Product[]>("/products"));
 }
 
 export function getProduct(id: number) {
   return apiRequest<Product>(`/products/${id}`);
 }
 
-export function saveProduct(payload: ProductSavePayload) {
-  return apiRequest<Product>("/products", { method: "POST", body: payload });
+export async function saveProduct(payload: ProductSavePayload) {
+  const product = await apiRequest<Product>("/products", { method: "POST", body: payload });
+  invalidateCache("catalog:products");
+  invalidateCache("platform:overview");
+  return product;
 }
 
 export function listOrganizations() {
-  return apiRequest<Organization[]>("/organizations");
+  return cachedAsync("catalog:organizations", () => apiRequest<Organization[]>("/organizations"));
 }
 
-export function saveOrganization(payload: {
+export async function saveOrganization(payload: {
   id?: number;
   name: string;
   is_internal?: boolean;
 }) {
-  return apiRequest<Organization>("/organizations", { method: "POST", body: payload });
+  const org = await apiRequest<Organization>("/organizations", { method: "POST", body: payload });
+  invalidateCache("catalog:organizations");
+  invalidateCache("platform:overview");
+  invalidateCache("access:");
+  return org;
 }
 
 export function listProductAccess(params?: {
@@ -53,21 +63,30 @@ export function listProductAccess(params?: {
   if (params?.product_id) q.set("product_id", String(params.product_id));
   if (params?.access_status) q.set("access_status", params.access_status);
   const qs = q.toString();
-  return apiRequest<ProductAccessItem[]>(`/product-access${qs ? `?${qs}` : ""}`);
+  const key = `access:${qs || "all"}`;
+  return cachedAsync(key, () =>
+    apiRequest<ProductAccessItem[]>(`/product-access${qs ? `?${qs}` : ""}`),
+  );
 }
 
-export function grantAccess(organization_id: number, product_id: number) {
-  return apiRequest<ProductAccessItem>("/product-access/grant", {
+export async function grantAccess(organization_id: number, product_id: number) {
+  const row = await apiRequest<ProductAccessItem>("/product-access/grant", {
     method: "POST",
     body: { organization_id, product_id },
   });
+  invalidateCache("access:");
+  invalidateCache("platform:overview");
+  return row;
 }
 
-export function revokeAccess(organization_id: number, product_id: number) {
-  return apiRequest<ProductAccessItem>("/product-access/revoke", {
+export async function revokeAccess(organization_id: number, product_id: number) {
+  const row = await apiRequest<ProductAccessItem>("/product-access/revoke", {
     method: "POST",
     body: { organization_id, product_id },
   });
+  invalidateCache("access:");
+  invalidateCache("platform:overview");
+  return row;
 }
 
 export function listPeople(params?: { search?: string; organization_id?: number }) {
@@ -75,25 +94,34 @@ export function listPeople(params?: { search?: string; organization_id?: number 
   if (params?.search) q.set("search", params.search);
   if (params?.organization_id) q.set("organization_id", String(params.organization_id));
   const qs = q.toString();
-  return apiRequest<Person[]>(`/people${qs ? `?${qs}` : ""}`);
+  const key = `people:${qs || "all"}`;
+  return cachedAsync(key, () => apiRequest<Person[]>(`/people${qs ? `?${qs}` : ""}`), 10_000);
 }
 
-export function savePerson(payload: PersonSavePayload) {
-  return apiRequest<Person>("/people", { method: "POST", body: payload });
+export async function savePerson(payload: PersonSavePayload) {
+  const person = await apiRequest<Person>("/people", { method: "POST", body: payload });
+  invalidateCache("people:");
+  return person;
 }
 
-export function assignProduct(user_id: string, product_id: number) {
-  return apiRequest<Person>("/people/assign-product", {
+export async function assignProduct(user_id: string, product_id: number) {
+  const person = await apiRequest<Person>("/people/assign-product", {
     method: "POST",
     body: { user_id, product_id },
   });
+  invalidateCache("people:");
+  invalidateCache("me:products");
+  return person;
 }
 
-export function removeProduct(user_id: string, product_id: number) {
-  return apiRequest<Person>("/people/remove-product", {
+export async function removeProduct(user_id: string, product_id: number) {
+  const person = await apiRequest<Person>("/people/remove-product", {
     method: "POST",
     body: { user_id, product_id },
   });
+  invalidateCache("people:");
+  invalidateCache("me:products");
+  return person;
 }
 
 export function resendInvite(user_id: string) {
@@ -117,7 +145,7 @@ export function listEmailLogs(params?: {
 }
 
 export function myProducts() {
-  return apiRequest<Product[]>("/me/products");
+  return cachedAsync("me:products", () => apiRequest<Product[]>("/me/products"), 15_000);
 }
 
 export function enterProduct(code: string) {
@@ -125,3 +153,6 @@ export function enterProduct(code: string) {
     method: "POST",
   });
 }
+
+// Keep named export available for callers that only need in-flight merge.
+export { dedupeAsync };

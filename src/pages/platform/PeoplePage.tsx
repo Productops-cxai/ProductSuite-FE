@@ -36,33 +36,53 @@ export function PeoplePage() {
     product_ids: [] as number[],
   });
 
-  async function load(opts?: { search?: string; organization_id?: number }) {
+  // Single mount load — catalogs + people together (cache still dedupes StrictMode remount).
+  useEffect(() => {
+    let cancelled = false;
+    async function boot() {
+      setLoading(true);
+      setError("");
+      try {
+        const [plist, orgs, prods] = await Promise.all([
+          listPeople({
+            organization_id: orgFilter ? Number(orgFilter) : undefined,
+          }),
+          listOrganizations(),
+          listProducts(),
+        ]);
+        if (cancelled) return;
+        setPeople(plist);
+        setOrganizations(orgs);
+        setProducts(prods);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof ApiError ? err.detail : "Failed to load people");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    void boot();
+    return () => {
+      cancelled = true;
+    };
+  }, [orgFilter]);
+
+  async function loadPeople(opts?: { search?: string; organization_id?: number }) {
     setLoading(true);
     setError("");
     try {
-      const [plist, orgs, prods] = await Promise.all([
-        listPeople({
-          search: opts?.search,
-          organization_id: opts?.organization_id,
-        }),
-        listOrganizations(),
-        listProducts(),
-      ]);
+      const plist = await listPeople({
+        search: opts?.search,
+        organization_id: opts?.organization_id,
+      });
       setPeople(plist);
-      setOrganizations(orgs);
-      setProducts(prods);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Failed to load people");
     } finally {
       setLoading(false);
     }
   }
-
-  useEffect(() => {
-    void load({
-      organization_id: orgFilter ? Number(orgFilter) : undefined,
-    });
-  }, [orgFilter]);
 
   const visible = useMemo(() => {
     if (!search.trim()) return people;
@@ -77,7 +97,7 @@ export function PeoplePage() {
 
   async function onSearchSubmit(e: FormEvent) {
     e.preventDefault();
-    await load({
+    await loadPeople({
       search: search.trim() || undefined,
       organization_id: orgFilter ? Number(orgFilter) : undefined,
     });
@@ -107,7 +127,7 @@ export function PeoplePage() {
       setAddOpen(false);
       setForm({ full_name: "", email: "", organization_id: "", product_ids: [] });
       setInfo("Person invited. Activation email has been sent (logged until SMTP is configured).");
-      await load({
+      await loadPeople({
         search: search.trim() || undefined,
         organization_id: orgFilter ? Number(orgFilter) : undefined,
       });

@@ -6,23 +6,11 @@ import { AuthShell } from "../components/auth/AuthShell";
 import { Button } from "../components/ui/Button";
 import { PasswordInput } from "../components/ui/PasswordInput";
 import { useAuth } from "../context/AuthContext";
+import { pathForNextStep, resolvePostAuthDestination } from "../lib/productRouting";
 import { ui } from "../lib/ui";
-import type { LoginNextStep } from "../types";
-
-function routeForNextStep(step: LoginNextStep): string {
-  switch (step) {
-    case "platform_admin":
-      return "/platform";
-    case "product_selection":
-    case "direct_entry":
-      return "/products";
-    default:
-      return "/no-access";
-  }
-}
 
 export function LoginPage() {
-  const { login, user, loading, nextStep } = useAuth();
+  const { login, user, loading, nextStep, products } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -32,7 +20,7 @@ export function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
 
   if (!loading && user && nextStep) {
-    return <Navigate to={routeForNextStep(nextStep)} replace />;
+    return <Navigate to={pathForNextStep(nextStep, products)} replace />;
   }
 
   async function onSubmit(e: FormEvent) {
@@ -41,9 +29,10 @@ export function LoginPage() {
     setInfo("");
     setSubmitting(true);
     try {
-      const step = await login(email.trim(), password);
+      const data = await login(email.trim(), password);
       void keepSignedIn;
-      navigate(routeForNextStep(step), { replace: true });
+      const dest = await resolvePostAuthDestination(data.next_step, data.products);
+      navigate(dest, { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Unable to sign in");
     } finally {

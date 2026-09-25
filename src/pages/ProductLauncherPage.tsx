@@ -1,36 +1,85 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { enterProduct, myProducts } from "../api/platform";
 import { Button } from "../components/ui/Button";
 import { useAuth } from "../context/AuthContext";
+import { productHome } from "../lib/productRouting";
 import { ui } from "../lib/ui";
 import type { Product } from "../types";
 
-function productHome(code: string): string {
-  const upper = code.toUpperCase();
-  if (upper === "PAYFLOW") return "/payflow";
-  if (upper === "INSIGHTIQ") return "/insightiq";
-  return "/products";
-}
+/** Prevent StrictMode remount from POSTing enter twice for the same single-product auto-entry. */
+const autoEnterLocks = new Set<string>();
 
 function isPayFlow(product: Product) {
   return product.code.toUpperCase() === "PAYFLOW";
 }
 
 export function ProductLauncherPage() {
-  const { user, loading, logout, isSuperAdmin } = useAuth();
+  const { user, loading, logout, isSuperAdmin, products: authProducts } = useAuth();
   const navigate = useNavigate();
   const [products, setProducts] = useState<Product[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
+  const [resolvingSingle, setResolvingSingle] = useState(false);
+  const autoEntered = useRef(false);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || loading) return;
+
+    // Prefer session products from /auth/me — avoid a second /me/products when already known.
+    if (authProducts.length > 0) {
+      setProducts(
+        authProducts.map((p) => ({
+          id: p.id,
+          name: p.name,
+          code: p.code,
+          description: p.description,
+          status: p.status,
+          created_at: "",
+          updated_at: "",
+        })),
+      );
+      return;
+    }
+
+    let cancelled = false;
     void myProducts()
-      .then(setProducts)
-      .catch((err) => setError(err instanceof ApiError ? err.detail : "Failed to load products"));
-  }, [user]);
+      .then((list) => {
+        if (!cancelled) setProducts(list);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof ApiError ? err.detail : "Failed to load products");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user, loading, authProducts]);
+
+  // AC1: single entitlement → enter the product without requiring selection.
+  // Multi-product users (AC2) keep the selection UI.
+  useEffect(() => {
+    if (loading || !user || products.length !== 1 || autoEntered.current) return;
+
+    const code = products[0].code;
+    const lockKey = `${user.id}:${code}`;
+    if (autoEnterLocks.has(lockKey)) return;
+
+    autoEntered.current = true;
+    autoEnterLocks.add(lockKey);
+    setResolvingSingle(true);
+    setError("");
+    void enterProduct(code)
+      .then(() => navigate(productHome(code), { replace: true }))
+      .catch((err) => {
+        autoEntered.current = false;
+        autoEnterLocks.delete(lockKey);
+        setError(err instanceof ApiError ? err.detail : "Unable to enter product");
+        setResolvingSingle(false);
+      });
+  }, [loading, user, products, navigate]);
 
   if (loading) return <div className={ui.loading}>Loading…</div>;
   if (!user) return <Navigate to="/login" replace />;
@@ -50,6 +99,10 @@ export function ProductLauncherPage() {
 
   const orgLabel = user.organization_name || "your organization";
 
+  if (resolvingSingle || (products.length === 1 && !error)) {
+    return <div className={ui.loading}>Opening your product…</div>;
+  }
+
   return (
     <div className="min-h-screen bg-bg">
       <header className="flex items-center justify-between px-8 py-5">
@@ -64,7 +117,10 @@ export function ProductLauncherPage() {
         </div>
         <div className="flex items-center gap-3">
           {isSuperAdmin ? (
-            <Link to="/platform" className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[0.82rem] font-semibold text-slate-700 hover:bg-slate-50">
+            <Link
+              to="/platform"
+              className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[0.82rem] font-semibold text-slate-700 hover:bg-slate-50"
+            >
               Platform administration
             </Link>
           ) : null}
@@ -150,7 +206,10 @@ export function NoAccessPage() {
         </div>
         <div className="flex items-center gap-3">
           {isSuperAdmin ? (
-            <Link to="/platform" className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[0.82rem] font-semibold text-slate-700 hover:bg-slate-50">
+            <Link
+              to="/platform"
+              className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[0.82rem] font-semibold text-slate-700 hover:bg-slate-50"
+            >
               Platform administration
             </Link>
           ) : null}

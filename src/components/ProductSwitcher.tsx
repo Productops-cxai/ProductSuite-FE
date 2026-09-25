@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { enterProduct, myProducts } from "../api/platform";
 import { useAuth } from "../context/AuthContext";
-import type { Product } from "../types";
+import { productHome } from "../lib/productRouting";
+import type { Product, ProductBrief } from "../types";
 
 export type SwitcherCurrent = "platform" | string;
 
@@ -13,35 +14,35 @@ type Props = {
   variant?: "platform" | "product";
 };
 
-function homeForCode(code: string): string {
-  const upper = code.toUpperCase();
-  if (upper === "PAYFLOW") return "/payflow";
-  if (upper === "INSIGHTIQ") return "/insightiq";
-  return "/products";
+function asProducts(list: ProductBrief[]): Product[] {
+  return list.map((p) => ({
+    id: p.id,
+    name: p.name,
+    code: p.code,
+    description: p.description,
+    status: p.status,
+    created_at: "",
+    updated_at: "",
+  }));
 }
 
 export function ProductSwitcher({ current, variant = "product" }: Props) {
-  const { isSuperAdmin } = useAuth();
+  const { isSuperAdmin, logout, products: authProducts } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const [products, setProducts] = useState<Product[]>([]);
+  const [products, setProducts] = useState<Product[]>(() => asProducts(authProducts));
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [signingOut, setSigningOut] = useState(false);
+  const [loadingList, setLoadingList] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   const isPlatform = current === "platform";
 
-  async function loadProducts() {
-    try {
-      setProducts(await myProducts());
-    } catch {
-      setProducts([]);
-    }
-  }
-
+  // Keep labels in sync with session products — no extra /me/products on mount.
   useEffect(() => {
-    void loadProducts();
-  }, []);
+    setProducts(asProducts(authProducts));
+  }, [authProducts]);
 
   useEffect(() => {
     function onDoc(e: MouseEvent) {
@@ -51,11 +52,25 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
 
+  async function refreshProducts() {
+    if (loadingList) return;
+    setLoadingList(true);
+    try {
+      setProducts(await myProducts());
+    } catch {
+      /* keep current list */
+    } finally {
+      setLoadingList(false);
+    }
+  }
+
   function toggleOpen() {
     const next = !open;
     setOpen(next);
-    if (next) void loadProducts();
+    // Refresh only when opening, so switch sees current entitlements (one call).
+    if (next) void refreshProducts();
   }
+
   const currentProduct = !isPlatform
     ? products.find((p) => p.code.toUpperCase() === String(current).toUpperCase())
     : undefined;
@@ -69,7 +84,7 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
     setError("");
     try {
       await enterProduct(code);
-      navigate(homeForCode(code), { replace: true });
+      navigate(productHome(code), { replace: true });
       setOpen(false);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Unable to open product");
@@ -88,6 +103,17 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
     navigate("/products", { replace: true });
   }
 
+  async function onSignOut() {
+    setSigningOut(true);
+    setOpen(false);
+    try {
+      await logout();
+    } finally {
+      navigate("/login", { replace: true });
+      setSigningOut(false);
+    }
+  }
+
   const triggerClass =
     variant === "platform"
       ? "inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1.5 text-[0.82rem] font-semibold text-blue-700 dark:bg-blue-500/15 dark:text-blue-300"
@@ -99,7 +125,12 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
   const otherProducts = products.filter(
     (p) => isPlatform || p.code.toUpperCase() !== String(current).toUpperCase(),
   );
-  const currentLabel = currentProduct?.name || (isPlatform ? "Platform" : String(current));
+  const currentLabel =
+    currentProduct?.name ||
+    (!isPlatform
+      ? authProducts.find((p) => p.code.toUpperCase() === String(current).toUpperCase())?.name
+      : undefined) ||
+    (isPlatform ? "Platform" : String(current));
 
   return (
     <div className="relative" ref={ref}>
@@ -124,7 +155,7 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
               <span className="rounded-[1.5px] bg-slate-500" />
               <span className="rounded-[1.5px] bg-slate-500" />
             </span>
-            <span>{currentProduct?.name || String(current)}</span>
+            <span>{currentLabel}</span>
             <span className="ml-0.5 text-slate-400" aria-hidden="true">
               <svg viewBox="0 0 12 16" width="10" height="14" fill="currentColor">
                 <path d="M6 2 L10 7 H2 Z" />
@@ -137,7 +168,7 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
 
       {open ? (
         <div
-          className="absolute left-0 top-[calc(100%+8px)] z-40 w-[280px] overflow-hidden rounded-xl border border-slate-200 bg-white py-1.5 shadow-[0_12px_32px_rgba(15,23,42,0.12)] dark:border-slate-700 dark:bg-slate-900 dark:shadow-[0_12px_32px_rgba(0,0,0,0.45)]"
+          className="absolute right-0 top-[calc(100%+8px)] z-40 w-[280px] max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-slate-200 bg-white py-1.5 shadow-[0_12px_32px_rgba(15,23,42,0.12)] dark:border-slate-700 dark:bg-slate-900 dark:shadow-[0_12px_32px_rgba(0,0,0,0.45)]"
           role="menu"
         >
           <div className="px-4 pb-1 pt-2 text-[0.68rem] font-semibold tracking-[0.06em] text-slate-400">
@@ -174,7 +205,7 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
           <button type="button" role="menuitem" className={rowClass} onClick={goLauncher}>
             Product selection
           </button>
-          {isSuperAdmin ? (
+          {isSuperAdmin && !isPlatform ? (
             <button type="button" role="menuitem" className={rowClass} onClick={goPlatform}>
               Platform administration
             </button>
@@ -186,6 +217,21 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
               <div className="px-4 py-2 text-[0.82rem] text-slate-400">
                 {currentLabel} Operations (internal)
               </div>
+            </>
+          ) : null}
+
+          {isPlatform ? (
+            <>
+              <div className="mx-3 my-1.5 h-px bg-slate-100 dark:bg-slate-800" />
+              <button
+                type="button"
+                role="menuitem"
+                className={`${rowClass} text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10`}
+                disabled={signingOut}
+                onClick={() => void onSignOut()}
+              >
+                {signingOut ? "Signing out…" : "Sign out"}
+              </button>
             </>
           ) : null}
         </div>

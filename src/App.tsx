@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { PlatformLayout } from "./components/layout/PlatformLayout";
 import { useAuth } from "./context/AuthContext";
+import { pathForNextStep } from "./lib/productRouting";
 import { ActivatePage } from "./pages/ActivatePage";
 import { LoginPage } from "./pages/LoginPage";
 import { AccessPage } from "./pages/platform/AccessPage";
@@ -15,19 +16,12 @@ import { PayFlowLayout } from "./pages/payflow/PayFlowLayout";
 import { PayFlowProfilePage } from "./pages/payflow/ProfilePage";
 import { NoAccessPage, ProductLauncherPage } from "./pages/ProductLauncherPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
-import type { LoginNextStep } from "./types";
 
 function HomeRedirect() {
-  const { loading, user, nextStep, isSuperAdmin } = useAuth();
+  const { loading, user, nextStep, products } = useAuth();
   if (loading) return <div className="grid min-h-screen place-items-center text-slate-500">Loading…</div>;
   if (!user) return <Navigate to="/login" replace />;
-  return <Navigate to={routeFor(nextStep, isSuperAdmin)} replace />;
-}
-
-function routeFor(nextStep: LoginNextStep | null, isSuperAdmin: boolean): string {
-  if (isSuperAdmin || nextStep === "platform_admin") return "/platform";
-  if (nextStep === "no_access") return "/no-access";
-  return "/products";
+  return <Navigate to={pathForNextStep(nextStep, products)} replace />;
 }
 
 export default function App() {

@@ -71,7 +71,7 @@ const THEME_OPTS: { id: ThemeMode; label: string }[] = [
 ];
 
 export function PayFlowProfilePage() {
-  const { user, refreshMe } = useAuth();
+  const { user, applyMe } = useAuth();
   const [fullName, setFullName] = useState(user?.full_name || "");
   const [profileBusy, setProfileBusy] = useState(false);
   const [profileMsg, setProfileMsg] = useState("");
@@ -111,8 +111,8 @@ export function PayFlowProfilePage() {
     setProfileMsg("");
     setProfileErr("");
     try {
-      await updateProfile(fullName.trim());
-      await refreshMe();
+      const me = await updateProfile(fullName.trim());
+      applyMe(me);
       setProfileMsg("Profile saved.");
     } catch (err) {
       setProfileErr(err instanceof ApiError ? err.detail : "Unable to save profile");

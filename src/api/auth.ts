@@ -1,4 +1,5 @@
 import { apiRequest, clearTokens, getRefreshToken, setTokens } from "./client";
+import { cachedAsync, invalidateCache } from "../lib/dedupeAsync";
 import type { LoginResponse, MeResponse } from "../types";
 
 export async function login(email: string, password: string): Promise<LoginResponse> {
@@ -8,18 +9,21 @@ export async function login(email: string, password: string): Promise<LoginRespo
     auth: false,
   });
   setTokens(data.access_token, data.refresh_token);
+  invalidateCache();
   return data;
 }
 
 export async function fetchMe(): Promise<MeResponse> {
-  return apiRequest<MeResponse>("/auth/me");
+  return cachedAsync("auth:me", () => apiRequest<MeResponse>("/auth/me"), 15_000);
 }
 
 export async function updateProfile(full_name: string): Promise<MeResponse> {
-  return apiRequest<MeResponse>("/auth/me", {
+  const me = await apiRequest<MeResponse>("/auth/me", {
     method: "PATCH",
     body: { full_name },
   });
+  invalidateCache("auth:me");
+  return me;
 }
 
 export async function changePassword(
@@ -42,6 +46,7 @@ export async function logout(): Promise<void> {
     });
   } finally {
     clearTokens();
+    invalidateCache();
   }
 }
 
@@ -56,6 +61,13 @@ export async function forgotPassword(email: string): Promise<{ message: string }
 export async function previewActivation(token: string) {
   return apiRequest<{ email: string; full_name: string }>(
     `/auth/activation/${encodeURIComponent(token)}`,
+    { auth: false },
+  );
+}
+
+export async function previewPasswordReset(token: string) {
+  return apiRequest<{ email: string; full_name: string }>(
+    `/auth/password-reset/${encodeURIComponent(token)}`,
     { auth: false },
   );
 }
