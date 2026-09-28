@@ -105,17 +105,17 @@ export function ActivatePage() {
     >
       {loading && !completed ? (
         <>
-          <h2 className="font-display mb-1 text-[1.6rem] font-bold tracking-tight">Set password</h2>
+          <h2 className="font-display text-[24px] font-bold tracking-tight text-slate-900">Set password</h2>
           <div className={ui.empty}>Validating invite…</div>
         </>
       ) : null}
 
       {completed ? (
         <>
-          <h2 className="font-display mb-1 text-[1.6rem] font-bold tracking-tight">
+          <h2 className="font-display text-[24px] font-bold tracking-tight text-slate-900">
             Account activated
           </h2>
-          <p className="mb-5 text-[0.95rem] text-slate-500">
+          <p className="mt-1.5 mb-6 text-[13px] text-slate-500">
             Your password is set. This invitation link cannot be used again.
           </p>
           {info ? <div className={`${ui.success} mb-4`}>{info}</div> : null}
@@ -129,10 +129,10 @@ export function ActivatePage() {
 
       {!loading && !completed && linkInvalid ? (
         <>
-          <h2 className="font-display mb-1 text-[1.6rem] font-bold tracking-tight">
+          <h2 className="font-display text-[24px] font-bold tracking-tight text-slate-900">
             Link expired or invalid
           </h2>
-          <p className="mb-5 text-[0.95rem] text-slate-500">
+          <p className="mt-1.5 mb-6 text-[13px] text-slate-500">
             Password setup cannot proceed with this invitation link.
           </p>
           <div className={ui.error}>{error || INVALID_LINK_MESSAGE}</div>
@@ -150,8 +150,8 @@ export function ActivatePage() {
 
       {showForm ? (
         <>
-          <h2 className="font-display mb-1 text-[1.6rem] font-bold tracking-tight">Set password</h2>
-          <p className="mb-5 text-[0.95rem] text-slate-500">
+          <h2 className="font-display text-[24px] font-bold tracking-tight text-slate-900">Set password</h2>
+          <p className="mt-1.5 mb-6 text-[13px] text-slate-500">
             {fullName ? `Welcome, ${fullName}. ` : null}
             Choose a password for your registered work email. You cannot change product access,
             roles or permissions here.

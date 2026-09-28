@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { RequireProductAccess } from "../../components/auth/RequireProductAccess";
 import { ProductSwitcher } from "../../components/ProductSwitcher";
 import { Icon } from "../../components/ui/Icon";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import { useAuth } from "../../context/AuthContext";
 
 type NavItem = {
@@ -113,26 +114,271 @@ function LogOutIcon() {
   );
 }
 
+function AccountMenu({
+  open,
+  onClose,
+  onProfile,
+  onLogout,
+  roleLabel,
+  align = "left",
+}: {
+  open: boolean;
+  onClose: () => void;
+  onProfile: () => void;
+  onLogout: () => void;
+  roleLabel: string;
+  align?: "left" | "right" | "rail";
+}) {
+  if (!open) return null;
+  const position =
+    align === "right"
+      ? "right-0 top-[calc(100%+10px)]"
+      : align === "rail"
+        ? "bottom-0 left-[calc(100%+10px)] w-[280px]"
+        : "bottom-full left-0 right-0 mb-2 w-auto";
+  return (
+    <div
+      role="menu"
+      className={`absolute z-50 w-[280px] overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-slate-900 shadow-[0_12px_32px_rgba(15,23,42,0.12)] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${position}`}
+    >
+      <button
+        type="button"
+        role="menuitem"
+        className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm font-medium text-slate-800 hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-slate-800"
+        onClick={() => {
+          onClose();
+          onProfile();
+        }}
+      >
+        <UserIcon />
+        My Profile
+      </button>
+      <div className="mx-3 my-1 h-px bg-slate-100 dark:bg-slate-800" />
+      <div className="px-4 pb-1 pt-1.5 text-[0.68rem] font-semibold tracking-[0.08em] text-slate-400">
+        PREVIEW ROLE
+      </div>
+      <div className="flex items-center justify-between gap-3 px-4 py-1.5 text-sm">
+        <span className="font-medium text-slate-900 dark:text-slate-100">{roleLabel}</span>
+        <span className="shrink-0 text-sm font-medium text-primary">Active</span>
+      </div>
+      <div className="px-4 pb-1.5 pt-0.5 text-sm text-slate-700 dark:text-slate-300">Supervisor · Zeeshan</div>
+      <p className="px-4 pb-2 text-xs leading-snug text-slate-400">Supervisors only see assigned clients.</p>
+      <div className="mx-3 my-1 h-px bg-slate-100 dark:bg-slate-800" />
+      <button
+        type="button"
+        role="menuitem"
+        className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40"
+        onClick={() => {
+          onClose();
+          onLogout();
+        }}
+      >
+        <LogOutIcon />
+        Log out
+      </button>
+    </div>
+  );
+}
+
+function SidebarNav({
+  collapsed,
+  onNavigate,
+}: {
+  collapsed?: boolean;
+  onNavigate?: () => void;
+}) {
+  return (
+    <nav
+      className={`min-h-0 flex-1 overflow-y-auto pb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
+        collapsed ? "px-2" : "px-3"
+      }`}
+    >
+      <div className={`flex flex-col ${collapsed ? "items-center gap-1.5" : "gap-2"}`}>
+        {NAV.map((section) => (
+          <div className={collapsed ? "w-full" : "p-2"} key={section.label}>
+            {!collapsed ? (
+              <div className="px-2.5 pb-2 text-[10px] font-semibold tracking-[0.1em] text-[#9aa6bc] uppercase">
+                {section.label}
+              </div>
+            ) : null}
+            <ul className={`flex flex-col ${collapsed ? "items-center gap-1" : "gap-1"}`}>
+              {section.items.map((item) =>
+                item.soon ? (
+                  <li key={item.label} className={collapsed ? "w-full" : undefined}>
+                    <div
+                      className={
+                        collapsed
+                          ? "mx-auto flex size-10 cursor-default items-center justify-center rounded-lg text-[#9aa6bc]/70"
+                          : "flex cursor-default items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium text-[#9aa6bc]/80"
+                      }
+                      title={item.label}
+                    >
+                      <Icon name={item.icon} className="size-[17px] shrink-0" />
+                      {!collapsed ? <span>{item.label}</span> : null}
+                    </div>
+                  </li>
+                ) : (
+                  <li key={item.label} className={collapsed ? "w-full" : undefined}>
+                    <NavLink
+                      to={item.to}
+                      end={item.end}
+                      title={item.label}
+                      onClick={onNavigate}
+                      className={({ isActive }) =>
+                        collapsed
+                          ? `mx-auto flex size-10 items-center justify-center rounded-lg border transition-all duration-150 ${
+                              isActive
+                                ? "border-white/10 bg-[#2f4060] text-white shadow-[0_8px_20px_-14px_rgba(59,130,246,0.65)]"
+                                : "border-transparent text-[#b7c2d4] hover:bg-white/[0.06] hover:text-white"
+                            }`
+                          : `relative flex items-center gap-2.5 rounded-lg border px-2.5 py-2 text-[13px] font-medium transition-all duration-150 ${
+                              isActive
+                                ? "border-white/10 bg-[#2f4060] text-white shadow-[0_8px_20px_-14px_rgba(59,130,246,0.65)]"
+                                : "border-transparent text-[#b7c2d4] hover:bg-white/[0.06] hover:text-white"
+                            }`
+                      }
+                    >
+                      <Icon name={item.icon} className="size-[17px] shrink-0 opacity-90" />
+                      {!collapsed ? <span>{item.label}</span> : null}
+                    </NavLink>
+                  </li>
+                ),
+              )}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
+function SidebarPanel({
+  collapsed,
+  userName,
+  roleLabel,
+  onNavigate,
+  onProfile,
+  onLogout,
+}: {
+  collapsed?: boolean;
+  userName: string;
+  roleLabel: string;
+  onNavigate?: () => void;
+  onProfile: () => void;
+  onLogout: () => void;
+}) {
+  const [accountOpen, setAccountOpen] = useState(false);
+  const accountRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!accountOpen) return;
+    function onDoc(e: MouseEvent) {
+      if (!accountRef.current?.contains(e.target as Node)) setAccountOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setAccountOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [accountOpen]);
+
+  return (
+    <>
+      <div
+        className={`flex h-[68px] shrink-0 items-center ${
+          collapsed ? "justify-center px-0" : "px-4"
+        }`}
+      >
+        {collapsed ? (
+          <img
+            src="/assets/payflow-mark.png"
+            alt="PayFlow"
+            className="block size-9 object-contain"
+          />
+        ) : (
+          <img
+            src="/assets/payflow-logo-transparent.png"
+            alt="PayFlow — Automate. Engage. Recover."
+            className="block h-11 w-auto max-w-full object-contain object-left brightness-0 invert"
+          />
+        )}
+      </div>
+
+      <SidebarNav collapsed={collapsed} onNavigate={onNavigate} />
+
+      <div
+        ref={accountRef}
+        className={`relative mt-auto flex shrink-0 flex-col border-t border-white/10 ${
+          collapsed ? "items-center gap-0 p-2" : "gap-2 p-2.5"
+        }`}
+      >
+        <AccountMenu
+          open={accountOpen}
+          onClose={() => setAccountOpen(false)}
+          onProfile={onProfile}
+          onLogout={onLogout}
+          roleLabel={roleLabel}
+          align={collapsed ? "rail" : "left"}
+        />
+        {!collapsed ? (
+          <div className="px-1.5 pb-1 pt-0.5 text-[11px] text-slate-400">All clients in view</div>
+        ) : null}
+        <button
+          type="button"
+          className={
+            collapsed
+              ? `flex size-10 items-center justify-center rounded-lg transition-colors hover:bg-white/5 ${
+                  accountOpen ? "bg-white/5" : ""
+                }`
+              : `flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-white/5 ${
+                  accountOpen ? "bg-white/5" : ""
+                }`
+          }
+          aria-haspopup="menu"
+          aria-expanded={accountOpen}
+          title={userName}
+          onClick={() => setAccountOpen((open) => !open)}
+        >
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/25 text-[11px] font-bold text-primary">
+            {initials(userName)}
+          </span>
+          {!collapsed ? (
+            <>
+              <div className="min-w-0 flex-1 leading-tight">
+                <p className="truncate text-[13px] font-semibold text-white">{userName}</p>
+                <p className="truncate text-[11px] text-slate-400">{roleLabel}</p>
+              </div>
+              <ChevronsUpDownIcon />
+            </>
+          ) : null}
+        </button>
+      </div>
+    </>
+  );
+}
+
 function PayFlowShell() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [accountOpen, setAccountOpen] = useState(false);
+  const isMobile = useIsMobile();
+  const [desktopCollapsed, setDesktopCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [headerAccountOpen, setHeaderAccountOpen] = useState(false);
-  const accountRef = useRef<HTMLDivElement>(null);
   const headerAccountRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!accountOpen && !headerAccountOpen) return;
+    if (!headerAccountOpen) return;
     function onDoc(e: MouseEvent) {
-      const target = e.target as Node;
-      if (accountOpen && !accountRef.current?.contains(target)) setAccountOpen(false);
-      if (headerAccountOpen && !headerAccountRef.current?.contains(target)) setHeaderAccountOpen(false);
+      if (!headerAccountRef.current?.contains(e.target as Node)) setHeaderAccountOpen(false);
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
-        setAccountOpen(false);
         setHeaderAccountOpen(false);
+        setMobileOpen(false);
       }
     }
     document.addEventListener("mousedown", onDoc);
@@ -141,215 +387,132 @@ function PayFlowShell() {
       document.removeEventListener("mousedown", onDoc);
       document.removeEventListener("keydown", onKey);
     };
-  }, [accountOpen, headerAccountOpen]);
+  }, [headerAccountOpen]);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [mobileOpen]);
 
   if (!user) return null;
 
   const roleLabel =
     user.role === "platform_super_admin" ? "Platform Super Admin" : "Operations Admin";
 
+  function toggleSidebar() {
+    if (isMobile) {
+      setMobileOpen((v) => !v);
+      return;
+    }
+    setDesktopCollapsed((v) => !v);
+  }
+
+  const panelProps = {
+    userName: user.full_name,
+    roleLabel,
+    onProfile: () => navigate("/payflow/profile"),
+    onLogout: () => void logout(),
+  };
+
   return (
-    <div
-      className={`grid min-h-screen bg-[#f3f5f9] transition-[grid-template-columns] duration-200 dark:bg-[#0b1220] ${
-        sidebarCollapsed ? "grid-cols-[0_1fr]" : "grid-cols-[280px_1fr]"
-      }`}
-    >
+    <div className="flex min-h-screen w-full bg-[#f3f5f9] dark:bg-[#0b1220]">
       <aside
-        className={`sticky top-0 flex h-screen flex-col border-r border-white/10 bg-sidebar px-2.5 pt-3 text-slate-400 ${
-          sidebarCollapsed ? "pointer-events-none overflow-hidden border-0 p-0 opacity-0" : "overflow-visible"
+        className={`sticky top-0 hidden h-screen shrink-0 flex-col border-r border-white/10 bg-sidebar text-slate-400 shadow-[8px_0_32px_-24px_rgba(18,26,43,0.65)] transition-[width] duration-200 md:flex ${
+          desktopCollapsed ? "w-16" : "w-64"
         }`}
       >
-        <div className="shrink-0 px-2 pb-3 pt-1">
-          <img
-            src="/assets/payflow-logo-transparent.png"
-            alt="PayFlow — Automate. Engage. Recover."
-            className="block h-11 w-auto max-w-full object-contain object-left brightness-0 invert"
-          />
-        </div>
-
-        <nav className="min-h-0 flex-1 overflow-y-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {NAV.map((section) => (
-            <div className="mb-2" key={section.label}>
-              <div className="px-3 pb-1 pt-1 text-[0.65rem] font-bold tracking-[0.08em] text-slate-500">
-                {section.label}
-              </div>
-              {section.items.map((item) =>
-                item.soon ? (
-                  <div
-                    className="flex cursor-default items-center gap-2.5 rounded-md px-3 py-1.5 text-[0.84rem] font-medium text-slate-400"
-                    key={item.label}
-                  >
-                    <Icon name={item.icon} className="size-4 shrink-0" />
-                    <span>{item.label}</span>
-                  </div>
-                ) : (
-                  <NavLink
-                    key={item.label}
-                    to={item.to}
-                    end={item.end}
-                    className={({ isActive }) =>
-                      `flex items-center gap-2.5 rounded-md px-3 py-1.5 text-[0.84rem] font-medium ${
-                        isActive
-                          ? "bg-blue-500/20 text-white"
-                          : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
-                      }`
-                    }
-                  >
-                    <Icon name={item.icon} className="size-4 shrink-0" />
-                    <span>{item.label}</span>
-                  </NavLink>
-                ),
-              )}
-            </div>
-          ))}
-        </nav>
-
-        <div ref={accountRef} className="relative mt-auto flex shrink-0 flex-col gap-2 border-t border-white/10 p-2.5">
-          {accountOpen && (
-            <div
-              role="menu"
-              className="absolute bottom-full left-0 right-0 z-50 mb-2 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-slate-900 shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-            >
-              <button
-                type="button"
-                role="menuitem"
-                className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-medium text-slate-800 hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-slate-800"
-                onClick={() => {
-                  setAccountOpen(false);
-                  navigate("/payflow/profile");
-                }}
-              >
-                <UserIcon />
-                My Profile
-              </button>
-              <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
-              <div className="px-3 pb-1 pt-1.5 text-[0.65rem] font-semibold tracking-[0.08em] text-slate-400">
-                PREVIEW ROLE
-              </div>
-              <div className="flex items-center justify-between gap-3 px-3 py-1.5 text-sm">
-                <span className="font-medium text-slate-900 dark:text-slate-100">{roleLabel}</span>
-                <span className="shrink-0 text-sm font-medium text-primary">Active</span>
-              </div>
-              <div className="px-3 pb-2 pt-0.5 text-sm text-slate-700 dark:text-slate-300">Supervisor · Zeeshan</div>
-              <p className="px-3 pb-2 text-xs leading-snug text-slate-400">Supervisors only see assigned clients.</p>
-              <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
-              <button
-                type="button"
-                role="menuitem"
-                className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40"
-                onClick={() => void logout()}
-              >
-                <LogOutIcon />
-                Log out
-              </button>
-            </div>
-          )}
-          <div className="px-1.5 pb-1 pt-0.5 text-xs text-slate-400">All clients in view</div>
-          <button
-            type="button"
-            className={`flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-white/5 ${
-              accountOpen ? "bg-white/5" : ""
-            }`}
-            aria-haspopup="menu"
-            aria-expanded={accountOpen}
-            onClick={() => setAccountOpen((open) => !open)}
-          >
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/25 text-[11px] font-bold text-primary">
-              {initials(user.full_name)}
-            </span>
-            <div className="min-w-0 flex-1 leading-tight">
-              <p className="truncate text-sm font-medium text-white">{user.full_name}</p>
-              <p className="truncate text-xs text-slate-400">{roleLabel}</p>
-            </div>
-            <ChevronsUpDownIcon />
-          </button>
-        </div>
+        <SidebarPanel {...panelProps} collapsed={desktopCollapsed} />
       </aside>
 
-      <div className="flex min-w-0 flex-col bg-[#f5f7fb] dark:bg-[#0b1220]">
-        <header className="flex min-h-14 items-center justify-between gap-4 border-b border-slate-200 bg-white px-6 py-2.5 dark:border-slate-800 dark:bg-slate-900">
+      {mobileOpen ? (
+        <div className="fixed inset-0 z-40 md:hidden">
+          <button
+            type="button"
+            className="absolute inset-0 bg-slate-900/50"
+            aria-label="Close navigation"
+            onClick={() => setMobileOpen(false)}
+          />
+          <aside className="absolute inset-y-0 left-0 flex w-[min(18rem,88vw)] flex-col bg-sidebar text-slate-400 shadow-2xl">
+            <SidebarPanel {...panelProps} onNavigate={() => setMobileOpen(false)} />
+          </aside>
+        </div>
+      ) : null}
+
+      <div className="flex min-w-0 flex-1 flex-col bg-[#f5f7fb] dark:bg-[#0b1220]">
+        <header className="sticky top-0 z-20 flex h-[68px] items-center justify-between gap-4 border-b border-slate-200/80 bg-white/90 px-5 shadow-card backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 lg:px-9">
           <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
               className="grid size-8 shrink-0 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
-              title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              onClick={() => setSidebarCollapsed((v) => !v)}
+              title={desktopCollapsed || mobileOpen ? "Expand sidebar" : "Collapse sidebar"}
+              aria-label={desktopCollapsed || mobileOpen ? "Expand sidebar" : "Collapse sidebar"}
+              onClick={toggleSidebar}
             >
               <SidebarToggleIcon />
             </button>
-            <span className="truncate text-[0.86rem] text-slate-400">
-              Collections operations · <strong className="font-bold text-slate-600 dark:text-slate-300">3 clients</strong> in view
+            <img
+              src="/assets/payflow-logo-transparent.png"
+              alt="PayFlow"
+              className="block h-8 w-auto max-w-[140px] object-contain object-left md:hidden"
+            />
+            <span className="hidden truncate text-[12px] text-slate-400 lg:inline">
+              Collections operations ·{" "}
+              <strong className="font-medium text-slate-700 dark:text-slate-300">3 clients</strong> in
+              view
             </span>
           </div>
-          <div className="flex shrink-0 items-center gap-3">
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
             <ProductSwitcher current="PAYFLOW" variant="product" />
-            <button type="button" className="relative grid size-9 place-items-center text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100" title="Notifications" aria-label="Notifications">
+            <button
+              type="button"
+              className="relative grid size-9 place-items-center text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
+              title="Notifications"
+              aria-label="Notifications"
+            >
               <BellIcon />
               <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[0.6rem] font-bold leading-none text-white ring-2 ring-white dark:ring-slate-900">
                 5
               </span>
             </button>
-            <span className="h-8 w-px bg-slate-200 dark:bg-slate-700" aria-hidden />
+            <span className="mx-1 hidden h-7 w-px bg-slate-200 dark:bg-slate-700 lg:block" aria-hidden />
             <div className="relative" ref={headerAccountRef}>
               <button
                 type="button"
-                className="flex items-center gap-2.5 rounded-lg px-1 py-0.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800"
+                className="flex items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800"
                 aria-haspopup="menu"
                 aria-expanded={headerAccountOpen}
                 onClick={() => setHeaderAccountOpen((open) => !open)}
               >
-                <div className="font-display grid size-9 shrink-0 place-items-center rounded-full bg-blue-100 text-[0.75rem] font-bold text-blue-700 dark:bg-blue-500/20 dark:text-blue-300">
+                <div className="font-display grid size-8 shrink-0 place-items-center rounded-full bg-primary/10 text-[11px] font-bold text-primary">
                   {initials(user.full_name)}
                 </div>
-                <div>
-                  <strong className="block text-[0.88rem] font-semibold leading-tight text-slate-900 dark:text-slate-100">{user.full_name}</strong>
-                  <span className="block text-[0.75rem] leading-tight text-slate-400">{roleLabel}</span>
+                <div className="hidden sm:block">
+                  <strong className="block text-[13px] font-semibold leading-tight text-slate-900 dark:text-slate-100">
+                    {user.full_name}
+                  </strong>
+                  <span className="block text-[11px] leading-tight text-slate-400">{roleLabel}</span>
                 </div>
               </button>
-              {headerAccountOpen ? (
-                <div
-                  role="menu"
-                  className="absolute right-0 top-[calc(100%+10px)] z-50 w-[280px] overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-slate-900 shadow-[0_12px_32px_rgba(15,23,42,0.12)] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:shadow-[0_12px_32px_rgba(0,0,0,0.45)]"
-                >
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm font-medium text-slate-800 hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-slate-800"
-                    onClick={() => {
-                      setHeaderAccountOpen(false);
-                      navigate("/payflow/profile");
-                    }}
-                  >
-                    <UserIcon />
-                    My Profile
-                  </button>
-                  <div className="mx-3 my-1 h-px bg-slate-100 dark:bg-slate-800" />
-                  <div className="px-4 pb-1 pt-1.5 text-[0.68rem] font-semibold tracking-[0.08em] text-slate-400">
-                    PREVIEW ROLE
-                  </div>
-                  <div className="flex items-center justify-between gap-3 px-4 py-1.5 text-sm">
-                    <span className="font-medium text-slate-900 dark:text-slate-100">{roleLabel}</span>
-                    <span className="shrink-0 text-sm font-medium text-primary">Active</span>
-                  </div>
-                  <div className="px-4 pb-1.5 pt-0.5 text-sm text-slate-700 dark:text-slate-300">Supervisor · Zeeshan</div>
-                  <p className="px-4 pb-2 text-xs leading-snug text-slate-400">Supervisors only see assigned clients.</p>
-                  <div className="mx-3 my-1 h-px bg-slate-100 dark:bg-slate-800" />
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40"
-                    onClick={() => void logout()}
-                  >
-                    <LogOutIcon />
-                    Log out
-                  </button>
-                </div>
-              ) : null}
+              <AccountMenu
+                open={headerAccountOpen}
+                align="right"
+                onClose={() => setHeaderAccountOpen(false)}
+                onProfile={() => navigate("/payflow/profile")}
+                onLogout={() => void logout()}
+                roleLabel={roleLabel}
+              />
             </div>
           </div>
         </header>
-        <Outlet />
+        <main className="relative flex-1">
+          <div className="mx-auto w-full max-w-[1280px]">
+            <Outlet />
+          </div>
+        </main>
       </div>
     </div>
   );

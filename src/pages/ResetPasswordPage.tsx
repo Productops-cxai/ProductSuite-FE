@@ -97,17 +97,17 @@ export function ResetPasswordPage() {
     >
       {loading && !completed ? (
         <>
-          <h2 className="font-display mb-1 text-[1.6rem] font-bold tracking-tight">Reset password</h2>
+          <h2 className="font-display text-[24px] font-bold tracking-tight text-slate-900">Reset password</h2>
           <div className={ui.empty}>Validating reset link…</div>
         </>
       ) : null}
 
       {completed ? (
         <>
-          <h2 className="font-display mb-1 text-[1.6rem] font-bold tracking-tight">
+          <h2 className="font-display text-[24px] font-bold tracking-tight text-slate-900">
             Password updated
           </h2>
-          <p className="mb-5 text-[0.95rem] text-slate-500">
+          <p className="mt-1.5 mb-6 text-[13px] text-slate-500">
             Your new password is set. This reset link cannot be used again.
           </p>
           {info ? <div className={`${ui.success} mb-4`}>{info}</div> : null}
@@ -121,10 +121,10 @@ export function ResetPasswordPage() {
 
       {!loading && !completed && linkInvalid ? (
         <>
-          <h2 className="font-display mb-1 text-[1.6rem] font-bold tracking-tight">
+          <h2 className="font-display text-[24px] font-bold tracking-tight text-slate-900">
             Link expired or invalid
           </h2>
-          <p className="mb-5 text-[0.95rem] text-slate-500">
+          <p className="mt-1.5 mb-6 text-[13px] text-slate-500">
             This password reset link cannot be used. It may be expired or already used.
           </p>
           <div className={ui.error}>{error || INVALID_LINK_MESSAGE}</div>
@@ -141,8 +141,8 @@ export function ResetPasswordPage() {
 
       {showForm ? (
         <>
-          <h2 className="font-display mb-1 text-[1.6rem] font-bold tracking-tight">Reset password</h2>
-          <p className="mb-5 text-[0.95rem] text-slate-500">
+          <h2 className="font-display text-[24px] font-bold tracking-tight text-slate-900">Reset password</h2>
+          <p className="mt-1.5 mb-6 text-[13px] text-slate-500">
             Enter a new password for your account. This link can only be used once.
           </p>
 

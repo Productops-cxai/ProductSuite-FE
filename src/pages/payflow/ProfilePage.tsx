@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { ApiError } from "../../api/client";
 import { changePassword, updateProfile } from "../../api/auth";
+import { PageHeader, Panel } from "../../components/payflow-ui";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { PasswordInput } from "../../components/ui/PasswordInput";
@@ -146,99 +147,93 @@ export function PayFlowProfilePage() {
 
   return (
     <div className={ui.page}>
-      <div className={ui.pageHeader}>
-        <div>
-          <h1 className={ui.h1}>My Profile</h1>
-          <p className={ui.lead}>Manage your personal details, appearance and account security.</p>
-        </div>
-      </div>
+      <PageHeader
+        title="My Profile"
+        description="Manage your personal details, appearance and account security."
+      />
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
         <div className="min-w-0 space-y-5">
-          <form className={`${ui.card} p-6`} onSubmit={(e) => void onSaveProfile(e)}>
-            <h2 className={ui.formTitle}>Profile details</h2>
-            <p className={ui.formText}>Your identity across the PayFlow workspace.</p>
+          <Panel title="Profile details" description="Your identity across the PayFlow workspace.">
+            {profileErr ? <div className={`${ui.error} mt-0`}>{profileErr}</div> : null}
+            {profileMsg ? <div className={`${ui.success} mt-0`}>{profileMsg}</div> : null}
 
-            {profileErr ? <div className={`${ui.error} mt-4 mb-0`}>{profileErr}</div> : null}
-            {profileMsg ? <div className={`${ui.success} mt-4 mb-0`}>{profileMsg}</div> : null}
-
-            <div className="mt-6 flex flex-col gap-6 sm:flex-row sm:items-start">
-              <div className="flex w-[112px] shrink-0 flex-col items-center gap-2.5">
-                <div className="font-display grid size-[88px] place-items-center rounded-full bg-blue-100 text-[1.35rem] font-bold text-blue-700 dark:bg-blue-500/20 dark:text-blue-300">
-                  {initials(fullName || user.full_name)}
+            <form onSubmit={(e) => void onSaveProfile(e)}>
+              <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
+                <div className="flex w-[112px] shrink-0 flex-col items-center gap-2.5">
+                  <div className="font-display grid size-[88px] place-items-center rounded-full bg-blue-100 text-[1.35rem] font-bold text-blue-700 dark:bg-blue-500/20 dark:text-blue-300">
+                    {initials(fullName || user.full_name)}
+                  </div>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1.5 text-[0.82rem] font-semibold text-primary hover:text-primary-hover"
+                    title="Photo upload is not available yet"
+                    onClick={() => setProfileErr("Photo upload is not available yet.")}
+                  >
+                    <CameraIcon />
+                    Change photo
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-1.5 text-[0.82rem] font-semibold text-primary hover:text-primary-hover"
-                  title="Photo upload is not available yet"
-                  onClick={() => setProfileErr("Photo upload is not available yet.")}
-                >
-                  <CameraIcon />
-                  Change photo
-                </button>
-              </div>
 
-              <div className="min-w-0 flex-1">
-                <div className={ui.grid2}>
-                  <div className={ui.field}>
-                    <label className={ui.label} htmlFor="profile-full-name">
-                      Full Name
-                    </label>
-                    <input
-                      id="profile-full-name"
-                      className={ui.control}
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      required
-                      maxLength={255}
-                      autoComplete="name"
-                    />
+                <div className="min-w-0 flex-1">
+                  <div className={ui.grid2}>
+                    <div className={ui.field}>
+                      <label className={ui.label} htmlFor="profile-full-name">
+                        Full Name
+                      </label>
+                      <input
+                        id="profile-full-name"
+                        className={ui.control}
+                        value={fullName}
+                        onChange={(e) => setFullName(e.target.value)}
+                        required
+                        maxLength={255}
+                        autoComplete="name"
+                      />
+                    </div>
+                    <div className={ui.field}>
+                      <label className={ui.label} htmlFor="profile-email">
+                        Work Email
+                      </label>
+                      <input
+                        id="profile-email"
+                        className={ui.controlMuted}
+                        value={user.email}
+                        readOnly
+                        disabled
+                      />
+                    </div>
                   </div>
-                  <div className={ui.field}>
-                    <label className={ui.label} htmlFor="profile-email">
-                      Work Email
-                    </label>
-                    <input
-                      id="profile-email"
-                      className={ui.controlMuted}
-                      value={user.email}
-                      readOnly
-                      disabled
-                    />
-                  </div>
-                </div>
-                <div className={ui.grid2}>
-                  <div className={ui.field}>
-                    <label className={ui.label} htmlFor="profile-role">
-                      Role
-                    </label>
-                    <input id="profile-role" className={ui.controlMuted} value={label} readOnly disabled />
-                  </div>
-                  <div className={ui.field}>
-                    <span className={ui.label}>Account Status</span>
-                    <div className={`${ui.controlMuted} flex items-center`}>
-                      <Badge tone={statusTone}>{statusLabel(user.status)}</Badge>
+                  <div className={ui.grid2}>
+                    <div className={ui.field}>
+                      <label className={ui.label} htmlFor="profile-role">
+                        Role
+                      </label>
+                      <input id="profile-role" className={ui.controlMuted} value={label} readOnly disabled />
+                    </div>
+                    <div className={ui.field}>
+                      <span className={ui.label}>Account Status</span>
+                      <div className={`${ui.controlMuted} flex items-center`}>
+                        <Badge tone={statusTone}>{statusLabel(user.status)}</Badge>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
 
-            <div className="mt-2 flex justify-end border-t border-slate-100 pt-5 dark:border-slate-800">
-              <Button type="submit" disabled={profileBusy || !fullName.trim()}>
-                {profileBusy ? "Saving…" : "Save Profile"}
-              </Button>
-            </div>
-          </form>
+              <div className="mt-2 flex justify-end border-t border-slate-100 pt-5 dark:border-slate-800">
+                <Button type="submit" disabled={profileBusy || !fullName.trim()}>
+                  {profileBusy ? "Saving…" : "Save Profile"}
+                </Button>
+              </div>
+            </form>
+          </Panel>
 
-          <form className={`${ui.card} p-6`} onSubmit={(e) => void onUpdatePassword(e)}>
-            <h2 className={ui.formTitle}>Change password</h2>
-            <p className={ui.formText}>Update the password used for your PayFlow account.</p>
+          <Panel title="Change password" description="Update the password used for your PayFlow account.">
+            {passwordErr ? <div className={`${ui.error} mt-0`}>{passwordErr}</div> : null}
+            {passwordMsg ? <div className={`${ui.success} mt-0`}>{passwordMsg}</div> : null}
 
-            {passwordErr ? <div className={`${ui.error} mt-4 mb-0`}>{passwordErr}</div> : null}
-            {passwordMsg ? <div className={`${ui.success} mt-4 mb-0`}>{passwordMsg}</div> : null}
-
-            <div className="mt-5">
+            <form onSubmit={(e) => void onUpdatePassword(e)}>
               <PasswordInput
                 label="Current Password"
                 id="current-password"
@@ -270,22 +265,20 @@ export function PayFlowProfilePage() {
                   minLength={8}
                 />
               </div>
-            </div>
 
-            <div className="mt-2 flex justify-end border-t border-slate-100 pt-5 dark:border-slate-800">
-              <Button type="submit" disabled={passwordBusy}>
-                <KeyIcon />
-                {passwordBusy ? "Updating…" : "Update Password"}
-              </Button>
-            </div>
-          </form>
+              <div className="mt-2 flex justify-end border-t border-slate-100 pt-5 dark:border-slate-800">
+                <Button type="submit" disabled={passwordBusy}>
+                  <KeyIcon />
+                  {passwordBusy ? "Updating…" : "Update Password"}
+                </Button>
+              </div>
+            </form>
+          </Panel>
         </div>
 
         <aside className="space-y-5">
-          <div className={`${ui.card} p-5`}>
-            <h2 className={ui.panelTitle}>Appearance</h2>
-            <p className={ui.panelText}>Choose how PayFlow looks for you.</p>
-            <div className="mt-4 grid grid-cols-3 gap-2">
+          <Panel title="Appearance" description="Choose how PayFlow looks for you.">
+            <div className="grid grid-cols-3 gap-2">
               {THEME_OPTS.map((opt) => {
                 const active = theme === opt.id;
                 return (
@@ -322,11 +315,10 @@ export function PayFlowProfilePage() {
                 );
               })}
             </div>
-          </div>
+          </Panel>
 
-          <div className={`${ui.card} p-5`}>
-            <h2 className={ui.panelTitle}>Account overview</h2>
-            <div className="mt-4 space-y-4">
+          <Panel title="Account overview">
+            <div className="space-y-4">
               <div className="flex gap-3">
                 <MailIcon />
                 <div className="min-w-0">
@@ -344,7 +336,7 @@ export function PayFlowProfilePage() {
                 </div>
               </div>
             </div>
-          </div>
+          </Panel>
         </aside>
       </div>
     </div>

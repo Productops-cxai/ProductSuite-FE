@@ -1,24 +1,29 @@
 type Props = {
-  tone?: "success" | "danger";
+  tone?: "success" | "danger" | "neutral" | "warning";
   children: React.ReactNode;
 };
 
+/** Matches Lovable `StatusPill` tone tokens. */
 const tones = {
-  success: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300",
-  danger: "bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300",
+  success: "border-success/20 bg-success/10 text-success",
+  danger: "border-destructive/20 bg-destructive/10 text-destructive",
+  warning: "border-amber-300/40 bg-amber-50 text-amber-800",
+  neutral: "border-border bg-surface-muted text-fg-muted",
 };
 
 const dots = {
-  success: "bg-emerald-500",
-  danger: "bg-red-500",
+  success: "bg-success",
+  danger: "bg-destructive",
+  warning: "bg-amber-500",
+  neutral: "bg-fg-muted/60",
 };
 
 export function Badge({ tone = "success", children }: Props) {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[0.78rem] font-semibold ${tones[tone]}`}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-[3px] text-[11px] font-medium whitespace-nowrap ${tones[tone]}`}
     >
-      <span className={`size-1.5 rounded-full ${dots[tone]}`} />
+      <span className={`size-1.5 shrink-0 rounded-full ${dots[tone]}`} />
       {children}
     </span>
   );

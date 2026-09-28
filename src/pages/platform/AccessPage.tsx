@@ -9,6 +9,7 @@ import {
   revokeAccess,
   saveOrganization,
 } from "../../api/platform";
+import { PageHeader } from "../../components/payflow-ui";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
@@ -163,17 +164,11 @@ export function AccessPage() {
 
   return (
     <div className={ui.page}>
-      <div className={ui.pageHeader}>
-        <div>
-          <div className={ui.crumb}>Platform / Product Access</div>
-          <h1 className={ui.h1}>Product Access</h1>
-          <p className={ui.lead}>
-            Controls which organization is entitled to which product. Granting a product does not
-            assign any product role, client or portfolio scope, or functional permission — those stay
-            inside the product.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        title="Product Access"
+        description="Controls which organization is entitled to which product. Granting a product does not assign any product role, client or portfolio scope, or functional permission — those stay inside the product."
+        breadcrumb={[{ label: "Platform", to: "/platform" }, { label: "Product Access" }]}
+      />
 
       {error ? <div className={ui.error}>{error}</div> : null}
 
@@ -255,12 +250,11 @@ export function AccessPage() {
                         {granted ? "Access granted" : "Access revoked"}
                       </Badge>
                     </td>
-                    <td className={ui.td}>
-                      <div className={ui.cellActions}>
+                    <td className={`${ui.td} text-right`}>
+                      <div className="inline-flex justify-end">
                         {granted ? (
                           <Button
-                            variant="danger-outline"
-                            size="sm"
+                            variant="danger"
                             disabled={busyKey === key}
                             onClick={() => void toggleAccess(row)}
                           >
@@ -268,7 +262,7 @@ export function AccessPage() {
                           </Button>
                         ) : (
                           <Button
-                            size="sm"
+                            variant="primary"
                             disabled={busyKey === key}
                             onClick={() => void toggleAccess(row)}
                           >
@@ -284,7 +278,7 @@ export function AccessPage() {
           </table>
         )}
 
-        <p className={ui.footnote}>
+        <p className="border-t border-slate-100 px-4 py-3 text-[11.5px] leading-snug text-slate-500 dark:border-slate-800 dark:text-slate-400">
           Revoking access disables the organization&apos;s entry into the product. Operational data
           inside the product is retained.{" "}
           <button type="button" className={ui.link} onClick={() => setOrgOpen(true)}>

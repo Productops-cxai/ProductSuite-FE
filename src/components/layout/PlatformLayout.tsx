@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Navigate, Outlet } from "react-router-dom";
+import { NavLink, Navigate, Outlet } from "react-router-dom";
 import { getMenus } from "../../api/platform";
 import { AccessDenied } from "../auth/AccessDenied";
 import { useAuth } from "../../context/AuthContext";
+import { normalizeMenuRoute } from "../../lib/utils";
 import type { MenuSection } from "../../types";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
@@ -118,12 +119,37 @@ export function PlatformLayout() {
     );
   }
 
+  const mobileItems = sections
+    .flatMap((s) => s.items)
+    .filter((item) => !item.is_coming_soon);
+
   return (
-    <div className="grid min-h-screen grid-cols-[248px_1fr] bg-bg">
+    <div className="flex min-h-screen w-full bg-bg">
       <Sidebar sections={sections} />
-      <div className="flex min-w-0 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />
-        <Outlet />
+        <nav className="flex gap-1.5 overflow-x-auto border-b border-slate-200/70 bg-white px-4 py-2.5 [-ms-overflow-style:none] [scrollbar-width:none] lg:hidden [&::-webkit-scrollbar]:hidden">
+          {mobileItems.map((item) => {
+            const route = normalizeMenuRoute(item.route);
+            return (
+              <NavLink
+                key={item.key}
+                to={route}
+                end={route === "/platform"}
+                className={({ isActive }) =>
+                  `shrink-0 rounded-md px-3 py-2 text-[12.5px] font-medium whitespace-nowrap ${
+                    isActive ? "bg-slate-100 text-slate-900" : "text-slate-500 hover:text-slate-800"
+                  }`
+                }
+              >
+                {item.label}
+              </NavLink>
+            );
+          })}
+        </nav>
+        <main className="relative min-w-0 flex-1 overflow-x-hidden">
+          <Outlet />
+        </main>
       </div>
     </div>
   );

@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import { getProduct, listProductAccess, saveProduct } from "../../api/platform";
+import { PageHeader } from "../../components/payflow-ui";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { ui } from "../../lib/ui";
@@ -119,26 +120,24 @@ export function ProductDetailPage() {
 
   return (
     <div className={ui.page}>
-      <div className={ui.pageHeader}>
-        <div>
-          <div className={ui.crumb}>
-            <Link to="/platform" className="hover:text-primary">Platform</Link>
-            {" / "}
-            <Link to="/platform/products" className="hover:text-primary">Products</Link>
-            {" / "}
-            {product.name}
-          </div>
-          <h1 className={ui.h1}>{product.name}</h1>
-          <p className={ui.lead}>{product.description || "No description provided."}</p>
-        </div>
-        {editing ? (
-          <Button variant="secondary" onClick={cancelEdit}>
-            Cancel
-          </Button>
-        ) : (
-          <Button onClick={() => setEditing(true)}>Edit product</Button>
-        )}
-      </div>
+      <PageHeader
+        title={product.name}
+        description={product.description || "No description provided."}
+        breadcrumb={[
+          { label: "Platform", to: "/platform" },
+          { label: "Products", to: "/platform/products" },
+          { label: product.name },
+        ]}
+        actions={
+          editing ? (
+            <Button variant="secondary" onClick={cancelEdit}>
+              Cancel
+            </Button>
+          ) : (
+            <Button onClick={() => setEditing(true)}>Edit product</Button>
+          )
+        }
+      />
 
       {error ? <div className={ui.error}>{error}</div> : null}
 
