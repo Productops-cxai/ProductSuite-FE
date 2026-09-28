@@ -6,6 +6,7 @@ import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { PasswordInput } from "../../components/ui/PasswordInput";
 import { useAuth } from "../../context/AuthContext";
+import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { applyTheme, readThemeMode, watchSystemTheme, type ThemeMode } from "../../lib/theme";
 import { ui } from "../../lib/ui";
 
@@ -16,11 +17,6 @@ function initials(name: string) {
     .slice(0, 2)
     .map((p) => p[0]?.toUpperCase() || "")
     .join("");
-}
-
-function roleLabel(role: string) {
-  if (role === "platform_super_admin") return "Platform Super Admin";
-  return "Operations Admin";
 }
 
 function statusLabel(status: string) {
@@ -73,6 +69,7 @@ const THEME_OPTS: { id: ThemeMode; label: string }[] = [
 
 export function PayFlowProfilePage() {
   const { user, applyMe } = useAuth();
+  const { roleLabel } = usePayFlowAccess();
   const [fullName, setFullName] = useState(user?.full_name || "");
   const [profileBusy, setProfileBusy] = useState(false);
   const [profileMsg, setProfileMsg] = useState("");
@@ -98,7 +95,7 @@ export function PayFlowProfilePage() {
 
   if (!user) return null;
 
-  const label = roleLabel(user.role);
+  const label = roleLabel;
   const statusTone = user.status === "active" ? "success" : "danger";
 
   function onThemeChange(mode: ThemeMode) {

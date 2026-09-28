@@ -5,59 +5,9 @@ import { ProductSwitcher } from "../../components/ProductSwitcher";
 import { Icon } from "../../components/ui/Icon";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useAuth } from "../../context/AuthContext";
-
-type NavItem = {
-  to: string;
-  end: boolean;
-  label: string;
-  icon: string;
-  soon?: boolean;
-};
-
-const NAV: { label: string; items: NavItem[] }[] = [
-  {
-    label: "OVERVIEW",
-    items: [{ to: "/payflow", end: true, label: "Dashboard", icon: "overview" }],
-  },
-  {
-    label: "OPERATIONS",
-    items: [
-      { to: "/payflow/clients", end: false, label: "Clients", soon: true, icon: "people" },
-      { to: "/payflow/cases", end: false, label: "Accounts / Cases", soon: true, icon: "products" },
-      { to: "/payflow/review", end: false, label: "Human Review", soon: true, icon: "access" },
-    ],
-  },
-  {
-    label: "AI OPERATIONS",
-    items: [
-      {
-        to: "/payflow/workflows",
-        end: false,
-        label: "Strategies / Workflows",
-        soon: true,
-        icon: "overview",
-      },
-      { to: "/payflow/comms", end: false, label: "Communications", soon: true, icon: "mail" },
-    ],
-  },
-  {
-    label: "GOVERNANCE",
-    items: [{ to: "/payflow/rules", end: false, label: "Rules", soon: true, icon: "billing" }],
-  },
-  {
-    label: "ADMINISTRATION",
-    items: [
-      { to: "/payflow/users", end: false, label: "Users & Permissions", soon: true, icon: "people" },
-      {
-        to: "/payflow/integrations",
-        end: false,
-        label: "Integrations",
-        soon: true,
-        icon: "products",
-      },
-    ],
-  },
-];
+import { PayFlowAccessProvider, usePayFlowAccess } from "../../context/PayFlowAccessContext";
+import type { MenuSection } from "../../types";
+import { normalizeMenuRoute } from "../../lib/utils";
 
 function initials(name: string) {
   return name
@@ -183,9 +133,11 @@ function AccountMenu({
 function SidebarNav({
   collapsed,
   onNavigate,
+  sections,
 }: {
   collapsed?: boolean;
   onNavigate?: () => void;
+  sections: MenuSection[];
 }) {
   return (
     <nav
@@ -194,34 +146,39 @@ function SidebarNav({
       }`}
     >
       <div className={`flex flex-col ${collapsed ? "items-center gap-1.5" : "gap-2"}`}>
-        {NAV.map((section) => (
-          <div className={collapsed ? "w-full" : "p-2"} key={section.label}>
+        {sections.map((section) => (
+          <div className={collapsed ? "w-full" : "p-2"} key={section.key}>
             {!collapsed ? (
               <div className="px-2.5 pb-2 text-[10px] font-semibold tracking-[0.1em] text-[#9aa6bc] uppercase">
                 {section.label}
               </div>
             ) : null}
             <ul className={`flex flex-col ${collapsed ? "items-center gap-1" : "gap-1"}`}>
-              {section.items.map((item) =>
-                item.soon ? (
-                  <li key={item.label} className={collapsed ? "w-full" : undefined}>
-                    <div
-                      className={
-                        collapsed
-                          ? "mx-auto flex size-10 cursor-default items-center justify-center rounded-lg text-[#9aa6bc]/70"
-                          : "flex cursor-default items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium text-[#9aa6bc]/80"
-                      }
-                      title={item.label}
-                    >
-                      <Icon name={item.icon} className="size-[17px] shrink-0" />
-                      {!collapsed ? <span>{item.label}</span> : null}
-                    </div>
-                  </li>
-                ) : (
-                  <li key={item.label} className={collapsed ? "w-full" : undefined}>
+              {section.items.map((item) => {
+                const route = normalizeMenuRoute(item.route);
+                const end = route === "/payflow";
+                if (item.is_coming_soon) {
+                  return (
+                    <li key={item.key} className={collapsed ? "w-full" : undefined}>
+                      <div
+                        className={
+                          collapsed
+                            ? "mx-auto flex size-10 cursor-default items-center justify-center rounded-lg text-[#9aa6bc]/70"
+                            : "flex cursor-default items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium text-[#9aa6bc]/80"
+                        }
+                        title={item.label}
+                      >
+                        <Icon name={item.icon || "overview"} className="size-[17px] shrink-0" />
+                        {!collapsed ? <span>{item.label}</span> : null}
+                      </div>
+                    </li>
+                  );
+                }
+                return (
+                  <li key={item.key} className={collapsed ? "w-full" : undefined}>
                     <NavLink
-                      to={item.to}
-                      end={item.end}
+                      to={route}
+                      end={end}
                       title={item.label}
                       onClick={onNavigate}
                       className={({ isActive }) =>
@@ -238,12 +195,12 @@ function SidebarNav({
                             }`
                       }
                     >
-                      <Icon name={item.icon} className="size-[17px] shrink-0 opacity-90" />
+                      <Icon name={item.icon || "overview"} className="size-[17px] shrink-0 opacity-90" />
                       {!collapsed ? <span>{item.label}</span> : null}
                     </NavLink>
                   </li>
-                ),
-              )}
+                );
+              })}
             </ul>
           </div>
         ))}
@@ -256,6 +213,7 @@ function SidebarPanel({
   collapsed,
   userName,
   roleLabel,
+  sections,
   onNavigate,
   onProfile,
   onLogout,
@@ -263,6 +221,7 @@ function SidebarPanel({
   collapsed?: boolean;
   userName: string;
   roleLabel: string;
+  sections: MenuSection[];
   onNavigate?: () => void;
   onProfile: () => void;
   onLogout: () => void;
@@ -308,7 +267,7 @@ function SidebarPanel({
         )}
       </div>
 
-      <SidebarNav collapsed={collapsed} onNavigate={onNavigate} />
+      <SidebarNav collapsed={collapsed} onNavigate={onNavigate} sections={sections} />
 
       <div
         ref={accountRef}
@@ -363,6 +322,7 @@ function SidebarPanel({
 
 function PayFlowShell() {
   const { user, logout } = useAuth();
+  const { loading, error, menus, roleLabel } = usePayFlowAccess();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const [desktopCollapsed, setDesktopCollapsed] = useState(false);
@@ -400,8 +360,24 @@ function PayFlowShell() {
 
   if (!user) return null;
 
-  const roleLabel =
-    user.role === "platform_super_admin" ? "Platform Super Admin" : "Operations Admin";
+  if (loading) {
+    return (
+      <div className="grid min-h-screen place-items-center text-slate-500">Loading PayFlow…</div>
+    );
+  }
+
+  if (error || !menus.length) {
+    return (
+      <div className="grid min-h-screen place-items-center px-6 text-center text-slate-600">
+        <div>
+          <p className="text-sm font-semibold text-slate-900">Unable to load PayFlow access</p>
+          <p className="mt-2 text-sm text-slate-500">
+            {error || "No navigation is available for your PayFlow role."}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   function toggleSidebar() {
     if (isMobile) {
@@ -414,6 +390,7 @@ function PayFlowShell() {
   const panelProps = {
     userName: user.full_name,
     roleLabel,
+    sections: menus,
     onProfile: () => navigate("/payflow/profile"),
     onLogout: () => void logout(),
   };
@@ -521,7 +498,9 @@ function PayFlowShell() {
 export function PayFlowLayout() {
   return (
     <RequireProductAccess productCode="PAYFLOW" productLabel="PayFlow">
-      <PayFlowShell />
+      <PayFlowAccessProvider>
+        <PayFlowShell />
+      </PayFlowAccessProvider>
     </RequireProductAccess>
   );
 }
