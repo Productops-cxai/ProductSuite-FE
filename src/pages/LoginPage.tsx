@@ -12,12 +12,14 @@ import { ui } from "../lib/ui";
 export function LoginPage() {
   const { login, user, loading, nextStep, products } = useAuth();
   const navigate = useNavigate();
+  const [mode, setMode] = useState<"signIn" | "forgot">("signIn");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [keepSignedIn, setKeepSignedIn] = useState(true);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [sent, setSent] = useState(false);
 
   if (!loading && user && nextStep) {
     return <Navigate to={pathForNextStep(nextStep, products)} replace />;
@@ -40,15 +42,34 @@ export function LoginPage() {
     }
   }
 
-  async function onForgot() {
+  async function onSendReset(e: FormEvent) {
+    e.preventDefault();
     setError("");
     setInfo("");
+    setSubmitting(true);
     try {
       const res = await forgotPassword(email.trim());
+      setSent(true);
       setInfo(res.message);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Request failed");
+    } finally {
+      setSubmitting(false);
     }
+  }
+
+  function goForgot() {
+    setMode("forgot");
+    setSent(false);
+    setError("");
+    setInfo("");
+  }
+
+  function goSignIn() {
+    setMode("signIn");
+    setSent(false);
+    setError("");
+    setInfo("");
   }
 
   return (
@@ -56,52 +77,110 @@ export function LoginPage() {
       title="One platform. Multiple products. Clear access."
       subtitle="Sign in to manage entitlements or enter the products your organization has granted."
     >
-      <h2 className="font-display mb-1 text-[1.6rem] font-bold tracking-tight">Sign in</h2>
-      <p className="mb-5 text-[0.95rem] text-slate-500">Continue to your Platform Suite workspace.</p>
+      {mode === "signIn" ? (
+        <>
+          <h2 className="font-display text-[24px] font-bold tracking-tight text-slate-900">
+            Sign in
+          </h2>
+          <p className="mt-1.5 mb-6 text-[13px] text-slate-500">
+            Continue to your Platform Suite workspace.
+          </p>
 
-      {error ? <div className={ui.error}>{error}</div> : null}
-      {info ? <div className={ui.success}>{info}</div> : null}
+          {error ? <div className={ui.error}>{error}</div> : null}
+          {info ? <div className={ui.success}>{info}</div> : null}
 
-      <form onSubmit={onSubmit}>
-        <div className={ui.field}>
-          <label className={ui.label} htmlFor="email">Work Email</label>
-          <input
-            className={ui.control}
-            id="email"
-            type="email"
-            autoComplete="username"
-            placeholder="you@company.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-        </div>
-        <PasswordInput
-          id="password"
-          label="Password"
-          autoComplete="current-password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
-        <div className="mb-4 flex items-center justify-between gap-3 text-sm">
-          <label className="flex items-center gap-2 text-slate-600">
-            <input
-              type="checkbox"
-              className="size-4 accent-primary"
-              checked={keepSignedIn}
-              onChange={(e) => setKeepSignedIn(e.target.checked)}
+          <form onSubmit={onSubmit}>
+            <div className={ui.field}>
+              <label className={ui.label} htmlFor="email">
+                Work Email
+              </label>
+              <input
+                className={ui.control}
+                id="email"
+                type="email"
+                autoComplete="username"
+                placeholder="you@company.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+            <PasswordInput
+              id="password"
+              label="Password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
             />
-            Keep me signed in
-          </label>
-          <button type="button" className={ui.link} onClick={() => void onForgot()}>
-            Forgot password?
-          </button>
-        </div>
-        <Button type="submit" disabled={submitting} style={{ width: "100%" }}>
-          {submitting ? "Signing in…" : "Sign In"}
-        </Button>
-      </form>
+            <div className="mb-4 flex items-center justify-between gap-3 text-[12px]">
+              <label className="flex items-center gap-2 text-slate-600">
+                <input
+                  type="checkbox"
+                  className="size-3.5 accent-primary"
+                  checked={keepSignedIn}
+                  onChange={(e) => setKeepSignedIn(e.target.checked)}
+                />
+                Keep me signed in
+              </label>
+              <button type="button" className={ui.link} onClick={goForgot}>
+                Forgot password?
+              </button>
+            </div>
+            <Button type="submit" disabled={submitting} style={{ width: "100%" }}>
+              {submitting ? "Signing in…" : "Sign In"}
+            </Button>
+          </form>
+        </>
+      ) : (
+        <>
+          <h2 className="font-display text-[24px] font-bold tracking-tight text-slate-900">
+            Reset password
+          </h2>
+          <p className="mt-1.5 mb-6 text-[13px] text-slate-500">
+            Enter your work email and we&apos;ll send reset instructions.
+          </p>
+
+          {error ? <div className={ui.error}>{error}</div> : null}
+          {sent || info ? (
+            <div className={ui.success}>
+              {info ||
+                "If this email is registered, reset instructions are on the way."}
+            </div>
+          ) : null}
+
+          <form onSubmit={onSendReset}>
+            <div className={ui.field}>
+              <label className={ui.label} htmlFor="forgot-email">
+                Work Email
+              </label>
+              <input
+                className={ui.control}
+                id="forgot-email"
+                type="email"
+                autoComplete="username"
+                placeholder="you@company.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+            <div className="mt-6 flex flex-col gap-2">
+              <Button type="submit" disabled={submitting} style={{ width: "100%" }}>
+                {submitting ? "Sending…" : "Send Reset Link"}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                style={{ width: "100%" }}
+                onClick={goSignIn}
+              >
+                Back To Sign In
+              </Button>
+            </div>
+          </form>
+        </>
+      )}
     </AuthShell>
   );
 }

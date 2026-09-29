@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import { getOverview } from "../../api/platform";
+import { PageHeader } from "../../components/payflow-ui";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { ui } from "../../lib/ui";
@@ -22,15 +23,10 @@ export function OverviewPage() {
 
   return (
     <div className={ui.page}>
-      <div className={ui.pageHeader}>
-        <div>
-          <h1 className={ui.h1}>Platform Overview</h1>
-          <p className={ui.lead}>
-            Products registered on the platform and which organizations are entitled to them.
-            Product roles, scope and permissions stay inside each product.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        title="Platform Overview"
+        description="Products registered on the platform and which organizations are entitled to them. Product roles, scope and permissions stay inside each product."
+      />
 
       {error ? <div className={ui.error}>{error}</div> : null}
       {loading ? <div className={ui.empty}>Loading overview…</div> : null}

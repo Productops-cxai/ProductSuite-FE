@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { enterProduct, myProducts } from "../api/platform";
 import { useAuth } from "../context/AuthContext";
-import { productHome } from "../lib/productRouting";
+import { hasProductShell, productHome } from "../lib/productRouting";
 import type { Product, ProductBrief } from "../types";
 
 export type SwitcherCurrent = "platform" | string;
@@ -84,6 +84,11 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
     setError("");
     try {
       await enterProduct(code);
+      if (!hasProductShell(code)) {
+        const name = products.find((p) => p.code === code)?.name || code;
+        setError(`${name} workspace is not available in this phase yet.`);
+        return;
+      }
       navigate(productHome(code), { replace: true });
       setOpen(false);
     } catch (err) {

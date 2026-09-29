@@ -172,3 +172,90 @@ export interface Client {
   updated_at: string;
 
 }
+
+// ---- PayFlow ----
+
+export interface PayflowRoleSummary {
+  id: number;
+  code: string;
+  name: string;
+  scope: string;
+  description?: string | null;
+}
+
+export interface PayflowAccessContext {
+  product_code: string;
+  user_id: string;
+  full_name: string;
+  email: string;
+  status: string;
+  role: PayflowRoleSummary;
+  is_operations_admin: boolean;
+  client_ids: number[];
+  permissions_by_client: Record<string, string[]>;
+  all_permissions: string[];
+}
+
+export interface PayflowUser {
+  id: string;
+  full_name: string;
+  email: string;
+  role_code: string;
+  role_name: string;
+  role_scope: string;
+  status: string;
+  status_label: string;
+  assigned_clients: string[];
+  permission_profile: string;
+  last_active?: string | null;
+  created_at?: string | null;
+  organization_id?: number;
+  organization_name?: string | null;
+  activation_link?: string | null;
+}
+
+export interface PayflowUsersListResponse {
+  users: PayflowUser[];
+  total: number;
+  summary: {
+    total_users: number;
+    roles: number;
+    platform_wide_access: number;
+    client_scoped_users: number;
+    active_users: number;
+  };
+}
+
+export interface PayflowRoleListItem {
+  id: number;
+  code: string;
+  name: string;
+  scope: string;
+  description?: string | null;
+  is_built_in: boolean;
+  permission_count: number;
+  permission_codes: string[];
+  user_count: number;
+}
+
+export interface PayflowPermissionItem {
+  code: string;
+  name: string;
+  group_key: string;
+  sort_order: number;
+}
+
+export interface PayflowPermissionGroup {
+  group_key: string;
+  group_label: string;
+  permissions: PayflowPermissionItem[];
+}
+
+export interface PayflowClient {
+  id: number;
+  code: string;
+  name: string;
+  category?: string | null;
+  status: string;
+}
+

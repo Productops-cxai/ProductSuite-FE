@@ -7,14 +7,19 @@ import {
   listProducts,
   removeProduct,
   resendInvite,
+  saveOrganization,
   savePerson,
 } from "../../api/platform";
+import { PageHeader } from "../../components/payflow-ui";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
 import { useAuth } from "../../context/AuthContext";
 import { ui } from "../../lib/ui";
+import { orgDisplayName } from "../../lib/utils";
 import type { Organization, Person, Product } from "../../types";
+
+const NEW_ORG = "__new_org__";
 
 export function PeoplePage() {
   const { user, refreshMe } = useAuth();
@@ -29,6 +34,7 @@ export function PeoplePage() {
   const [busyKey, setBusyKey] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [newOrgName, setNewOrgName] = useState("");
   const [form, setForm] = useState({
     full_name: "",
     email: "",
@@ -118,14 +124,32 @@ export function PeoplePage() {
     setError("");
     setInfo("");
     try {
+      let organizationId = form.organization_id;
+      if (organizationId === NEW_ORG) {
+        const name = newOrgName.trim();
+        if (!name) {
+          setError("Enter the organization name.");
+          setSaving(false);
+          return;
+        }
+        const created = await saveOrganization({ name });
+        setOrganizations((prev) =>
+          [...prev.filter((o) => o.id !== created.id), created].sort((a, b) =>
+            a.name.localeCompare(b.name),
+          ),
+        );
+        organizationId = String(created.id);
+      }
+
       await savePerson({
         full_name: form.full_name.trim(),
         email: form.email.trim(),
-        organization_id: Number(form.organization_id),
+        organization_id: Number(organizationId),
         product_ids: form.product_ids,
       });
       setAddOpen(false);
       setForm({ full_name: "", email: "", organization_id: "", product_ids: [] });
+      setNewOrgName("");
       setInfo("Person invited. Activation email has been sent (logged until SMTP is configured).");
       await loadPeople({
         search: search.trim() || undefined,
@@ -185,41 +209,42 @@ export function PeoplePage() {
   function closeAdd() {
     setAddOpen(false);
     setForm({ full_name: "", email: "", organization_id: "", product_ids: [] });
+    setNewOrgName("");
   }
+
+  const addingNewOrg = form.organization_id === NEW_ORG;
 
   return (
     <div className={ui.page}>
-      <div className={ui.pageHeader}>
-        <div>
-          <div className={ui.crumb}>Platform / People</div>
-          <h1 className={ui.h1}>People &amp; Product Assignment</h1>
-          <p className={ui.lead}>
-            Add a person with their email and organization, then select which products they may
-            open. Assignment controls product entry only — roles, client scope and permissions stay
-            inside each product.
-          </p>
-        </div>
-        {addOpen ? (
-          <Button variant="secondary" onClick={closeAdd}>
-            Cancel
-          </Button>
-        ) : (
-          <Button onClick={() => setAddOpen(true)}>Add person</Button>
-        )}
-      </div>
+      <PageHeader
+        title="People & Product Assignment"
+        description="Add a person with their email and organization, then select which products they may open. Assignment controls product entry only — roles, client scope and permissions stay inside each product."
+        breadcrumb={[{ label: "Platform", to: "/platform" }, { label: "People" }]}
+        actions={
+          addOpen ? (
+            <Button variant="secondary" onClick={closeAdd}>
+              Cancel
+            </Button>
+          ) : (
+            <Button onClick={() => setAddOpen(true)}>Add person</Button>
+          )
+        }
+      />
 
       {error ? <div className={ui.error}>{error}</div> : null}
       {info ? <div className={ui.success}>{info}</div> : null}
 
       {addOpen ? (
         <section className={ui.formCard}>
-          <div className="mb-[18px]">
+          <div className="mb-4">
             <h2 className={ui.formTitle}>New person</h2>
           </div>
-          <form onSubmit={onAddPerson}>
+          <form onSubmit={(e) => void onAddPerson(e)}>
             <div className={ui.grid2}>
               <div className={ui.field}>
-                <label className={ui.label} htmlFor="person-name">Full Name</label>
+                <label className={ui.label} htmlFor="person-name">
+                  Full Name
+                </label>
                 <input
                   className={ui.control}
                   id="person-name"
@@ -230,7 +255,9 @@ export function PeoplePage() {
                 />
               </div>
               <div className={ui.field}>
-                <label className={ui.label} htmlFor="person-email">Work Email</label>
+                <label className={ui.label} htmlFor="person-email">
+                  Work Email
+                </label>
                 <input
                   className={ui.control}
                   id="person-email"
@@ -241,46 +268,71 @@ export function PeoplePage() {
                   required
                 />
               </div>
+              <div className={ui.field}>
+                <label className={ui.label} htmlFor="person-org">
+                  Organization
+                </label>
+                <select
+                  className={ui.control}
+                  id="person-org"
+                  value={form.organization_id}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setForm((f) => ({ ...f, organization_id: value }));
+                    if (value !== NEW_ORG) setNewOrgName("");
+                  }}
+                  required
+                >
+                  <option value="">Select…</option>
+                  {organizations.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {orgDisplayName(o.name, o.is_internal)}
+                    </option>
+                  ))}
+                  <option value={NEW_ORG}>+ Add a new organization</option>
+                </select>
+              </div>
+              {addingNewOrg ? (
+                <div className={ui.field}>
+                  <label className={ui.label} htmlFor="new-org-name">
+                    New Organization Name
+                  </label>
+                  <input
+                    className={ui.control}
+                    id="new-org-name"
+                    value={newOrgName}
+                    onChange={(e) => setNewOrgName(e.target.value)}
+                    placeholder="e.g. Harbour Credit Union"
+                    required
+                  />
+                </div>
+              ) : null}
             </div>
             <div className={ui.field}>
-              <label className={ui.label} htmlFor="person-org">Organization</label>
-              <select
-                className={ui.control}
-                id="person-org"
-                value={form.organization_id}
-                onChange={(e) => setForm((f) => ({ ...f, organization_id: e.target.value }))}
-                required
-              >
-                <option value="">Select…</option>
-                {organizations.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.name}
-                    {o.is_internal ? " (internal)" : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className={ui.field}>
-              <div className="mb-2.5 text-[0.68rem] font-bold tracking-[0.08em] text-slate-500">ASSIGN PRODUCTS</div>
-              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+              <div className="text-eyebrow mb-2.5">Assign products</div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {products.map((p) => {
                   const checked = form.product_ids.includes(p.id);
                   return (
                     <label
                       key={p.id}
-                      className={`flex cursor-pointer items-center gap-3 rounded-[10px] border px-3.5 py-3 ${
-                        checked ? "border-blue-300 bg-blue-50" : "border-slate-200 bg-white hover:border-slate-300"
+                      className={`flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2.5 transition-colors ${
+                        checked
+                          ? "border-primary/40 bg-primary/[0.06]"
+                          : "border-slate-200 bg-white hover:border-slate-300"
                       }`}
                     >
                       <input
-                        className="size-4 accent-primary"
+                        className="mt-0.5 size-4 accent-primary"
                         type="checkbox"
                         checked={checked}
                         onChange={() => toggleFormProduct(p.id)}
                       />
                       <span>
-                        <strong className="block text-[0.92rem] font-semibold text-slate-900">{p.name}</strong>
-                        <em className="block text-[0.72rem] font-semibold not-italic tracking-wide text-slate-500">{p.code}</em>
+                        <strong className="block text-[13px] font-semibold text-slate-900">{p.name}</strong>
+                        <em className="block text-[11px] font-medium not-italic tracking-wide text-slate-500">
+                          {p.code}
+                        </em>
                       </span>
                     </label>
                   );
@@ -300,7 +352,7 @@ export function PeoplePage() {
       ) : null}
 
       <div className={ui.card}>
-        <form className={ui.toolbar} onSubmit={onSearchSubmit}>
+        <form className={ui.toolbar} onSubmit={(e) => void onSearchSubmit(e)}>
           <div className={ui.search}>
             <span className={ui.searchIcon}>
               <Icon name="search" />
@@ -323,8 +375,7 @@ export function PeoplePage() {
               <option value="">All Organizations</option>
               {organizations.map((o) => (
                 <option key={o.id} value={o.id}>
-                  {o.name}
-                  {o.is_internal ? " (internal)" : ""}
+                  {orgDisplayName(o.name, o.is_internal)}
                 </option>
               ))}
             </select>
@@ -376,42 +427,37 @@ export function PeoplePage() {
                         )}
                       </div>
                     </td>
-                    <td className={ui.td}>
+                    <td className={`${ui.td} text-right`}>
                       <div className={ui.cellActions}>
                         {person.status !== "active" ? (
                           <Button
                             variant="secondary"
-                            size="sm"
                             disabled={busyKey === `invite-${person.id}`}
                             onClick={() => void onResend(person)}
                           >
                             Resend invite
                           </Button>
                         ) : null}
-                        {person.assigned_products.map((ap) => (
-                          <Button
-                            key={`rm-${ap.id}`}
-                            variant="danger-outline"
-                            size="sm"
-                            disabled={busyKey === `${person.id}-r-${ap.id}`}
-                            onClick={() => void onRemove(person.id, ap.id)}
-                          >
-                            Remove {ap.name}
-                          </Button>
-                        ))}
-                        {products
-                          .filter((p) => !assignedIds.has(p.id))
-                          .map((p) => (
+                        {products.map((p) => {
+                          const assigned = assignedIds.has(p.id);
+                          return (
                             <Button
-                              key={`as-${p.id}`}
-                              variant="secondary"
-                              size="sm"
-                              disabled={busyKey === `${person.id}-a-${p.id}`}
-                              onClick={() => void onAssign(person.id, p.id)}
+                              key={p.id}
+                              variant={assigned ? "danger" : "secondary"}
+                              disabled={
+                                busyKey ===
+                                (assigned ? `${person.id}-r-${p.id}` : `${person.id}-a-${p.id}`)
+                              }
+                              onClick={() =>
+                                void (assigned
+                                  ? onRemove(person.id, p.id)
+                                  : onAssign(person.id, p.id))
+                              }
                             >
-                              Assign {p.name}
+                              {assigned ? `Remove ${p.name}` : `Assign ${p.name}`}
                             </Button>
-                          ))}
+                          );
+                        })}
                       </div>
                     </td>
                   </tr>

@@ -1,29 +1,31 @@
+import { PageHeader, Panel, KpiCard, FilterSelect } from "../../components/payflow-ui";
+
 const KPIS = [
   { label: "Active Clients", value: "3", hint: null as string | null, tone: "default" as const },
   {
     label: "Accounts Under Collection",
     value: "26,035",
-    hint: "↑ 3.1% vs previous period",
-    tone: "up" as const,
+    hint: "3.1% vs previous period",
+    direction: "up" as const,
   },
   {
     label: "Active Collection Cases",
     value: "4,440",
-    hint: "↓ 1.8% vs previous period",
-    tone: "down" as const,
+    hint: "1.8% vs previous period",
+    direction: "down" as const,
   },
   {
     label: "Amount Recovered",
     value: "$2.48M",
-    hint: "↑ 8.4% vs previous period",
-    tone: "up" as const,
+    hint: "8.4% vs previous period",
+    direction: "up" as const,
     highlight: true,
   },
   {
     label: "Human Reviews Pending",
     value: "5",
-    hint: "→ 2 high priority · open queue",
-    tone: "muted" as const,
+    hint: "2 high priority · open queue",
+    direction: "flat" as const,
   },
 ];
 
@@ -40,7 +42,6 @@ const FUNNEL = [
     label: "Sent",
     value: "5,340",
     rate: null as string | null,
-    note: "Start of funnel",
     drop: null as string | null,
     bar: 100,
     paid: false,
@@ -50,7 +51,6 @@ const FUNNEL = [
     label: "Delivered",
     value: "5,003",
     rate: "93.7%",
-    note: "of previous",
     drop: "−337",
     bar: 93.7,
     paid: false,
@@ -60,7 +60,6 @@ const FUNNEL = [
     label: "Opened / Read",
     value: "3,545",
     rate: "70.9%",
-    note: "of previous",
     drop: "−1,458",
     bar: 70.9,
     paid: false,
@@ -70,7 +69,6 @@ const FUNNEL = [
     label: "Clicked",
     value: "1,460",
     rate: "41.2%",
-    note: "of previous",
     drop: "−2,085",
     bar: 41.2,
     paid: false,
@@ -80,7 +78,6 @@ const FUNNEL = [
     label: "Payment Initiated",
     value: "1,033",
     rate: "70.8%",
-    note: "of previous",
     drop: "−427",
     bar: 70.8,
     paid: false,
@@ -90,7 +87,6 @@ const FUNNEL = [
     label: "Paid",
     value: "845",
     rate: "81.8%",
-    note: "of previous",
     drop: "−188",
     bar: 81.8,
     paid: true,
@@ -135,258 +131,246 @@ const ACTIVITY = [
   { text: "Promise-to-pay follow-up SMS sent to 186 accounts", when: "Yesterday" },
 ];
 
-const chip =
-  "inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[0.84rem] text-slate-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300";
-const chipSelect =
-  "cursor-pointer border-0 bg-transparent p-0 font-semibold text-slate-900 outline-none dark:text-slate-100";
-const panel =
-  "mb-4 rounded-[14px] border border-slate-200 bg-white px-5 py-[18px] shadow-card dark:border-slate-700 dark:bg-slate-900";
-const panelTitle =
-  "font-display text-[1.08rem] font-bold tracking-tight text-slate-900 dark:text-slate-50";
-
 const pillTone: Record<string, string> = {
-  peach: "bg-orange-50 text-orange-900",
-  amber: "bg-amber-50 text-amber-800",
-  coral: "bg-rose-50 text-rose-700",
-  rose: "bg-pink-50 text-pink-700",
+  peach: "border-orange-200/60 bg-orange-50 text-orange-900",
+  amber: "border-amber-200/60 bg-amber-50 text-amber-800",
+  coral: "border-rose-200/60 bg-rose-50 text-rose-700",
+  rose: "border-pink-200/60 bg-pink-50 text-pink-700",
 };
 
 const badgeTone: Record<string, string> = {
-  rose: "bg-pink-50 text-pink-700",
-  amber: "bg-orange-50 text-orange-800",
-  tan: "bg-amber-100 text-amber-800",
+  rose: "border-pink-200/60 bg-pink-50 text-pink-700",
+  amber: "border-orange-200/60 bg-orange-50 text-orange-800",
+  tan: "border-amber-200/60 bg-amber-100 text-amber-800",
 };
 
 export function PayFlowDashboardPage() {
   return (
-    <div className="px-8 pb-12 pt-7">
-      <div className="mb-5">
-        <h1 className="font-display text-[1.85rem] font-bold leading-tight tracking-tight text-slate-900 dark:text-slate-50">
-          Operations Dashboard
-        </h1>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          Operations Admin view · 9 sample accounts loaded
-        </p>
+    <div className="px-5 py-7 lg:px-10 lg:py-9">
+      <PageHeader
+        title="Operations Dashboard"
+        description="Operations Admin view · 9 sample accounts loaded"
+      />
+
+      <div className="mb-5 flex flex-wrap gap-x-2 gap-y-2.5">
+        <FilterSelect
+          label="Date"
+          defaultValue="today"
+          options={[
+            { value: "today", label: "Today" },
+            { value: "7d", label: "Last 7 days" },
+            { value: "30d", label: "Last 30 days" },
+            { value: "qtd", label: "Quarter to date" },
+          ]}
+        />
+        <FilterSelect
+          label="Client"
+          defaultValue="all"
+          options={[
+            { value: "all", label: "All Clients" },
+            { value: "paypal", label: "PayPal" },
+            { value: "ct", label: "Canadian Tire" },
+            { value: "northstar", label: "Northstar Utilities" },
+          ]}
+        />
+        <FilterSelect
+          label="Channel"
+          defaultValue="all"
+          options={[
+            { value: "all", label: "All Channels" },
+            { value: "email", label: "Email" },
+            { value: "sms", label: "SMS" },
+            { value: "voice", label: "Voice" },
+            { value: "letter", label: "Letter" },
+          ]}
+        />
       </div>
 
-      <div className="mb-4 flex flex-wrap gap-2.5">
-        <label className={chip}>
-          <span>Date</span>
-          <select className={chipSelect} defaultValue="today" aria-label="Date">
-            <option value="today">Today</option>
-            <option value="7d">Last 7 days</option>
-            <option value="30d">Last 30 days</option>
-            <option value="qtd">Quarter to date</option>
-          </select>
-        </label>
-        <label className={chip}>
-          <span>Client</span>
-          <select className={chipSelect} defaultValue="all" aria-label="Client">
-            <option value="all">All Clients</option>
-            <option value="paypal">PayPal</option>
-            <option value="ct">Canadian Tire</option>
-            <option value="northstar">Northstar Utilities</option>
-          </select>
-        </label>
-        <label className={chip}>
-          <span>Channel</span>
-          <select className={chipSelect} defaultValue="all" aria-label="Channel">
-            <option value="all">All Channels</option>
-            <option value="email">Email</option>
-            <option value="sms">SMS</option>
-            <option value="voice">Voice</option>
-            <option value="letter">Letter</option>
-          </select>
-        </label>
-      </div>
-
-      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {KPIS.map((k) => (
-          <div
-            className={`rounded-xl border px-4 py-3.5 shadow-card ${
-              k.highlight
-                ? "border-blue-300 bg-blue-50 dark:border-blue-700 dark:bg-blue-950/40"
-                : "border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"
-            }`}
+          <KpiCard
             key={k.label}
-          >
-            <div className="mb-2 text-[0.68rem] font-semibold uppercase leading-snug tracking-[0.04em] text-slate-500 dark:text-slate-400">
-              {k.label}
-            </div>
-            <div
-              className={`font-display text-[1.7rem] font-bold leading-none tracking-tight ${
-                k.highlight ? "text-blue-600 dark:text-blue-400" : "text-slate-900 dark:text-slate-50"
-              }`}
-            >
-              {k.value}
-            </div>
-            <div
-              className={`mt-2 min-h-4 text-xs font-semibold ${
-                k.tone === "up" ? "text-emerald-600" : k.tone === "down" ? "text-red-500" : "text-slate-400"
-              }`}
-            >
-              {k.hint || "\u00a0"}
-            </div>
-          </div>
+            label={k.label}
+            value={k.value}
+            tone={k.highlight ? "primary" : "neutral"}
+            trend={
+              k.direction && k.hint
+                ? { direction: k.direction, text: k.hint }
+                : undefined
+            }
+            hint={!k.direction ? k.hint || undefined : undefined}
+          />
         ))}
       </div>
 
-      <section className={panel}>
-        <div className="mb-3.5">
-          <h2 className={panelTitle}>Attention Required</h2>
-          <p className="mt-1 text-[0.88rem] text-slate-500 dark:text-slate-400">
-            Open items that need an operations decision or follow-up.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2.5">
+      <Panel
+        title="Attention Required"
+        description="Open items that need an operations decision or follow-up."
+      >
+        <div className="flex flex-wrap gap-x-2 gap-y-2.5">
           {ATTENTION.map((a) => (
             <button
               type="button"
-              className={`rounded-full px-3.5 py-2 text-[0.84rem] font-semibold ${pillTone[a.tone]}`}
+              className={`rounded-full border px-2.5 py-[3px] text-[11px] font-medium ${pillTone[a.tone]}`}
               key={a.label}
             >
               {a.label}
             </button>
           ))}
         </div>
-      </section>
+      </Panel>
 
-      <section className={panel}>
-        <div className="mb-3.5">
-          <h2 className={panelTitle}>Communication to Payment Performance</h2>
-          <p className="mt-1 text-[0.88rem] text-slate-500 dark:text-slate-400">
-            Conversion from outreach to completed payment.
-          </p>
-        </div>
-        <div className="mb-3.5 flex flex-wrap gap-2">
-          <label className={`${chip} px-2.5 py-1 text-[0.8rem]`}>
-            <span>Client</span>
-            <select className={chipSelect} defaultValue="all" aria-label="Funnel client">
-              <option value="all">All Clients</option>
-              <option value="paypal">PayPal</option>
-              <option value="ct">Canadian Tire</option>
-            </select>
-          </label>
-          <label className={`${chip} px-2.5 py-1 text-[0.8rem]`}>
-            <span>Date</span>
-            <select className={chipSelect} defaultValue="today" aria-label="Funnel date">
-              <option value="today">Today</option>
-              <option value="7d">Last 7 days</option>
-            </select>
-          </label>
-          <label className={`${chip} px-2.5 py-1 text-[0.8rem]`}>
-            <span>Channel</span>
-            <select className={chipSelect} defaultValue="all" aria-label="Funnel channel">
-              <option value="all">All Channels</option>
-              <option value="email">Email</option>
-              <option value="sms">SMS</option>
-            </select>
-          </label>
-          <span className="inline-flex items-center rounded-full border border-dashed border-slate-300 bg-slate-50 px-3 py-1 text-[0.8rem] text-slate-400 dark:border-slate-600 dark:bg-slate-950">
-            Channel: WhatsApp · soon
+      <Panel
+        title="Communication to Payment Performance"
+        description="Conversion from outreach to completed payment."
+      >
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <FilterSelect
+            label="Client"
+            defaultValue="all"
+            options={[
+              { value: "all", label: "All Clients" },
+              { value: "paypal", label: "PayPal" },
+              { value: "ct", label: "Canadian Tire" },
+            ]}
+          />
+          <FilterSelect
+            label="Date"
+            defaultValue="today"
+            options={[
+              { value: "today", label: "Today" },
+              { value: "7d", label: "Last 7 days" },
+            ]}
+          />
+          <FilterSelect
+            label="Channel"
+            defaultValue="all"
+            options={[
+              { value: "all", label: "All Channels" },
+              { value: "email", label: "Email" },
+              { value: "sms", label: "SMS" },
+            ]}
+          />
+          <span className="flex h-9 cursor-not-allowed items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 opacity-60 dark:border-slate-600 dark:bg-slate-950">
+            <span className="text-[11px] font-medium text-slate-400">Channel</span>
+            <span className="text-[13px] font-medium text-slate-400">WhatsApp · soon</span>
           </span>
-          <label className={`${chip} px-2.5 py-1 text-[0.8rem]`}>
-            <span>Workflow</span>
-            <select className={chipSelect} defaultValue="all" aria-label="Funnel workflow">
-              <option value="all">All Workflows</option>
-              <option value="early">Early Stage Collection</option>
-              <option value="reminder">Progressive Reminder</option>
-              <option value="ptp">Promise-to-Pay Follow-Up</option>
-              <option value="plan">Payment Plan Monitoring</option>
-              <option value="escalated">Escalated Collection</option>
-            </select>
-          </label>
+          <FilterSelect
+            label="Workflow"
+            defaultValue="all"
+            options={[
+              { value: "all", label: "All Workflows" },
+              { value: "early", label: "Early Stage Collection" },
+              { value: "reminder", label: "Progressive Reminder" },
+              { value: "ptp", label: "Promise-to-Pay Follow-Up" },
+              { value: "plan", label: "Payment Plan Monitoring" },
+              { value: "escalated", label: "Escalated Collection" },
+            ]}
+          />
         </div>
-        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-6">
+        <div className="grid gap-px overflow-hidden rounded-lg border border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-2 xl:grid-cols-6">
           {FUNNEL.map((step) => (
-            <div className="rounded-xl border border-slate-200 bg-white px-2.5 py-3 dark:border-slate-700 dark:bg-slate-950" key={step.label}>
-              <div className="mb-1.5 text-[0.68rem] font-semibold text-slate-500 dark:text-slate-400">
-                <span className="mr-1 font-bold text-slate-400">{step.step}</span>
-                {step.label}
+            <div className="bg-white px-4 py-3.5 dark:bg-slate-900" key={step.label}>
+              <div className="flex items-center gap-1.5">
+                <span className="tabular text-[10px] font-semibold text-slate-400">{step.step}</span>
+                <span
+                  className={`text-[11.5px] font-semibold ${
+                    step.paid ? "text-emerald-600" : "text-slate-800 dark:text-slate-100"
+                  }`}
+                >
+                  {step.label}
+                </span>
               </div>
-              <div className="font-display text-[1.35rem] font-bold leading-none tracking-tight text-slate-900 dark:text-slate-50">
+              <p className="tabular mt-2 text-[19px] font-bold leading-none tracking-tight text-slate-900 dark:text-slate-50">
                 {step.value}
-              </div>
-              {step.rate ? (
-                <div className="mt-2 flex items-baseline justify-between gap-1 text-[11px] leading-none text-slate-400">
-                  <span>
-                    <strong className="font-bold text-emerald-600">{step.rate}</strong>
-                    <span className="ml-1">{step.note}</span>
-                  </span>
-                  {step.drop ? <em className="shrink-0 font-medium not-italic">{step.drop}</em> : null}
-                </div>
-              ) : (
-                <div className="mt-2 text-[11px] leading-none text-slate-400">{step.note}</div>
-              )}
-              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+              </p>
+              <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                 <span
                   className={`block h-full rounded-full ${
-                    step.paid ? "bg-emerald-500" : step.bar >= 100 ? "bg-slate-800 dark:bg-slate-300" : "bg-blue-500"
+                    step.paid
+                      ? "bg-teal-500"
+                      : step.bar >= 100
+                        ? "bg-slate-800 dark:bg-slate-300"
+                        : "bg-primary"
                   }`}
                   style={{ width: `${step.bar}%` }}
                 />
               </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className={panel}>
-        <div className="mb-3.5">
-          <h2 className={panelTitle}>Payment Outcomes</h2>
-          <p className="mt-1 text-[0.88rem] text-slate-500 dark:text-slate-400">
-            Outcomes received back from the customer payment experience.
-          </p>
-        </div>
-        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-5">
-          {OUTCOMES.map((o) => (
-            <div className="rounded-xl border border-slate-200 bg-white px-3.5 py-3.5 dark:border-slate-700 dark:bg-slate-950" key={o.label}>
-              <div className="mb-2 text-[0.72rem] font-medium text-slate-500 dark:text-slate-400">{o.label}</div>
-              <div className="font-display text-[1.45rem] font-bold leading-none tracking-tight text-slate-900 dark:text-slate-50">
-                {o.value}
+              <div className="mt-2 flex items-baseline justify-between gap-2">
+                {step.rate ? (
+                  <>
+                    <span className="tabular text-[11.5px] font-semibold text-primary">{step.rate}</span>
+                    <span className="tabular text-[10.5px] text-slate-400">{step.drop}</span>
+                  </>
+                ) : (
+                  <span className="tabular text-[11.5px] font-semibold text-primary">Start</span>
+                )}
               </div>
             </div>
           ))}
         </div>
-      </section>
+      </Panel>
 
-      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
-        <section className="rounded-[14px] border border-slate-200 bg-white px-5 py-[18px] shadow-card dark:border-slate-700 dark:bg-slate-900">
-          <div className="mb-3.5">
-            <h2 className={panelTitle}>Clients Needing Attention</h2>
-            <p className="mt-1 text-[0.88rem] text-slate-500 dark:text-slate-400">
-              Clients with open reviews or operational risk signals.
-            </p>
-          </div>
+      <Panel
+        title="Payment Outcomes"
+        description="Outcomes received back from the customer payment experience."
+      >
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {OUTCOMES.map((o) => (
+            <KpiCard key={o.label} label={o.label} value={o.value} />
+          ))}
+        </div>
+      </Panel>
+
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
+        <Panel
+          title="Clients Needing Attention"
+          description="Clients with open reviews or operational risk signals."
+          className="mb-0"
+          bodyClassName="p-0"
+        >
           <ul>
             {CLIENTS_ATTENTION.map((c) => (
-              <li key={c.name} className="flex items-start justify-between gap-3 border-t border-slate-100 py-3.5 first:border-t-0 first:pt-0.5 dark:border-slate-800">
+              <li
+                key={c.name}
+                className="flex items-start justify-between gap-3 border-t border-slate-100 px-4 py-3 first:border-t-0 dark:border-slate-800"
+              >
                 <div>
-                  <strong className="mb-1 block text-[0.92rem] text-slate-900 dark:text-slate-100">{c.name}</strong>
-                  <span className="block text-[0.84rem] leading-snug text-slate-500 dark:text-slate-400">{c.detail}</span>
+                  <strong className="mb-1 block text-[13px] font-semibold text-slate-900 dark:text-slate-100">
+                    {c.name}
+                  </strong>
+                  <span className="block text-xs leading-snug text-slate-500 dark:text-slate-400">
+                    {c.detail}
+                  </span>
                 </div>
-                <em className={`shrink-0 rounded-full px-2.5 py-1 text-[0.74rem] font-bold not-italic ${badgeTone[c.tone]}`}>
+                <em
+                  className={`shrink-0 rounded-full border px-2.5 py-[3px] text-[11px] font-medium not-italic ${badgeTone[c.tone]}`}
+                >
                   {c.badge}
                 </em>
               </li>
             ))}
           </ul>
-        </section>
+        </Panel>
 
-        <section className="rounded-[14px] border border-slate-200 bg-white px-5 py-[18px] shadow-card dark:border-slate-700 dark:bg-slate-900">
-          <div className="mb-3.5">
-            <h2 className={panelTitle}>Recent Operational Activity</h2>
-            <p className="mt-1 text-[0.88rem] text-slate-500 dark:text-slate-400">Illustrative operational events.</p>
-          </div>
+        <Panel
+          title="Recent Operational Activity"
+          description="Illustrative operational events."
+          className="mb-0"
+          bodyClassName="p-0"
+        >
           <ul>
             {ACTIVITY.map((a) => (
-              <li key={a.text} className="flex items-start justify-between gap-4 border-t border-slate-100 py-3 first:border-t-0 first:pt-0.5 dark:border-slate-800">
-                <span className="text-[0.9rem] leading-snug text-slate-900 dark:text-slate-100">{a.text}</span>
-                <time className="shrink-0 whitespace-nowrap text-[0.78rem] text-slate-400">{a.when}</time>
+              <li
+                key={a.text}
+                className="flex items-start justify-between gap-3 border-t border-slate-100 px-4 py-3 first:border-t-0 dark:border-slate-800"
+              >
+                <span className="text-[13px] leading-snug text-slate-900 dark:text-slate-100">{a.text}</span>
+                <time className="shrink-0 whitespace-nowrap text-xs text-slate-400">{a.when}</time>
               </li>
             ))}
           </ul>
-        </section>
+        </Panel>
       </div>
     </div>
   );

@@ -3,6 +3,7 @@ import { Navigate } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import { listEmailLogs } from "../../api/platform";
 import { EMAIL_LOGS_ADMIN_EMAIL } from "../../components/layout/PlatformLayout";
+import { PageHeader } from "../../components/payflow-ui";
 import { Button } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
 import { useAuth } from "../../context/AuthContext";
@@ -63,20 +64,16 @@ export function EmailLogsPage() {
 
   return (
     <div className={ui.page}>
-      <div className={ui.pageHeader}>
-        <div>
-          <div className={ui.crumb}>Platform / Email Logs</div>
-          <h1 className={ui.h1}>Email Logs</h1>
-          <p className={ui.lead}>
-            SMTP is not configured yet. Outbound emails (activation, password reset) are saved here
-            so you can open the action link and complete the flow. Visible only to{" "}
-            {EMAIL_LOGS_ADMIN_EMAIL}.
-          </p>
-        </div>
-        <Button variant="secondary" onClick={() => void load()}>
-          Refresh
-        </Button>
-      </div>
+      <PageHeader
+        title="Email Logs"
+        description={`SMTP is not configured yet. Outbound emails (activation, password reset) are saved here so you can open the action link and complete the flow. Visible only to ${EMAIL_LOGS_ADMIN_EMAIL}.`}
+        breadcrumb={[{ label: "Platform", to: "/platform" }, { label: "Email Logs" }]}
+        actions={
+          <Button variant="secondary" onClick={() => void load()}>
+            Refresh
+          </Button>
+        }
+      />
 
       {error ? <div className={ui.error}>{error}</div> : null}
       {info ? <div className={ui.success}>{info}</div> : null}

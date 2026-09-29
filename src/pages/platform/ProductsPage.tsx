@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import { listProducts, saveProduct } from "../../api/platform";
+import { PageHeader } from "../../components/payflow-ui";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { ui } from "../../lib/ui";
@@ -47,10 +48,21 @@ export function ProductsPage() {
     e.preventDefault();
     setSaving(true);
     setError("");
+    const code = form.code.trim().toUpperCase();
+    if (!/^[A-Z0-9][A-Z0-9_-]*$/.test(code)) {
+      setError("Product code must start with a letter or digit and use only A–Z, 0–9, _ or -");
+      setSaving(false);
+      return;
+    }
+    if (products.some((p) => p.code.toUpperCase() === code)) {
+      setError(`Product code '${code}' already exists. Choose a unique code.`);
+      setSaving(false);
+      return;
+    }
     try {
       const created = await saveProduct({
         name: form.name.trim(),
-        code: form.code.trim().toUpperCase(),
+        code,
         description: form.description.trim() || undefined,
         status: form.status,
       });
@@ -65,23 +77,20 @@ export function ProductsPage() {
 
   return (
     <div className={ui.page}>
-      <div className={ui.pageHeader}>
-        <div>
-          <div className={ui.crumb}>Platform / Products</div>
-          <h1 className={ui.h1}>Products</h1>
-          <p className={ui.lead}>
-            Products registered under the platform. PayFlow is the only operational product in this
-            phase.
-          </p>
-        </div>
-        {registerOpen ? (
-          <Button variant="secondary" onClick={closeRegister}>
-            Cancel
-          </Button>
-        ) : (
-          <Button onClick={() => setRegisterOpen(true)}>Register product</Button>
-        )}
-      </div>
+      <PageHeader
+        title="Products"
+        description="Products registered under the platform. PayFlow is the only operational product in this phase."
+        breadcrumb={[{ label: "Platform", to: "/platform" }, { label: "Products" }]}
+        actions={
+          registerOpen ? (
+            <Button variant="secondary" onClick={closeRegister}>
+              Cancel
+            </Button>
+          ) : (
+            <Button onClick={() => setRegisterOpen(true)}>Register product</Button>
+          )
+        }
+      />
 
       {error ? <div className={ui.error}>{error}</div> : null}
 
@@ -92,9 +101,11 @@ export function ProductsPage() {
             <p className={ui.formText}>Basic product information only — no plans, pricing or licensing.</p>
           </div>
           <form onSubmit={onRegister}>
-            <div className={ui.grid2}>
-              <div className={ui.field}>
-                <label className={ui.label} htmlFor="prod-name">Product name</label>
+            <div className="mb-4 grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
+              <div className="grid gap-1.5">
+                <label className={ui.label} htmlFor="prod-name">
+                  Product name
+                </label>
                 <input
                   className={ui.control}
                   id="prod-name"
@@ -104,16 +115,29 @@ export function ProductsPage() {
                   required
                 />
               </div>
-              <div className={ui.field}>
-                <label className={ui.label} htmlFor="prod-code">Product code</label>
+              <div className="grid gap-1.5">
+                <label className={ui.label} htmlFor="prod-code">
+                  Product code
+                </label>
                 <input
                   className={ui.control}
                   id="prod-code"
                   value={form.code}
-                  onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, code: e.target.value.toUpperCase() }))
+                  }
                   required
+                  minLength={2}
+                  maxLength={64}
+                  pattern="[A-Za-z0-9][A-Za-z0-9_-]*"
+                  title="Unique code: letters, digits, underscore or hyphen"
                   placeholder="e.g. PAYFLOW"
+                  autoComplete="off"
+                  spellCheck={false}
                 />
+                <p className="text-[11px] leading-snug text-slate-500">
+                  Unique key — permanent identity, cannot be reused or changed later.
+                </p>
               </div>
             </div>
             <div className={ui.field}>
