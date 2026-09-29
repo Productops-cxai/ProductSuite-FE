@@ -16,6 +16,7 @@ import { PayFlowLayout } from "./pages/payflow/PayFlowLayout";
 import { PayFlowProfilePage } from "./pages/payflow/ProfilePage";
 import { NoAccessPage, ProductLauncherPage } from "./pages/ProductLauncherPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
+import { PayFlowClientsPage } from "./pages/payflow/ClientsPage";
 
 function HomeRedirect() {
   const { loading, user, nextStep, products } = useAuth();
@@ -45,6 +46,7 @@ export default function App() {
       <Route path="/payflow" element={<PayFlowLayout />}>
         <Route index element={<PayFlowDashboardPage />} />
         <Route path="profile" element={<PayFlowProfilePage />} />
+        <Route path="clients" element={<PayFlowClientsPage />} />
       </Route>
 
       <Route path="/insightiq" element={<InsightIqPlaceholderPage />} />

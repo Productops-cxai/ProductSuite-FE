@@ -161,3 +161,14 @@ export interface ActivationPreview {
   email: string;
   full_name: string;
 }
+
+export interface Client {
+  id: number;
+  name: string;
+  code: string;
+  description?: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+
+}

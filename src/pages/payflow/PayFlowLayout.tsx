@@ -21,7 +21,7 @@ const NAV: { label: string; items: NavItem[] }[] = [
   {
     label: "OPERATIONS",
     items: [
-      { to: "/payflow/clients", end: false, label: "Clients", soon: true, icon: "people" },
+      { to: "/payflow/clients", end: false, label: "Clients", icon: "people" },
       { to: "/payflow/cases", end: false, label: "Accounts / Cases", soon: true, icon: "products" },
       { to: "/payflow/review", end: false, label: "Human Review", soon: true, icon: "access" },
     ],
