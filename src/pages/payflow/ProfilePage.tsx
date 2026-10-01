@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { ApiError } from "../../api/client";
 import { changePassword, updateProfile } from "../../api/auth";
+import { listPayflowClients } from "../../api/payflow";
 import { PageHeader, Panel } from "../../components/payflow-ui";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
@@ -69,7 +70,7 @@ const THEME_OPTS: { id: ThemeMode; label: string }[] = [
 
 export function PayFlowProfilePage() {
   const { user, applyMe } = useAuth();
-  const { roleLabel } = usePayFlowAccess();
+  const { roleLabel, isOperationsAdmin, access } = usePayFlowAccess();
   const [fullName, setFullName] = useState(user?.full_name || "");
   const [profileBusy, setProfileBusy] = useState(false);
   const [profileMsg, setProfileMsg] = useState("");
@@ -83,6 +84,10 @@ export function PayFlowProfilePage() {
   const [passwordErr, setPasswordErr] = useState("");
 
   const [theme, setTheme] = useState<ThemeMode>(() => readThemeMode());
+  const assignedClientCount = access?.client_ids?.length ?? 0;
+  const [clientCount, setClientCount] = useState<number | null>(
+    isOperationsAdmin ? null : assignedClientCount,
+  );
 
   useEffect(() => {
     if (user?.full_name) setFullName(user.full_name);
@@ -93,10 +98,34 @@ export function PayFlowProfilePage() {
     return watchSystemTheme();
   }, [theme]);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (isOperationsAdmin) {
+      void listPayflowClients({})
+        .then((res) => {
+          if (!cancelled) setClientCount(res.clients?.length ?? 0);
+        })
+        .catch(() => {
+          if (!cancelled) setClientCount(null);
+        });
+    } else {
+      setClientCount(assignedClientCount);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [isOperationsAdmin, assignedClientCount]);
+
   if (!user) return null;
 
   const label = roleLabel;
   const statusTone = user.status === "active" ? "success" : "danger";
+  const clientsInView =
+    clientCount == null
+      ? "…"
+      : clientCount === 1
+        ? "1 client in view"
+        : `${clientCount} clients in view`;
 
   function onThemeChange(mode: ThemeMode) {
     setTheme(mode);
@@ -328,7 +357,7 @@ export function PayFlowProfilePage() {
                 <div className="min-w-0">
                   <p className="text-[0.78rem] text-slate-500 dark:text-slate-400">Access</p>
                   <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                    {label} · 3 clients in view
+                    {label} · {clientsInView}
                   </p>
                 </div>
               </div>

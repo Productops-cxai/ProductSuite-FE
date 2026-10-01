@@ -146,7 +146,7 @@ const badgeTone: Record<string, string> = {
 
 export function PayFlowDashboardPage() {
   return (
-    <div className="px-5 py-7 lg:px-10 lg:py-9">
+    <>
       <PageHeader
         title="Operations Dashboard"
         description="Operations Admin view · 9 sample accounts loaded"
@@ -372,6 +372,6 @@ export function PayFlowDashboardPage() {
           </ul>
         </Panel>
       </div>
-    </div>
+    </>
   );
 }

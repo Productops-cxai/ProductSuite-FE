@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
+import { listPayflowClients } from "../../api/payflow";
 import { RequireProductAccess } from "../../components/auth/RequireProductAccess";
 import { ProductSwitcher } from "../../components/ProductSwitcher";
 import { Icon } from "../../components/ui/Icon";
@@ -69,14 +70,20 @@ function AccountMenu({
   onClose,
   onProfile,
   onLogout,
+  userName,
   roleLabel,
+  isOperationsAdmin,
+  assignedClientCount,
   align = "left",
 }: {
   open: boolean;
   onClose: () => void;
   onProfile: () => void;
   onLogout: () => void;
+  userName: string;
   roleLabel: string;
+  isOperationsAdmin: boolean;
+  assignedClientCount: number;
   align?: "left" | "right" | "rail";
 }) {
   if (!open) return null;
@@ -105,14 +112,21 @@ function AccountMenu({
       </button>
       <div className="mx-3 my-1 h-px bg-slate-100 dark:bg-slate-800" />
       <div className="px-4 pb-1 pt-1.5 text-[0.68rem] font-semibold tracking-[0.08em] text-slate-400">
-        PREVIEW ROLE
+        YOUR ROLE
       </div>
       <div className="flex items-center justify-between gap-3 px-4 py-1.5 text-sm">
-        <span className="font-medium text-slate-900 dark:text-slate-100">{roleLabel}</span>
+        <span className="font-medium text-slate-900 dark:text-slate-100">
+          {roleLabel} · {userName}
+        </span>
         <span className="shrink-0 text-sm font-medium text-primary">Active</span>
       </div>
-      <div className="px-4 pb-1.5 pt-0.5 text-sm text-slate-700 dark:text-slate-300">Supervisor · Zeeshan</div>
-      <p className="px-4 pb-2 text-xs leading-snug text-slate-400">Supervisors only see assigned clients.</p>
+      <p className="px-4 pb-2 text-xs leading-snug text-slate-400">
+        {isOperationsAdmin
+          ? "Operations Admin can manage all clients and configuration."
+          : assignedClientCount > 0
+            ? `You can access ${assignedClientCount} assigned client${assignedClientCount === 1 ? "" : "s"}.`
+            : "Supervisors only see assigned clients."}
+      </p>
       <div className="mx-3 my-1 h-px bg-slate-100 dark:bg-slate-800" />
       <button
         type="button"
@@ -213,6 +227,8 @@ function SidebarPanel({
   collapsed,
   userName,
   roleLabel,
+  isOperationsAdmin,
+  assignedClientCount,
   sections,
   onNavigate,
   onProfile,
@@ -221,6 +237,8 @@ function SidebarPanel({
   collapsed?: boolean;
   userName: string;
   roleLabel: string;
+  isOperationsAdmin: boolean;
+  assignedClientCount: number;
   sections: MenuSection[];
   onNavigate?: () => void;
   onProfile: () => void;
@@ -244,6 +262,12 @@ function SidebarPanel({
       document.removeEventListener("keydown", onKey);
     };
   }, [accountOpen]);
+
+  const scopeHint = isOperationsAdmin
+    ? "All clients in view"
+    : assignedClientCount === 1
+      ? "1 assigned client"
+      : `${assignedClientCount} assigned clients`;
 
   return (
     <>
@@ -280,11 +304,14 @@ function SidebarPanel({
           onClose={() => setAccountOpen(false)}
           onProfile={onProfile}
           onLogout={onLogout}
+          userName={userName}
           roleLabel={roleLabel}
+          isOperationsAdmin={isOperationsAdmin}
+          assignedClientCount={assignedClientCount}
           align={collapsed ? "rail" : "left"}
         />
         {!collapsed ? (
-          <div className="px-1.5 pb-1 pt-0.5 text-[11px] text-slate-400">All clients in view</div>
+          <div className="px-1.5 pb-1 pt-0.5 text-[11px] text-slate-400">{scopeHint}</div>
         ) : null}
         <button
           type="button"
@@ -322,13 +349,35 @@ function SidebarPanel({
 
 function PayFlowShell() {
   const { user, logout } = useAuth();
-  const { loading, error, menus, roleLabel } = usePayFlowAccess();
+  const { loading, error, menus, roleLabel, isOperationsAdmin, access } = usePayFlowAccess();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const [desktopCollapsed, setDesktopCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [headerAccountOpen, setHeaderAccountOpen] = useState(false);
+  const [clientCount, setClientCount] = useState<number | null>(null);
   const headerAccountRef = useRef<HTMLDivElement>(null);
+
+  const assignedClientCount = access?.client_ids?.length ?? 0;
+
+  useEffect(() => {
+    let cancelled = false;
+    // Header "clients in view" — ops admin sees all; supervisor sees assigned only.
+    if (isOperationsAdmin) {
+      void listPayflowClients({})
+        .then((res) => {
+          if (!cancelled) setClientCount(res.clients?.length ?? 0);
+        })
+        .catch(() => {
+          if (!cancelled) setClientCount(null);
+        });
+    } else {
+      setClientCount(assignedClientCount);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [isOperationsAdmin, assignedClientCount]);
 
   useEffect(() => {
     if (!headerAccountOpen) return;
@@ -390,10 +439,18 @@ function PayFlowShell() {
   const panelProps = {
     userName: user.full_name,
     roleLabel,
+    isOperationsAdmin,
+    assignedClientCount: isOperationsAdmin ? clientCount ?? 0 : assignedClientCount,
     sections: menus,
     onProfile: () => navigate("/payflow/profile"),
     onLogout: () => void logout(),
   };
+
+  const headerClientCount = clientCount;
+  const headerCountLabel =
+    headerClientCount == null
+      ? "…"
+      : `${headerClientCount} client${headerClientCount === 1 ? "" : "s"}`;
 
   return (
     <div className="flex min-h-screen w-full bg-[#f3f5f9] dark:bg-[#0b1220]">
@@ -438,8 +495,10 @@ function PayFlowShell() {
             />
             <span className="hidden truncate text-[12px] text-slate-400 lg:inline">
               Collections operations ·{" "}
-              <strong className="font-medium text-slate-700 dark:text-slate-300">3 clients</strong> in
-              view
+              <strong className="font-medium text-slate-700 dark:text-slate-300">
+                {headerCountLabel}
+              </strong>{" "}
+              in view
             </span>
           </div>
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
@@ -480,13 +539,18 @@ function PayFlowShell() {
                 onClose={() => setHeaderAccountOpen(false)}
                 onProfile={() => navigate("/payflow/profile")}
                 onLogout={() => void logout()}
+                userName={user.full_name}
                 roleLabel={roleLabel}
+                isOperationsAdmin={isOperationsAdmin}
+                assignedClientCount={
+                  isOperationsAdmin ? clientCount ?? 0 : assignedClientCount
+                }
               />
             </div>
           </div>
         </header>
         <main className="relative flex-1">
-          <div className="mx-auto w-full max-w-[1280px]">
+          <div className="mx-auto w-full max-w-[1280px] px-5 py-7 lg:px-10 lg:py-9">
             <Outlet />
           </div>
         </main>

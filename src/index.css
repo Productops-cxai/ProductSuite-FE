@@ -25,6 +25,32 @@
   --color-success-foreground: #ffffff;
   --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04);
   --shadow-brand: 0 6px 18px -10px rgba(59, 130, 246, 0.45);
+
+  /* Lovable-token aliases: ported Clients UI uses these class names verbatim
+     (text-foreground, bg-card, text-muted-foreground, bg-secondary, ...).
+     Aliasing them onto the existing palette above keeps a pixel-faithful
+     Lovable port without restyling the rest of the app. */
+  --color-background: var(--color-bg);
+  --color-foreground: var(--color-fg);
+  --color-card-foreground: var(--color-fg);
+  --color-popover: var(--color-card);
+  --color-popover-foreground: var(--color-fg);
+  --color-muted: var(--color-surface-muted);
+  --color-muted-foreground: var(--color-fg-muted);
+  --color-secondary: var(--color-surface-muted);
+  --color-secondary-foreground: var(--color-fg);
+  --color-accent: rgba(59, 130, 246, 0.08);
+  --color-accent-foreground: var(--color-primary-hover);
+  --color-input: var(--color-border);
+  --color-ring: var(--color-primary);
+  --color-warning: #f59e0b;
+  --color-warning-foreground: #78350f;
+  --color-info: #3b82f6;
+  --color-info-foreground: #ffffff;
+  --color-ai: #0891b2;
+  --color-ai-foreground: #ffffff;
+  --shadow-subtle: var(--shadow-card);
+  --shadow-panel: 0 1px 3px rgba(15, 23, 42, 0.06), 0 10px 20px -5px rgba(15, 23, 42, 0.1);
 }
 
 html.dark {
@@ -47,6 +73,29 @@ html.dark {
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35);
   --shadow-brand: 0 6px 18px -10px rgba(96, 165, 250, 0.35);
   color-scheme: dark;
+
+  /* Lovable-token aliases (dark) — see light block above for context. */
+  --color-background: var(--color-bg);
+  --color-foreground: var(--color-fg);
+  --color-card-foreground: var(--color-fg);
+  --color-popover: var(--color-card);
+  --color-popover-foreground: var(--color-fg);
+  --color-muted: var(--color-surface-muted);
+  --color-muted-foreground: var(--color-fg-muted);
+  --color-secondary: var(--color-surface-muted);
+  --color-secondary-foreground: var(--color-fg);
+  --color-accent: rgba(96, 165, 250, 0.14);
+  --color-accent-foreground: var(--color-primary);
+  --color-input: var(--color-border);
+  --color-ring: var(--color-primary);
+  --color-warning: #fbbf24;
+  --color-warning-foreground: #451a03;
+  --color-info: #60a5fa;
+  --color-info-foreground: #0b1220;
+  --color-ai: #22d3ee;
+  --color-ai-foreground: #0b1220;
+  --shadow-subtle: var(--shadow-card);
+  --shadow-panel: 0 1px 3px rgba(0, 0, 0, 0.3), 0 10px 20px -5px rgba(0, 0, 0, 0.35);
 }
 
 @layer base {
@@ -97,4 +146,12 @@ html.dark {
 @utility tabular {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
+}
+
+/* Used by the ported Lovable Clients UI primitives (src/components/payflow/lovable). */
+@utility panel {
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 0.625rem;
+  box-shadow: var(--shadow-panel);
 }

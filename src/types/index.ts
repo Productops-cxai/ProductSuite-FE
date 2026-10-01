@@ -196,6 +196,7 @@ export interface PayflowUser {
   status_label: string;
   assigned_clients: string[];
   permission_profile: string;
+  role_permission_names?: string[];
   last_active?: string | null;
   created_at?: string | null;
   organization_id?: number;
@@ -240,11 +241,258 @@ export interface PayflowPermissionGroup {
   permissions: PayflowPermissionItem[];
 }
 
+export interface PayflowClientSupervisor {
+  user_id: string;
+  full_name: string;
+  email?: string | null;
+  status?: string | null;
+  short_name?: string;
+  role_name?: string | null;
+  permission_names?: string[];
+}
+
 export interface PayflowClient {
+  // Back-compat fields relied on by UsersPage / ClientAssignmentPicker.
   id: number;
   code: string;
   name: string;
   category?: string | null;
   status: string;
+
+  // Rich fields returned by GET /payflow/clients and GET /payflow/clients/{id}.
+  industry?: string | null;
+  status_label?: string;
+  client_type?: string | null;
+  client_type_label?: string | null;
+  business_domain?: string | null;
+  business_domain_label?: string | null;
+  ai_mode?: string | null;
+  ai_mode_label?: string | null;
+  data_source_type?: string | null;
+  connection_status?: string | null;
+  connection_status_label?: string | null;
+  supervisors?: PayflowClientSupervisor[];
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface PayflowClientMapping {
+  id: number;
+  source_field: string;
+  payflow_field: string | null;
+  sample_value: string | null;
+  status: string; // mapped | needs_attention | unmapped | validated
+  status_label: string;
+  is_required: boolean;
+  sort_order: number;
+}
+
+export interface PayflowClientMappingSummary {
+  mapped: number;
+  attention: number;
+  unmapped: number;
+  total: number;
+  required_missing: string[];
+}
+
+export interface PayflowOnboardingStep {
+  key: string;
+  label: string;
+  status: string; // complete | pending | incomplete | blocked
+  informational?: boolean;
+}
+
+export interface PayflowOnboardingProgress {
+  steps: PayflowOnboardingStep[];
+  completed_required: number;
+  total_required: number;
+  percent: number;
+  eligible_for_activation: boolean;
+}
+
+export interface PayflowPortfolio {
+  id: number;
+  client_id: number;
+  name: string;
+  code: string;
+  status: string; // onboarding | active | paused
+  description?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface PayflowClientChannels {
+  email: boolean;
+  sms: boolean;
+  whatsapp: boolean;
+}
+
+export interface PayflowClientDetail extends PayflowClient {
+  crm_system_name?: string | null;
+  integration_ref?: string | null;
+  environment?: string | null;
+  sync_frequency?: string | null;
+  brand_name: string;
+  sender_name: string;
+  email_from: string;
+  sms_sender_id: string;
+  channels: PayflowClientChannels;
+  governance_rules: string[];
+  mappings: PayflowClientMapping[];
+  mapping_summary: PayflowClientMappingSummary;
+  portfolios: PayflowPortfolio[];
+  portfolio_count: number;
+  supervisor_user_ids: string[];
+  onboarding: PayflowOnboardingProgress;
+  activation_blockers: string[];
+}
+
+export interface PayflowClientsListResponse {
+  clients: PayflowClient[];
+}
+
+export interface PayflowMappingCatalogField {
+  source_field: string;
+  payflow_field: string;
+  meaning: string;
+  required: boolean;
+  sample_value: string;
+  group: string;
+  available?: string;
+}
+
+export interface PayflowMappingOutboundField {
+  file: string;
+  field: string;
+  meaning: string;
+  required: boolean;
+  format: string;
+  sample_value: string;
+  notes: string;
+}
+
+export interface PayflowMappingCatalogResponse {
+  fields: PayflowMappingCatalogField[];
+  outbound_fields?: PayflowMappingOutboundField[];
+  payflow_fields: string[];
+  governance_rules: string[];
+  catalog_version?: string;
+}
+
+export interface PayflowPortfoliosResponse {
+  portfolios: PayflowPortfolio[];
+}
+
+export interface PayflowBulkUploadCreatedRow {
+  row: number;
+  id: number;
+  code: string;
+  name: string;
+}
+
+export interface PayflowBulkUploadErrorRow {
+  row: number;
+  code?: string | null;
+  message: string;
+}
+
+export interface PayflowBulkUploadResult {
+  created_count: number;
+  error_count: number;
+  created: PayflowBulkUploadCreatedRow[];
+  errors: PayflowBulkUploadErrorRow[];
+}
+
+export interface PayflowAccountTimelineEvent {
+  label: string;
+  detail: string;
+  at: string;
+}
+
+export interface PayflowAccount {
+  id: number;
+  client_id: number;
+  client_code?: string | null;
+  client_name?: string | null;
+  portfolio_id?: number | null;
+  portfolio_name?: string | null;
+  customer_name: string;
+  account_reference: string;
+  case_reference: string;
+  original_balance: number;
+  outstanding_balance: number;
+  recovered_balance: number;
+  collection_status: string;
+  current_workflow?: string | null;
+  last_action?: string | null;
+  next_action?: string | null;
+  human_review: boolean;
+  timeline: PayflowAccountTimelineEvent[];
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface PayflowAccountsIntake {
+  files: number;
+  latest_received_at: string;
+  latest_assigned_at: string;
+  accounts_in_files: number;
+}
+
+export interface PayflowAccountsListResponse {
+  accounts: PayflowAccount[];
+  intake: PayflowAccountsIntake;
+  workflows: string[];
+  statuses: string[];
+}
+
+export interface PayflowIntegrationIssue {
+  at: string;
+  summary: string;
+}
+
+export interface PayflowIntegrationMapping {
+  source_field: string;
+  payflow_field?: string | null;
+  sample_value?: string | null;
+  status: string;
+}
+
+export interface PayflowIntegrationMappingSummary {
+  mapped: number;
+  attention: number;
+  unmapped: number;
+  total: number;
+}
+
+export interface PayflowIntegration {
+  id: string;
+  name: string;
+  category: string;
+  client_id?: number | null;
+  client_name: string;
+  client_code?: string | null;
+  status: string;
+  last_activity: string;
+  last_successful?: string | null;
+  purpose: string;
+  data_source?: string | null;
+  issues: PayflowIntegrationIssue[];
+  mappings?: PayflowIntegrationMapping[];
+  mapping_summary?: PayflowIntegrationMappingSummary | null;
+}
+
+export interface PayflowIntegrationsSummary {
+  connected: number;
+  attention: number;
+  pending: number;
+  disconnected: number;
+}
+
+export interface PayflowIntegrationsListResponse {
+  integrations: PayflowIntegration[];
+  summary: PayflowIntegrationsSummary;
+  categories: string[];
+  statuses: string[];
 }
 

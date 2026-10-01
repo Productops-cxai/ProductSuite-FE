@@ -10,8 +10,15 @@ import { OverviewPage } from "./pages/platform/OverviewPage";
 import { PeoplePage } from "./pages/platform/PeoplePage";
 import { ProductDetailPage } from "./pages/platform/ProductDetailPage";
 import { ProductsPage } from "./pages/platform/ProductsPage";
+import { PayFlowClientDetailPage } from "./pages/payflow/ClientDetailPage";
+import { PayFlowClientNewPage } from "./pages/payflow/ClientNewPage";
+import { PayFlowClientsPage } from "./pages/payflow/ClientsPage";
+import { PayFlowCaseDetailPage } from "./pages/payflow/CaseDetailPage";
+import { PayFlowCasesPage } from "./pages/payflow/CasesPage";
 import { PayFlowDashboardPage } from "./pages/payflow/DashboardPage";
 import { InsightIqPlaceholderPage } from "./pages/payflow/InsightIqPlaceholder";
+import { PayFlowIntegrationDetailPage } from "./pages/payflow/IntegrationDetailPage";
+import { PayFlowIntegrationsPage } from "./pages/payflow/IntegrationsPage";
 import { PayFlowLayout } from "./pages/payflow/PayFlowLayout";
 import { PayFlowProfilePage } from "./pages/payflow/ProfilePage";
 import { PayFlowUserDetailPage } from "./pages/payflow/UserDetailPage";
@@ -47,6 +54,13 @@ export default function App() {
       <Route path="/payflow" element={<PayFlowLayout />}>
         <Route index element={<PayFlowDashboardPage />} />
         <Route path="profile" element={<PayFlowProfilePage />} />
+        <Route path="clients" element={<PayFlowClientsPage />} />
+        <Route path="clients/new" element={<PayFlowClientNewPage />} />
+        <Route path="clients/:clientId" element={<PayFlowClientDetailPage />} />
+        <Route path="cases" element={<PayFlowCasesPage />} />
+        <Route path="cases/:accountId" element={<PayFlowCaseDetailPage />} />
+        <Route path="integrations" element={<PayFlowIntegrationsPage />} />
+        <Route path="integrations/:integrationId" element={<PayFlowIntegrationDetailPage />} />
         <Route path="users" element={<PayFlowUsersPage />} />
         <Route path="users/:userId" element={<PayFlowUserDetailPage />} />
       </Route>

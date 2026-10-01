@@ -4,13 +4,11 @@ import {
   createPayflowRole,
   createPayflowUser,
   deletePayflowRole,
-  listPayflowClients,
   listPayflowPermissions,
   listPayflowRoles,
   listPayflowUsers,
   updatePayflowRole,
 } from "../../api/payflow";
-import { ClientAssignmentPicker } from "../../components/payflow/ClientAssignmentPicker";
 import { PermissionPicker } from "../../components/payflow/PermissionPicker";
 import {
   Btn,
@@ -31,7 +29,6 @@ import {
 } from "../../components/payflow-ui";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import type {
-  PayflowClient,
   PayflowPermissionGroup,
   PayflowRoleListItem,
   PayflowUser,
@@ -128,7 +125,7 @@ export function PayFlowUsersPage() {
 
   if (!isOperationsAdmin) {
     return (
-      <div className="px-5 py-7 lg:px-10 lg:py-9">
+      <>
         <PageHeader
           title="Users & Permissions"
           description="Manage PayFlow users, Client assignments and operational access."
@@ -138,17 +135,17 @@ export function PayFlowUsersPage() {
             Only an Operations Admin can manage users, client assignments and permissions.
           </p>
         </Panel>
-      </div>
+      </>
     );
   }
 
   const roleFilterOptions = ["All Roles", ...roles.map((r) => r.name)];
 
   return (
-    <div className="px-5 py-7 lg:px-10 lg:py-9">
+    <>
       <PageHeader
         title="Users & Permissions"
-        description="Manage PayFlow users, roles, Client assignments and operational access."
+        description="Manage PayFlow users, roles and operational access. Client assignment is done from Clients."
         actions={
           <Btn variant="primary" onClick={() => setAdding((v) => !v)}>
             {adding ? "Close" : "+ Add User"}
@@ -241,7 +238,7 @@ export function PayFlowUsersPage() {
       <div className="mt-5">
         <RolesPanel roles={roles} onRolesChanged={setRoles} onChanged={load} />
       </div>
-    </div>
+    </>
   );
 }
 
@@ -260,12 +257,6 @@ function AddUserForm({
   const [email, setEmail] = useState("");
   const [roleCode, setRoleCode] = useState(defaultRole?.code || "");
   const [status, setStatus] = useState("Active");
-  const [clientIds, setClientIds] = useState<number[]>([]);
-  const [permissions, setPermissions] = useState<string[]>(
-    () => defaultRole?.permission_codes || [...SUPERVISOR_DEFAULT_CODES],
-  );
-  const [clients, setClients] = useState<PayflowClient[]>([]);
-  const [groups, setGroups] = useState<PayflowPermissionGroup[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -276,33 +267,14 @@ function AddUserForm({
     label: `${r.name} (${r.scope === "platform_wide" ? "Platform-wide" : "Client-scoped"})`,
   }));
 
-  useEffect(() => {
-    Promise.all([listPayflowClients(), listPayflowPermissions()])
-      .then(([clientsRes, permsRes]) => {
-        setClients(clientsRes.clients);
-        setGroups(permsRes.groups);
-      })
-      .catch(() => {
-        setClients([]);
-        setGroups([]);
-      });
-  }, []);
-
-  const pickRole = (next: string) => {
-    setRoleCode(next);
-    const role = roles.find((r) => r.code === next);
-    setPermissions(role?.permission_codes?.length ? [...role.permission_codes] : [...SUPERVISOR_DEFAULT_CODES]);
-    if (role?.scope === "platform_wide") setClientIds([]);
-  };
-
   const valid =
-    fullName.trim().length > 1 &&
-    /.+@.+\..+/.test(email.trim()) &&
-    Boolean(roleCode) &&
-    (isPlatform || clientIds.length > 0);
+    fullName.trim().length > 1 && /.+@.+\..+/.test(email.trim()) && Boolean(roleCode);
 
   return (
-    <Panel title="Add User" description="Client assignment decides where. Permissions decide what.">
+    <Panel
+      title="Add User"
+      description="Assign a role here. Client assignment happens when you create or edit a client."
+    >
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Full Name">
           <TextInput value={fullName} onChange={setFullName} placeholder="Amara Okafor" />
@@ -311,7 +283,7 @@ function AddUserForm({
           <TextInput value={email} onChange={setEmail} placeholder="name@payflow.io" type="email" />
         </Field>
         <Field label="Role">
-          <SelectInput value={roleCode} options={roleOptions} onChange={pickRole} />
+          <SelectInput value={roleCode} options={roleOptions} onChange={setRoleCode} />
         </Field>
         <Field label="Status">
           <SelectInput
@@ -322,47 +294,13 @@ function AddUserForm({
         </Field>
       </div>
 
-      {isPlatform ? (
+      {selectedRole ? (
         <p className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3 text-[12px] text-slate-500 dark:border-slate-700 dark:bg-slate-800">
-          {(selectedRole?.name || "This role")} is a platform-wide role with access across every
-          client. No client assignment is required.
+          {isPlatform
+            ? `${selectedRole.name} is platform-wide and works across every client. No client assignment is required.`
+            : `${selectedRole.name} is client-scoped. Assign this user to clients from Client create/edit. Permissions come from the role (${selectedRole.permission_count} selected) and are managed under Roles.`}
         </p>
-      ) : (
-        <div className="mt-4 grid gap-5 lg:grid-cols-2">
-          <div>
-            <p className="mb-1.5 text-[12px] font-medium text-slate-800 dark:text-slate-200">
-              Assigned Clients — where access applies
-            </p>
-            <ClientAssignmentPicker
-              clients={clients}
-              selectedIds={clientIds}
-              roleName={selectedRole?.name}
-              onToggle={(id) =>
-                setClientIds((prev) =>
-                  prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id],
-                )
-              }
-            />
-          </div>
-          <div>
-            <p className="mb-1.5 text-[12px] font-medium text-slate-800 dark:text-slate-200">
-              Permissions — what this user may do (defaults from {selectedRole?.name || "role"})
-            </p>
-            <PermissionPicker
-              groups={groups}
-              selected={permissions}
-              onToggle={(code) =>
-                setPermissions((prev) =>
-                  prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code],
-                )
-              }
-            />
-            <p className="mt-1.5 text-[11px] text-slate-500">
-              Access can later be tuned per assigned client from User Detail.
-            </p>
-          </div>
-        </div>
-      )}
+      ) : null}
 
       {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
 
@@ -374,11 +312,7 @@ function AddUserForm({
               ? "Enter a valid email address."
               : !roleCode
                 ? "Select a role."
-                : !isPlatform && clients.length === 0
-                  ? "No active clients available — restart the API so clients can seed, then try again."
-                  : !isPlatform && clientIds.length === 0
-                    ? "Select at least one assigned client for a client-scoped role."
-                    : null}
+                : null}
         </p>
       ) : null}
 
@@ -394,8 +328,6 @@ function AddUserForm({
               email: email.trim(),
               role_code: roleCode,
               status: status === "Inactive" ? "disabled" : "invited",
-              client_ids: isPlatform ? [] : clientIds,
-              permission_codes: isPlatform ? [] : permissions,
             })
               .then(onCreated)
               .catch((err: unknown) => {

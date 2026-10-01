@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
+  deactivatePayflowUser,
   getPayflowUser,
   listPayflowRoles,
+  reactivatePayflowUser,
   resendPayflowInvitation,
   updatePayflowUser,
 } from "../../api/payflow";
@@ -34,6 +36,7 @@ export function PayFlowUserDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [statusBusy, setStatusBusy] = useState(false);
 
   const load = () => {
     if (!userId) return;
@@ -64,25 +67,23 @@ export function PayFlowUserDetailPage() {
     );
   }
 
-  if (loading) return <p className="px-5 py-7 text-sm text-slate-500">Loading…</p>;
+  if (loading) return <p className="text-sm text-slate-500">Loading…</p>;
 
   if (!user) {
     return (
-      <div className="px-5 py-7 lg:px-10 lg:py-9">
-        <Panel title="User not found">
-          <p className="text-sm text-slate-500">{error || "This user no longer exists."}</p>
-          <Link to="/payflow/users" className="mt-3 inline-block text-[13px] font-medium text-primary">
-            Back to Users &amp; Permissions
-          </Link>
-        </Panel>
-      </div>
+      <Panel title="User not found">
+        <p className="text-sm text-slate-500">{error || "This user no longer exists."}</p>
+        <Link to="/payflow/users" className="mt-3 inline-block text-[13px] font-medium text-primary">
+          Back to Users &amp; Permissions
+        </Link>
+      </Panel>
     );
   }
 
   const isSupervisor = user.role_scope !== "platform_wide";
 
   return (
-    <div className="px-5 py-7 lg:px-10 lg:py-9">
+    <>
       <PageHeader
         breadcrumb={[
           { label: "Users & Permissions", to: "/payflow/users" },
@@ -96,6 +97,52 @@ export function PayFlowUserDetailPage() {
             <StatusPill tone={isSupervisor ? "neutral" : "info"}>{user.role_name}</StatusPill>
             <StatusPill tone={statusTone(user.status)}>{user.status_label}</StatusPill>
             <Btn onClick={() => setEditing((v) => !v)}>{editing ? "Close" : "Edit User"}</Btn>
+            {user.status === "active" ? (
+              <Btn
+                variant="danger"
+                disabled={statusBusy}
+                onClick={() => {
+                  setStatusBusy(true);
+                  setMessage(null);
+                  deactivatePayflowUser(user.id)
+                    .then((updated) => {
+                      setUser(updated);
+                      setMessage("User deactivated. PayFlow access is blocked; configuration is preserved.");
+                    })
+                    .catch((err: unknown) =>
+                      setMessage(err instanceof Error ? err.message : "Failed to deactivate"),
+                    )
+                    .finally(() => setStatusBusy(false));
+                }}
+              >
+                {statusBusy ? "Working…" : "Deactivate"}
+              </Btn>
+            ) : null}
+            {user.status === "disabled" ? (
+              <Btn
+                variant="secondary"
+                disabled={statusBusy}
+                onClick={() => {
+                  setStatusBusy(true);
+                  setMessage(null);
+                  reactivatePayflowUser(user.id)
+                    .then((updated) => {
+                      setUser(updated);
+                      setMessage(
+                        updated.status === "invited"
+                          ? "User reactivated as Invitation Pending so they can set a password."
+                          : "User reactivated. Existing role, clients and permissions are unchanged.",
+                      );
+                    })
+                    .catch((err: unknown) =>
+                      setMessage(err instanceof Error ? err.message : "Failed to reactivate"),
+                    )
+                    .finally(() => setStatusBusy(false));
+                }}
+              >
+                {statusBusy ? "Working…" : "Reactivate"}
+              </Btn>
+            ) : null}
             {user.status === "invited" ? (
               <Btn
                 variant="secondary"
@@ -143,12 +190,12 @@ export function PayFlowUserDetailPage() {
           {isSupervisor ? (
             <Panel
               title="Assigned Clients & Access"
-              description="Assignment decides where access applies. Permissions decide what is allowed there."
+              description="Clients are assigned from Client create/edit. Permissions come from the role."
             >
               {user.assigned_clients.includes("None assigned") ||
               user.assigned_clients.length === 0 ? (
                 <p className="rounded-lg border border-dashed border-slate-300 px-3 py-6 text-center text-[12px] text-slate-500">
-                  No clients assigned. This supervisor cannot see any operational data.
+                  No clients assigned yet. Assign this supervisor when creating or editing a client.
                 </p>
               ) : (
                 <p className="text-[13px] text-slate-700">{user.assigned_clients.join(", ")}</p>
@@ -179,7 +226,7 @@ export function PayFlowUserDetailPage() {
           </Btn>
         </Panel>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -227,7 +274,7 @@ function EditUserForm({
       {roleChanged ? (
         <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3 text-[12px] text-amber-900">
           Changing this role will change the user&apos;s access model. Platform-wide roles work
-          across all clients; client-scoped roles require client assignments.
+          across all clients; client-scoped roles are assigned to clients from Client create/edit.
         </p>
       ) : null}
 
