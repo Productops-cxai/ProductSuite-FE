@@ -75,3 +75,8 @@ export function usePayFlowAccess() {
   if (!ctx) throw new Error("usePayFlowAccess must be used inside PayFlowAccessProvider");
   return ctx;
 }
+
+/** Safe outside PayFlow shell (platform / launcher / no-access profile). */
+export function useOptionalPayFlowAccess() {
+  return useContext(PayFlowContext);
+}

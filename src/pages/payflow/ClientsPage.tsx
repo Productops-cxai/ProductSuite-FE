@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import {
   downloadPayflowClientsBulkTemplate,
@@ -49,12 +49,19 @@ function formatUpdatedAt(value?: string | null): string {
 
 export function PayFlowClientsPage() {
   const { isOperationsAdmin } = usePayFlowAccess();
+  const [searchParams] = useSearchParams();
   const [clients, setClients] = useState<PayflowClient[]>([]);
   const [supervisors, setSupervisors] = useState<PayflowUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("All Statuses");
+  const [status, setStatus] = useState(() => {
+    const raw = searchParams.get("status");
+    if (!raw) return "All Statuses";
+    if (raw.toLowerCase() === "active") return "Active";
+    if (raw.toLowerCase() === "draft") return "Draft";
+    return raw;
+  });
   const [aiMode, setAiMode] = useState("All AI Modes");
   const [supervisor, setSupervisor] = useState("All Supervisors");
   const [bulkOpen, setBulkOpen] = useState(false);

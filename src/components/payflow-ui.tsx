@@ -123,6 +123,8 @@ export function KpiCard({
   trend,
   tone = "neutral",
   className,
+  to,
+  onClick,
 }: {
   label: string;
   value: string;
@@ -130,6 +132,8 @@ export function KpiCard({
   trend?: { direction: "up" | "down" | "flat"; text: string };
   tone?: "neutral" | "primary";
   className?: string;
+  to?: string;
+  onClick?: () => void;
 }) {
   const trendColor =
     trend?.direction === "up"
@@ -138,25 +142,18 @@ export function KpiCard({
         ? "text-red-500"
         : "text-slate-400";
 
-  return (
-    <div
-      className={cn(
-        "group relative min-h-[112px] overflow-hidden rounded-lg border border-slate-200/80 bg-white px-5 py-4.5 shadow-card transition-all duration-200 hover:border-primary/25 dark:border-slate-700 dark:bg-slate-900",
-        tone === "primary" &&
-          "border-primary/40 bg-gradient-to-br from-primary/[0.08] to-transparent dark:border-blue-700 dark:bg-blue-950/40",
-        className,
-      )}
-    >
+  const body = (
+    <>
       <span
         className={cn(
-          "absolute inset-y-0 left-0 w-[3px]",
-          tone === "primary" ? "bg-primary" : "bg-transparent",
+          "absolute inset-y-0 left-0 w-[3px] transition-all duration-200",
+          tone === "primary" ? "bg-primary" : "bg-transparent group-hover:bg-primary/70",
         )}
       />
-      <p className="text-eyebrow">{label}</p>
+      <p className="text-eyebrow transition-colors group-hover:text-primary/80">{label}</p>
       <p
         className={cn(
-          "tabular mt-2.5 text-[25px] font-bold leading-none",
+          "tabular mt-2.5 text-[25px] font-bold leading-none transition-colors",
           tone === "primary" ? "text-primary" : "text-slate-900 dark:text-slate-50",
         )}
       >
@@ -167,9 +164,39 @@ export function KpiCard({
           {trend.direction === "up" ? "↑" : trend.direction === "down" ? "↓" : "→"} {trend.text}
         </p>
       ) : null}
-      {hint && !trend ? <p className="mt-2 min-h-4 text-[11px] font-medium text-slate-400">{hint}</p> : null}
-    </div>
+      {hint && !trend ? (
+        <p className="mt-2 min-h-4 text-[11px] font-medium text-slate-400 transition-colors group-hover:text-slate-500 dark:group-hover:text-slate-300">
+          {hint}
+        </p>
+      ) : null}
+    </>
   );
+
+  const shell = cn(
+    "group relative min-h-[112px] overflow-hidden rounded-lg border border-slate-200/80 bg-white px-5 py-4.5 text-left shadow-card transition-all duration-200 dark:border-slate-700 dark:bg-slate-900",
+    tone === "primary" &&
+      "border-primary/40 bg-gradient-to-br from-primary/[0.08] to-transparent dark:border-blue-700 dark:bg-blue-950/40",
+    (to || onClick) &&
+      "cursor-pointer hover:-translate-y-0.5 hover:border-primary/45 hover:bg-primary/[0.04] hover:shadow-panel focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 dark:hover:border-blue-500/50 dark:hover:bg-blue-950/30",
+    !(to || onClick) && "hover:border-primary/25",
+    className,
+  );
+
+  if (to) {
+    return (
+      <Link to={to} className={shell}>
+        {body}
+      </Link>
+    );
+  }
+  if (onClick) {
+    return (
+      <button type="button" className={shell} onClick={onClick}>
+        {body}
+      </button>
+    );
+  }
+  return <div className={shell}>{body}</div>;
 }
 
 /** Compact labeled select used on dashboard / list filter bars. */
@@ -201,7 +228,7 @@ export function FilterSelect({
       className={cn(
         "flex h-9 items-center gap-2 rounded-md border px-3 shadow-card transition-all",
         applied
-          ? "border-primary/40 bg-primary/[0.06]"
+          ? "border-primary/40 bg-primary/[0.06] dark:border-blue-500/50 dark:bg-blue-950/40"
           : "border-slate-200 bg-white hover:border-slate-300 dark:border-slate-600 dark:bg-slate-900",
       )}
     >
@@ -220,7 +247,7 @@ export function FilterSelect({
         aria-label={ariaLabel || label}
         className={cn(
           "bg-transparent text-[13px] font-medium outline-none",
-          applied ? "text-primary" : "text-slate-900 dark:text-slate-100",
+          applied ? "text-primary dark:text-blue-300" : "text-slate-900 dark:text-slate-100",
         )}
       >
         {normalized.map((option) => (

@@ -79,10 +79,10 @@ export function LoginPage() {
     >
       {mode === "signIn" ? (
         <>
-          <h2 className="font-display text-[24px] font-bold tracking-tight text-slate-900">
+          <h2 className="font-display text-[24px] font-bold tracking-tight text-slate-900 dark:text-slate-50">
             Sign in
           </h2>
-          <p className="mt-1.5 mb-6 text-[13px] text-slate-500">
+          <p className="mt-1.5 mb-6 text-[13px] text-slate-500 dark:text-slate-400">
             Continue to your Platform Suite workspace.
           </p>
 
@@ -114,7 +114,7 @@ export function LoginPage() {
               required
             />
             <div className="mb-4 flex items-center justify-between gap-3 text-[12px]">
-              <label className="flex items-center gap-2 text-slate-600">
+              <label className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
                 <input
                   type="checkbox"
                   className="size-3.5 accent-primary"
@@ -134,10 +134,10 @@ export function LoginPage() {
         </>
       ) : (
         <>
-          <h2 className="font-display text-[24px] font-bold tracking-tight text-slate-900">
+          <h2 className="font-display text-[24px] font-bold tracking-tight text-slate-900 dark:text-slate-50">
             Reset password
           </h2>
-          <p className="mt-1.5 mb-6 text-[13px] text-slate-500">
+          <p className="mt-1.5 mb-6 text-[13px] text-slate-500 dark:text-slate-400">
             Enter your work email and we&apos;ll send reset instructions.
           </p>
 

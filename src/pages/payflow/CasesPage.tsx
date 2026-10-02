@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import { listPayflowAccounts, listPayflowClients } from "../../api/payflow";
 import {
@@ -25,6 +25,7 @@ function formatNumber(value: number) {
 }
 
 export function PayFlowCasesPage() {
+  const [searchParams] = useSearchParams();
   const [accounts, setAccounts] = useState<PayflowAccount[]>([]);
   const [clients, setClients] = useState<PayflowClient[]>([]);
   const [workflows, setWorkflows] = useState<string[]>([]);
@@ -39,9 +40,18 @@ export function PayFlowCasesPage() {
   const [error, setError] = useState("");
 
   const [clientFilter, setClientFilter] = useState("All Clients");
-  const [status, setStatus] = useState("All Statuses");
-  const [workflow, setWorkflow] = useState("All Workflows");
-  const [review, setReview] = useState("All");
+  const [status, setStatus] = useState(searchParams.get("status") || "All Statuses");
+  const [workflow, setWorkflow] = useState(searchParams.get("workflow") || "All Workflows");
+  const [review, setReview] = useState(searchParams.get("human_review") || "All");
+
+  useEffect(() => {
+    const nextStatus = searchParams.get("status");
+    const nextWorkflow = searchParams.get("workflow");
+    const nextReview = searchParams.get("human_review");
+    if (nextStatus) setStatus(nextStatus);
+    if (nextWorkflow) setWorkflow(nextWorkflow);
+    if (nextReview) setReview(nextReview);
+  }, [searchParams]);
 
   useEffect(() => {
     let cancelled = false;

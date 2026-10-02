@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import {
@@ -6,9 +6,9 @@ import {
   createPayflowClientPortfolio,
   getPayflowClient,
   getPayflowClientMappingCatalog,
+  listPayflowPermissions,
   listPayflowUsers,
   updatePayflowClient,
-  updatePayflowClientPortfolio,
 } from "../../api/payflow";
 import {
   AiGovernanceSection,
@@ -24,23 +24,26 @@ import {
   type ClientDraftConfig,
 } from "../../components/payflow/client-config-sections";
 import {
+  ClientAccountsTab,
+  ClientCommunicationsTab,
+  ClientReviewsTab,
+  ClientRulesTab,
+  ClientWorkflowsTab,
+} from "../../components/payflow/client-detail-tabs";
+import { PortfolioSection } from "../../components/payflow/portfolio-section";
+import {
   Btn,
-  DataTable,
-  Field,
   KpiCard,
   PageHeader,
   Panel,
   PrimaryCell,
-  SelectInput,
   StatusPill,
-  Td,
-  TextInput,
-  Tr,
+  TabBar,
   type Tone,
 } from "../../components/payflow/lovable/payflow-ui";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { cn } from "../../lib/utils";
-import type { PayflowClientDetail, PayflowPortfolio, PayflowUser } from "../../types";
+import type { PayflowClientDetail, PayflowPermissionGroup, PayflowUser } from "../../types";
 
 const MAIN_TABS = [
   "Overview",
@@ -54,7 +57,6 @@ const MAIN_TABS = [
 ] as const;
 
 type MainTab = (typeof MAIN_TABS)[number];
-const ENABLED_TABS: MainTab[] = ["Overview", "Sub-Clients / Portfolios", "Configuration"];
 
 const CONFIG_SECTIONS = [
   "General",
@@ -90,30 +92,19 @@ export function PayFlowClientDetailPage() {
 
   const initialTab = (searchParams.get("tab") as MainTab) || "Overview";
   const [tab, setTab] = useState<MainTab>(
-    ENABLED_TABS.includes(initialTab) ? initialTab : "Overview",
+    MAIN_TABS.includes(initialTab) ? initialTab : "Overview",
   );
   const [configSection, setConfigSection] = useState<ConfigSection>("General");
   const [detail, setDetail] = useState<PayflowClientDetail | null>(null);
   const [draft, setDraft] = useState<ClientDraft>(emptyDraft());
   const [supervisors, setSupervisors] = useState<PayflowUser[]>([]);
+  const [permissionGroups, setPermissionGroups] = useState<PayflowPermissionGroup[]>([]);
   const [payflowFields, setPayflowFields] = useState<string[]>(["— Not mapped —"]);
   const [governanceRules, setGovernanceRules] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
-  const [portfolioForm, setPortfolioForm] = useState({
-    name: "",
-    code: "",
-    status: "onboarding",
-  });
-  const [selectedPortfolio, setSelectedPortfolio] = useState<PayflowPortfolio | null>(null);
-  const [portfolioEdit, setPortfolioEdit] = useState({
-    name: "",
-    code: "",
-    status: "onboarding",
-    description: "",
-  });
 
   const load = async () => {
     if (!Number.isFinite(id)) {
@@ -124,21 +115,18 @@ export function PayFlowClientDetailPage() {
     setLoading(true);
     setError("");
     try {
-      const [client, users, catalog] = await Promise.all([
+      const [client, users, catalog, perms] = await Promise.all([
         getPayflowClient(id),
         listPayflowUsers({ role_code: "supervisor" }),
         getPayflowClientMappingCatalog(),
+        listPayflowPermissions().catch(() => ({ groups: [] as PayflowPermissionGroup[] })),
       ]);
       setDetail(client);
       setDraft(draftFromDetail(client));
       setSupervisors(users.users || []);
+      setPermissionGroups(perms.groups || []);
       setPayflowFields(catalog.payflow_fields || ["— Not mapped —"]);
       setGovernanceRules(catalog.governance_rules || []);
-      setSelectedPortfolio((prev) => {
-        if (!prev) return null;
-        const refreshed = (client.portfolios || []).find((p) => p.id === prev.id) || null;
-        return refreshed;
-      });
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Failed to load client");
     } finally {
@@ -190,87 +178,24 @@ export function PayFlowClientDetailPage() {
     }
   }
 
-  async function addPortfolio(e: FormEvent) {
-    e.preventDefault();
+  async function addPortfolio(payload: { name: string; code: string; status: string }) {
     if (!detail || readOnly) return;
-    const name = portfolioForm.name.trim();
-    const code = portfolioForm.code.trim();
-    const missing: string[] = [];
-    if (!name) missing.push("Portfolio name is required");
-    if (!code) missing.push("Portfolio code / reference is required");
-    if (missing.length) {
-      setError(missing.join(". "));
-      return;
-    }
     setBusy(true);
     setError("");
     try {
-      await createPayflowClientPortfolio(detail.id, {
-        name,
-        code,
-        status: portfolioForm.status,
-      });
-      setPortfolioForm({ name: "", code: "", status: "onboarding" });
+      await createPayflowClientPortfolio(detail.id, payload);
       await load();
       setInfo("Portfolio added.");
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to add portfolio");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function openPortfolioDetail(p: PayflowPortfolio) {
-    setSelectedPortfolio(p);
-    setPortfolioEdit({
-      name: p.name,
-      code: p.code,
-      status: p.status || "onboarding",
-      description: p.description || "",
-    });
-    setError("");
-    setInfo("");
-  }
-
-  async function savePortfolioDetail(e: FormEvent) {
-    e.preventDefault();
-    if (!detail || !selectedPortfolio || readOnly) return;
-    const name = portfolioEdit.name.trim();
-    const code = portfolioEdit.code.trim();
-    const missing: string[] = [];
-    if (!name) missing.push("Portfolio name is required");
-    if (!code) missing.push("Portfolio code / reference is required");
-    if (missing.length) {
-      setError(missing.join(". "));
-      return;
-    }
-    setBusy(true);
-    setError("");
-    try {
-      const updated = await updatePayflowClientPortfolio(detail.id, selectedPortfolio.id, {
-        name,
-        code,
-        status: portfolioEdit.status,
-        description: portfolioEdit.description.trim() || undefined,
-      });
-      setSelectedPortfolio(updated);
-      setPortfolioEdit({
-        name: updated.name,
-        code: updated.code,
-        status: updated.status || "onboarding",
-        description: updated.description || "",
-      });
-      await load();
-      setInfo("Portfolio updated.");
-    } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to update portfolio");
+      const message = err instanceof ApiError ? err.detail : "Failed to add portfolio";
+      setError(message);
+      throw new Error(message);
     } finally {
       setBusy(false);
     }
   }
 
   const changeTab = (next: MainTab) => {
-    if (!ENABLED_TABS.includes(next)) return;
     setTab(next);
     setSearchParams(next === "Overview" ? {} : { tab: next });
   };
@@ -305,9 +230,18 @@ export function PayFlowClientDetailPage() {
     patch,
     patchConfig,
     supervisorUsers: supervisors,
+    permissionGroups,
     payflowFields,
     governanceRules,
     readOnly,
+    clientId: detail.id,
+    onClientUpdated: (updated: { logo_url?: string | null }) => {
+      setDetail((prev) => (prev ? { ...prev, logo_url: updated.logo_url ?? null } : prev));
+      setDraft((d) => ({
+        ...d,
+        config: { ...d.config, logoUrl: updated.logo_url || null },
+      }));
+    },
   };
 
   return (
@@ -347,30 +281,7 @@ export function PayFlowClientDetailPage() {
         </p>
       )}
 
-      <div className="mb-5 flex gap-1 overflow-x-auto border-b border-border">
-        {MAIN_TABS.map((t) => {
-          const enabled = ENABLED_TABS.includes(t);
-          return (
-            <button
-              key={t}
-              type="button"
-              disabled={!enabled}
-              onClick={() => changeTab(t)}
-              className={cn(
-                "-mb-px border-b-2 px-3 py-2.5 text-[13px] whitespace-nowrap transition-colors",
-                tab === t
-                  ? "border-primary font-semibold text-primary"
-                  : enabled
-                    ? "border-transparent font-medium text-muted-foreground hover:border-border-strong hover:text-foreground"
-                    : "cursor-not-allowed border-transparent font-medium text-muted-foreground/50",
-              )}
-              title={enabled ? undefined : "Coming soon"}
-            >
-              {t}
-            </button>
-          );
-        })}
-      </div>
+      <TabBar tabs={MAIN_TABS} active={tab} onChange={changeTab} />
 
       {tab === "Overview" && (
         <div className="space-y-4">
@@ -412,172 +323,35 @@ export function PayFlowClientDetailPage() {
       )}
 
       {tab === "Sub-Clients / Portfolios" && (
-        <div className="space-y-4">
-          <p className="text-[13px] text-muted-foreground">
-            A sub-client / portfolio belongs to the main client and holds different account
-            populations.
-          </p>
-          {isOperationsAdmin && (
-            <Panel title="Add Sub-Client / Portfolio">
-              <form id="portfolio-form" onSubmit={addPortfolio} className="grid gap-3 sm:grid-cols-4">
-                <Field label="Portfolio Name">
-                  <TextInput
-                    value={portfolioForm.name}
-                    onChange={(v) => setPortfolioForm((f) => ({ ...f, name: v }))}
-                    placeholder="PayPal Loans"
-                  />
-                </Field>
-                <Field label="Portfolio Code / Reference">
-                  <TextInput
-                    value={portfolioForm.code}
-                    onChange={(v) => setPortfolioForm((f) => ({ ...f, code: v }))}
-                    placeholder="PP-PF-01"
-                  />
-                </Field>
-                <Field label="Status">
-                  <SelectInput
-                    value={portfolioForm.status}
-                    options={["onboarding", "active", "paused"]}
-                    onChange={(v) => setPortfolioForm((f) => ({ ...f, status: v }))}
-                  />
-                </Field>
-                <div className="flex items-end">
-                  <Btn
-                    variant="primary"
-                    disabled={busy}
-                    onClick={() => {
-                      const form = document.getElementById("portfolio-form") as HTMLFormElement | null;
-                      form?.requestSubmit();
-                    }}
-                  >
-                    Add portfolio
-                  </Btn>
-                </div>
-              </form>
-            </Panel>
-          )}
-          <DataTable
-            minWidth={900}
-            head={["Portfolio", "Reference", "Status", "Accounts / Cases", "Outstanding", "Active Strategy", ""]}
-          >
-            {(detail.portfolios || []).map((p) => (
-              <Tr key={p.id}>
-                <Td>
-                  <PrimaryCell
-                    title={`${detail.name} > ${p.name}`}
-                    subtitle={p.description || "Portfolio under this client"}
-                  />
-                </Td>
-                <Td className="tabular text-muted-foreground">{p.code}</Td>
-                <Td>
-                  <StatusPill tone={statusTone(p.status)} dot>
-                    {p.status}
-                  </StatusPill>
-                </Td>
-                <Td className="tabular">— / —</Td>
-                <Td className="tabular">—</Td>
-                <Td className="text-muted-foreground">None applied</Td>
-                <Td>
-                  <button
-                    type="button"
-                    className="text-[12.5px] font-medium text-primary hover:underline"
-                    onClick={() => openPortfolioDetail(p)}
-                  >
-                    View details
-                  </button>
-                </Td>
-              </Tr>
-            ))}
-            {(detail.portfolios || []).length === 0 && (
-              <tr>
-                <Td className="text-muted-foreground">No portfolios yet.</Td>
-              </tr>
-            )}
-          </DataTable>
+        <PortfolioSection
+          clientId={detail.id}
+          clientName={detail.name}
+          portfolios={detail.portfolios || []}
+          canEdit={isOperationsAdmin}
+          busy={busy}
+          onAdd={addPortfolio}
+          onError={setError}
+        />
+      )}
 
-          {selectedPortfolio ? (
-            <Panel
-              title={`Sub-Client / Portfolio · ${selectedPortfolio.name}`}
-              description={`${detail.name} · ${selectedPortfolio.code}`}
-            >
-              <form
-                id="portfolio-detail-form"
-                onSubmit={savePortfolioDetail}
-                className="grid gap-3 sm:grid-cols-2"
-              >
-                <Field label="Portfolio Name">
-                  <TextInput
-                    value={portfolioEdit.name}
-                    onChange={(v) => setPortfolioEdit((f) => ({ ...f, name: v }))}
-                    disabled={readOnly}
-                  />
-                </Field>
-                <Field label="Portfolio Code / Reference">
-                  <TextInput
-                    value={portfolioEdit.code}
-                    onChange={(v) => setPortfolioEdit((f) => ({ ...f, code: v }))}
-                    disabled={readOnly}
-                  />
-                </Field>
-                <Field label="Status">
-                  <SelectInput
-                    value={portfolioEdit.status}
-                    options={["onboarding", "active", "paused"]}
-                    onChange={(v) => setPortfolioEdit((f) => ({ ...f, status: v }))}
-                    disabled={readOnly}
-                  />
-                </Field>
-                <Field label="Description">
-                  <TextInput
-                    value={portfolioEdit.description}
-                    onChange={(v) => setPortfolioEdit((f) => ({ ...f, description: v }))}
-                    placeholder="Optional notes"
-                    disabled={readOnly}
-                  />
-                </Field>
-                <div className="sm:col-span-2 flex flex-wrap gap-2 pt-1">
-                  {!readOnly ? (
-                    <Btn
-                      variant="primary"
-                      disabled={busy}
-                      onClick={() => {
-                        const form = document.getElementById(
-                          "portfolio-detail-form",
-                        ) as HTMLFormElement | null;
-                        form?.requestSubmit();
-                      }}
-                    >
-                      {busy ? "Saving…" : "Save changes"}
-                    </Btn>
-                  ) : null}
-                  <Btn
-                    variant="ghost"
-                    onClick={() => {
-                      setSelectedPortfolio(null);
-                      setError("");
-                    }}
-                  >
-                    Close
-                  </Btn>
-                </div>
-              </form>
-              <div className="mt-4 grid gap-2 rounded-lg border border-border bg-muted/30 px-3 py-3 text-[12.5px] sm:grid-cols-3">
-                <div>
-                  <p className="text-muted-foreground">Accounts / Cases</p>
-                  <p className="font-medium">— / —</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Outstanding</p>
-                  <p className="font-medium">—</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Active Strategy</p>
-                  <p className="font-medium">None applied</p>
-                </div>
-              </div>
-            </Panel>
-          ) : null}
-        </div>
+      {tab === "Accounts" && (
+        <ClientAccountsTab clientId={detail.id} clientName={detail.name} />
+      )}
+
+      {tab === "Workflows" && (
+        <ClientWorkflowsTab clientId={detail.id} clientName={detail.name} />
+      )}
+
+      {tab === "Communications" && (
+        <ClientCommunicationsTab clientId={detail.id} clientName={detail.name} />
+      )}
+
+      {tab === "Rules" && (
+        <ClientRulesTab clientId={detail.id} clientName={detail.name} />
+      )}
+
+      {tab === "Human Reviews" && (
+        <ClientReviewsTab clientId={detail.id} clientName={detail.name} />
       )}
 
       {tab === "Configuration" && (

@@ -1,23 +1,20 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
-import { listPayflowClients } from "../../api/payflow";
+import {
+  listPayflowClients,
+  listPayflowNotifications,
+  markAllPayflowNotificationsRead,
+  markPayflowNotificationRead,
+} from "../../api/payflow";
 import { RequireProductAccess } from "../../components/auth/RequireProductAccess";
 import { ProductSwitcher } from "../../components/ProductSwitcher";
 import { Icon } from "../../components/ui/Icon";
+import { UserAvatar } from "../../components/ui/UserAvatar";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useAuth } from "../../context/AuthContext";
 import { PayFlowAccessProvider, usePayFlowAccess } from "../../context/PayFlowAccessContext";
-import type { MenuSection } from "../../types";
+import type { MenuSection, PayflowNotification } from "../../types";
 import { normalizeMenuRoute } from "../../lib/utils";
-
-function initials(name: string) {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase() || "")
-    .join("");
-}
 
 function BellIcon() {
   return (
@@ -25,6 +22,151 @@ function BellIcon() {
       <path d="M6 9a6 6 0 0 1 12 0c0 7 3 7 3 7H3s3 0 3-7" />
       <path d="M10 19a2 2 0 0 0 4 0" />
     </svg>
+  );
+}
+
+function NotificationBell() {
+  const navigate = useNavigate();
+  const ref = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState<PayflowNotification[]>([]);
+  const [unread, setUnread] = useState(0);
+
+  async function refresh() {
+    try {
+      const res = await listPayflowNotifications();
+      setItems(res.notifications || []);
+      setUnread(res.unread_count || 0);
+    } catch {
+      /* non-blocking */
+    }
+  }
+
+  useEffect(() => {
+    void refresh();
+    const onFocus = () => void refresh();
+    window.addEventListener("focus", onFocus);
+    const timer = window.setInterval(() => void refresh(), 60_000);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const preview = items.filter((n) => !n.read).slice(0, 4);
+  const shown = preview.length > 0 ? preview : items.slice(0, 4);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        className="relative grid size-9 place-items-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+        title="Notifications"
+        aria-label={`Notifications${unread ? `: ${unread} unread` : ""}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => {
+          setOpen((v) => !v);
+          if (!open) void refresh();
+        }}
+      >
+        <BellIcon />
+        {unread > 0 && (
+          <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[0.6rem] font-bold leading-none text-white ring-2 ring-white dark:ring-slate-900">
+            {unread > 99 ? "99+" : unread}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 z-40 mt-2 w-[300px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-panel dark:border-slate-700 dark:bg-slate-900"
+        >
+          <div className="border-b border-slate-100 px-3 py-2.5 dark:border-slate-800">
+            <p className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+              Needs your attention
+            </p>
+          </div>
+          <div className="max-h-[320px] overflow-y-auto py-1">
+            {shown.length === 0 ? (
+              <p className="px-3 py-4 text-[12px] text-slate-500">
+                Nothing needs a decision. Automation is running within governance.
+              </p>
+            ) : (
+              shown.map((n) => (
+                <button
+                  key={n.id}
+                  type="button"
+                  role="menuitem"
+                  className="flex w-full flex-col items-start gap-0.5 px-3 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800"
+                  onClick={() => {
+                    void (async () => {
+                      if (!n.read) {
+                        try {
+                          await markPayflowNotificationRead(n.id);
+                          setItems((prev) =>
+                            prev.map((x) => (x.id === n.id ? { ...x, read: true } : x)),
+                          );
+                          setUnread((c) => Math.max(0, c - 1));
+                        } catch {
+                          /* ignore */
+                        }
+                      }
+                      setOpen(false);
+                      if (n.link) navigate(n.link);
+                    })();
+                  }}
+                >
+                  <span className="text-[12px] font-medium text-slate-900 dark:text-slate-100">
+                    {n.title}
+                  </span>
+                  {n.body && (
+                    <span className="text-[11px] text-slate-500">{n.body}</span>
+                  )}
+                </button>
+              ))
+            )}
+          </div>
+          <div className="flex items-center justify-between gap-2 border-t border-slate-100 px-3 py-2 dark:border-slate-800">
+            <button
+              type="button"
+              className="text-[12px] font-medium text-primary hover:underline"
+              onClick={() => {
+                setOpen(false);
+                navigate("/payflow/review");
+              }}
+            >
+              View all human reviews
+            </button>
+            {unread > 0 && (
+              <button
+                type="button"
+                className="text-[11px] text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                onClick={() => {
+                  void markAllPayflowNotificationsRead()
+                    .then((res) => {
+                      setItems(res.notifications || []);
+                      setUnread(res.unread_count || 0);
+                    })
+                    .catch(() => undefined);
+                }}
+              >
+                Mark all read
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -226,6 +368,7 @@ function SidebarNav({
 function SidebarPanel({
   collapsed,
   userName,
+  avatarUrl,
   roleLabel,
   isOperationsAdmin,
   assignedClientCount,
@@ -236,6 +379,7 @@ function SidebarPanel({
 }: {
   collapsed?: boolean;
   userName: string;
+  avatarUrl?: string | null;
   roleLabel: string;
   isOperationsAdmin: boolean;
   assignedClientCount: number;
@@ -329,8 +473,8 @@ function SidebarPanel({
           title={userName}
           onClick={() => setAccountOpen((open) => !open)}
         >
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/25 text-[11px] font-bold text-primary">
-            {initials(userName)}
+          <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/25 text-[11px] font-bold text-primary">
+            <UserAvatar name={userName} avatarUrl={avatarUrl} size="md" className="bg-primary/25" />
           </span>
           {!collapsed ? (
             <>
@@ -438,6 +582,7 @@ function PayFlowShell() {
 
   const panelProps = {
     userName: user.full_name,
+    avatarUrl: user.avatar_url,
     roleLabel,
     isOperationsAdmin,
     assignedClientCount: isOperationsAdmin ? clientCount ?? 0 : assignedClientCount,
@@ -503,17 +648,7 @@ function PayFlowShell() {
           </div>
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
             <ProductSwitcher current="PAYFLOW" variant="product" />
-            <button
-              type="button"
-              className="relative grid size-9 place-items-center text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
-              title="Notifications"
-              aria-label="Notifications"
-            >
-              <BellIcon />
-              <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[0.6rem] font-bold leading-none text-white ring-2 ring-white dark:ring-slate-900">
-                5
-              </span>
-            </button>
+            <NotificationBell />
             <span className="mx-1 hidden h-7 w-px bg-slate-200 dark:bg-slate-700 lg:block" aria-hidden />
             <div className="relative" ref={headerAccountRef}>
               <button
@@ -523,9 +658,12 @@ function PayFlowShell() {
                 aria-expanded={headerAccountOpen}
                 onClick={() => setHeaderAccountOpen((open) => !open)}
               >
-                <div className="font-display grid size-8 shrink-0 place-items-center rounded-full bg-primary/10 text-[11px] font-bold text-primary">
-                  {initials(user.full_name)}
-                </div>
+                <UserAvatar
+                  name={user.full_name}
+                  avatarUrl={user.avatar_url}
+                  size="md"
+                  className="bg-primary/10"
+                />
                 <div className="hidden sm:block">
                   <strong className="block text-[13px] font-semibold leading-tight text-slate-900 dark:text-slate-100">
                     {user.full_name}

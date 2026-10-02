@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { enterProduct, myProducts } from "../api/platform";
+import { UserAvatar } from "./ui/UserAvatar";
 import { useAuth } from "../context/AuthContext";
 import { hasProductShell, productHome } from "../lib/productRouting";
 import type { Product, ProductBrief } from "../types";
@@ -27,7 +28,7 @@ function asProducts(list: ProductBrief[]): Product[] {
 }
 
 export function ProductSwitcher({ current, variant = "product" }: Props) {
-  const { isSuperAdmin, logout, products: authProducts } = useAuth();
+  const { isSuperAdmin, logout, products: authProducts, user } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [products, setProducts] = useState<Product[]>(() => asProducts(authProducts));
@@ -38,6 +39,7 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
   const isPlatform = current === "platform";
+  const profilePath = isPlatform ? "/platform/profile" : "/payflow/profile";
 
   // Keep labels in sync with session products — no extra /me/products on mount.
   useEffect(() => {
@@ -108,6 +110,11 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
     navigate("/products", { replace: true });
   }
 
+  function goProfile() {
+    setOpen(false);
+    navigate(profilePath);
+  }
+
   async function onSignOut() {
     setSigningOut(true);
     setOpen(false);
@@ -121,7 +128,7 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
 
   const triggerClass =
     variant === "platform"
-      ? "inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1.5 text-[0.82rem] font-semibold text-blue-700 dark:bg-blue-500/15 dark:text-blue-300"
+      ? "inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 py-1 pl-1 pr-3 text-[0.82rem] font-semibold text-blue-800 dark:border-blue-400/50 dark:bg-blue-950 dark:text-blue-100"
       : "inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2.5 py-1.5 text-[0.88rem] font-semibold text-slate-900 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800";
 
   const rowClass =
@@ -144,13 +151,20 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
         className={triggerClass}
         onClick={toggleOpen}
         aria-expanded={open}
-        title="Switch product"
+        title={variant === "platform" ? "Account & products" : "Switch product"}
       >
         {variant === "platform" ? (
           <>
-            <span className="size-1.5 rounded-full bg-primary" />
-            Platform Super Admin
-            <span className="text-blue-500">▾</span>
+            <UserAvatar
+              name={user?.full_name || "Admin"}
+              avatarUrl={user?.avatar_url}
+              size="sm"
+              className="bg-primary/15 text-primary"
+            />
+            <span className="max-w-[140px] truncate sm:max-w-[180px]">
+              {user?.full_name || "Platform Super Admin"}
+            </span>
+            <span className="text-blue-600 dark:text-blue-300">▾</span>
           </>
         ) : (
           <>
@@ -173,9 +187,38 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
 
       {open ? (
         <div
-          className="absolute right-0 top-[calc(100%+8px)] z-40 w-[280px] max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-slate-200 bg-white py-1.5 shadow-[0_12px_32px_rgba(15,23,42,0.12)] dark:border-slate-700 dark:bg-slate-900 dark:shadow-[0_12px_32px_rgba(0,0,0,0.45)]"
+          className="absolute right-0 top-[calc(100%+8px)] z-40 w-[300px] max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-slate-200 bg-white py-1.5 shadow-[0_12px_32px_rgba(15,23,42,0.12)] dark:border-slate-700 dark:bg-slate-900 dark:shadow-[0_12px_32px_rgba(0,0,0,0.45)]"
           role="menu"
         >
+          {isPlatform && user ? (
+            <>
+              <div className="flex items-center gap-3 px-4 py-3">
+                <UserAvatar
+                  name={user.full_name}
+                  avatarUrl={user.avatar_url}
+                  size="md"
+                  className="bg-primary/15 text-primary"
+                />
+                <div className="min-w-0">
+                  <p className="truncate text-[0.95rem] font-semibold text-slate-900 dark:text-slate-100">
+                    {user.full_name}
+                  </p>
+                  <p className="truncate text-[12px] text-slate-500 dark:text-slate-400">{user.email}</p>
+                </div>
+              </div>
+              <button type="button" role="menuitem" className={rowClass} onClick={goProfile}>
+                <span className="inline-flex items-center gap-2">
+                  <svg viewBox="0 0 24 24" className="size-4 text-slate-400" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+                    <circle cx="12" cy="8" r="3.5" />
+                    <path d="M5 19c1.8-3 4.2-4.5 7-4.5s5.2 1.5 7 4.5" />
+                  </svg>
+                  My Profile
+                </span>
+              </button>
+              <div className="mx-3 my-1.5 h-px bg-slate-100 dark:bg-slate-800" />
+            </>
+          ) : null}
+
           <div className="px-4 pb-1 pt-2 text-[0.68rem] font-semibold tracking-[0.06em] text-slate-400">
             CURRENT PRODUCT
           </div>

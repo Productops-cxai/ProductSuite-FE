@@ -191,11 +191,11 @@ export function KpiCard({
 
 const toneStyles = {
   neutral: "bg-secondary text-secondary-foreground border-border",
-  success: "bg-success/10 text-success border-success/20",
-  warning: "bg-warning/15 text-warning-foreground border-warning/30",
-  info: "bg-info/10 text-info border-info/20",
-  danger: "bg-destructive/10 text-destructive border-destructive/20",
-  ai: "bg-ai/10 text-ai border-ai/20",
+  success: "bg-success/15 text-success border-success/30",
+  warning: "bg-warning/20 text-warning-foreground border-warning/40",
+  info: "bg-info/15 text-info border-info/30",
+  danger: "bg-destructive/15 text-destructive border-destructive/30",
+  ai: "bg-ai/15 text-ai border-ai/30",
 } as const;
 
 const toneDot = {
@@ -759,8 +759,10 @@ export function ToggleRow({
         disabled={disabled}
         onClick={() => onChange?.(!checked)}
         className={cn(
-          "relative h-5 w-9 shrink-0 rounded-full transition-colors",
-          checked ? "bg-primary" : "bg-secondary border border-border",
+          "relative h-5 w-9 shrink-0 rounded-full border transition-colors",
+          checked
+            ? "border-primary bg-primary"
+            : "border-border-strong bg-muted-foreground/35",
           disabled && "cursor-not-allowed opacity-50",
         )}
         aria-pressed={checked}
@@ -768,7 +770,7 @@ export function ToggleRow({
       >
         <span
           className={cn(
-            "absolute top-0.5 size-4 rounded-full bg-card shadow-sm transition-all",
+            "absolute top-0.5 size-4 rounded-full bg-white shadow-sm transition-all",
             checked ? "left-[18px]" : "left-0.5",
           )}
         />

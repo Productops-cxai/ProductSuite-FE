@@ -6,6 +6,7 @@ import {
   createPayflowClient,
   getPayflowClient,
   getPayflowClientMappingCatalog,
+  listPayflowPermissions,
   listPayflowUsers,
   updatePayflowClient,
 } from "../../api/payflow";
@@ -27,7 +28,7 @@ import {
 import { Btn, PageHeader, Panel, StatusPill, type Tone } from "../../components/payflow/lovable/payflow-ui";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { cn } from "../../lib/utils";
-import type { PayflowUser } from "../../types";
+import type { PayflowPermissionGroup, PayflowUser } from "../../types";
 
 const steps = [
   "Client Profile",
@@ -56,6 +57,7 @@ export function PayFlowClientNewPage() {
   const [draft, setDraft] = useState<ClientDraft>(emptyDraft());
   const [clientId, setClientId] = useState<number | null>(null);
   const [supervisors, setSupervisors] = useState<PayflowUser[]>([]);
+  const [permissionGroups, setPermissionGroups] = useState<PayflowPermissionGroup[]>([]);
   const [payflowFields, setPayflowFields] = useState<string[]>(["— Not mapped —"]);
   const [governanceRules, setGovernanceRules] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -66,11 +68,13 @@ export function PayFlowClientNewPage() {
     void Promise.all([
       listPayflowUsers({ role_code: "supervisor" }),
       getPayflowClientMappingCatalog(),
+      listPayflowPermissions(),
     ])
-      .then(([users, catalog]) => {
+      .then(([users, catalog, perms]) => {
         setSupervisors(users.users || []);
         setPayflowFields(catalog.payflow_fields || ["— Not mapped —"]);
         setGovernanceRules(catalog.governance_rules || []);
+        setPermissionGroups(perms.groups || []);
       })
       .catch(() => {
         /* non-blocking for initial render */
@@ -221,8 +225,16 @@ export function PayFlowClientNewPage() {
     patch,
     patchConfig,
     supervisorUsers: supervisors,
+    permissionGroups,
     payflowFields,
     governanceRules,
+    clientId,
+    onClientUpdated: (updated: { logo_url?: string | null }) => {
+      setDraft((d) => ({
+        ...d,
+        config: { ...d.config, logoUrl: updated.logo_url || null },
+      }));
+    },
   };
 
   return (

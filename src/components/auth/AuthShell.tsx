@@ -20,8 +20,8 @@ const DEFAULT_HIGHLIGHTS = [
 
 /**
  * Split-screen auth shell aligned to the Lovable PayFlow login craft:
- * DM Sans / Space Grotesk, 1.05fr / 1fr grid, navy hero + white form.
- * Brand panel is desktop-only; mobile shows a compact mark above the form.
+ * DM Sans / Space Grotesk, 1.05fr / 1fr grid, navy hero + form panel.
+ * Form panel follows theme (light card / dark slate) so inputs stay readable.
  */
 export function AuthShell({
   title,
@@ -32,7 +32,7 @@ export function AuthShell({
   highlights = DEFAULT_HIGHLIGHTS,
 }: Props) {
   return (
-    <div className="grid min-h-screen bg-white lg:grid-cols-[1.05fr_1fr]">
+    <div className="grid min-h-screen bg-white dark:bg-slate-950 lg:grid-cols-[1.05fr_1fr]">
       <section className="relative hidden overflow-hidden text-slate-200 lg:block lg:min-h-screen">
         <img
           className="absolute inset-0 size-full object-cover object-center"
@@ -71,19 +71,19 @@ export function AuthShell({
         </div>
       </section>
 
-      <section className="grid place-items-center px-6 py-12">
+      <section className="grid place-items-center bg-white px-6 py-12 dark:bg-slate-950">
         <div className="w-full max-w-[380px]">
           <div className="mb-8 flex items-center gap-3 lg:hidden">
             <img src="/assets/payflow-mark.png" alt="" className="size-9 shrink-0 rounded-lg object-contain" />
             <div>
-              <strong className="font-display block text-[15px] font-bold leading-tight text-slate-900">
+              <strong className="font-display block text-[15px] font-bold leading-tight text-slate-900 dark:text-slate-50">
                 Platform Suite
               </strong>
-              <span className="block text-[11px] text-slate-400">{brandTagline}</span>
+              <span className="block text-[11px] text-slate-500 dark:text-slate-400">{brandTagline}</span>
             </div>
           </div>
           {eyebrow ? (
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">
               {eyebrow}
             </div>
           ) : null}

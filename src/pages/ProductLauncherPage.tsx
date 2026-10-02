@@ -23,8 +23,9 @@ function LauncherHeader({
   isSuperAdmin: boolean;
   onLogout: () => void;
 }) {
+  const { user } = useAuth();
   return (
-    <header className="sticky top-0 z-20 flex h-[68px] items-center justify-between gap-4 border-b border-slate-200/80 bg-white/90 px-5 shadow-card backdrop-blur-xl lg:px-10">
+    <header className="sticky top-0 z-20 flex h-[68px] items-center justify-between gap-4 border-b border-slate-200/80 bg-white/90 px-5 shadow-card backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 lg:px-10">
       <div className="flex items-center gap-3">
         <img src="/assets/payflow-mark.png" alt="" className="h-9 w-auto" />
         <div>
@@ -35,10 +36,18 @@ function LauncherHeader({
         </div>
       </div>
       <div className="flex items-center gap-3">
+        {user ? (
+          <Link
+            to="/profile"
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-[13px] font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+          >
+            My Profile
+          </Link>
+        ) : null}
         {isSuperAdmin ? (
           <Link
             to="/platform"
-            className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-white px-3 text-[13px] font-semibold text-slate-700 hover:bg-slate-50"
+            className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-white px-3 text-[13px] font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
           >
             Platform administration
           </Link>
@@ -162,15 +171,15 @@ export function ProductLauncherPage() {
           title="Select a product"
           description={`Products ${orgLabel} is entitled to access. Roles, scope and permissions are managed inside each product.`}
         />
-        <p className="-mt-6 mb-8 text-[12.5px] text-slate-500">
-          Signed in as <strong className="font-semibold text-slate-800">{user.full_name}</strong> ·{" "}
+        <p className="-mt-6 mb-8 text-[12.5px] text-slate-500 dark:text-slate-400">
+          Signed in as <strong className="font-semibold text-slate-800 dark:text-slate-200">{user.full_name}</strong> ·{" "}
           {user.email}
         </p>
 
         {error ? <div className={`${ui.error} mt-4`}>{error}</div> : null}
 
         {products.length === 0 ? (
-          <div className={`${ui.empty} mt-8 rounded-lg border border-dashed border-slate-300`}>
+          <div className={`${ui.empty} mt-8 rounded-lg border border-dashed border-slate-300 dark:border-slate-600`}>
             No entitled products yet.
           </div>
         ) : (
@@ -180,7 +189,7 @@ export function ProductLauncherPage() {
               const openable = hasProductShell(p.code);
               return (
                 <article
-                  className="rounded-lg border border-slate-200/80 bg-white p-5 shadow-card"
+                  className="rounded-lg border border-slate-200/80 bg-white p-5 shadow-card dark:border-slate-700 dark:bg-slate-900"
                   key={p.id}
                 >
                   <div className="mb-4 flex items-start justify-between">
@@ -188,8 +197,8 @@ export function ProductLauncherPage() {
                     <span
                       className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-[3px] text-[11px] font-medium ${
                         openable
-                          ? "bg-emerald-50 text-emerald-700"
-                          : "bg-slate-100 text-slate-600"
+                          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                          : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
                       }`}
                     >
                       <span
@@ -198,8 +207,8 @@ export function ProductLauncherPage() {
                       {openable ? "Available" : "Later phase"}
                     </span>
                   </div>
-                  <h2 className="text-[15px] font-semibold text-slate-900">{p.name}</h2>
-                  <p className="mt-1.5 text-[12px] leading-relaxed text-slate-500">
+                  <h2 className="text-[15px] font-semibold text-slate-900 dark:text-slate-50">{p.name}</h2>
+                  <p className="mt-1.5 text-[12px] leading-relaxed text-slate-500 dark:text-slate-400">
                     {p.description ||
                       (payflow
                         ? "Collections operations: client portfolios, customer accounts, collection cases, adaptive workflows and governed AI decisions."
@@ -238,14 +247,20 @@ export function NoAccessPage() {
     <div className="min-h-screen bg-bg">
       <LauncherHeader isSuperAdmin={isSuperAdmin} onLogout={() => void logout()} />
       <main className="mx-auto w-full max-w-xl px-5 py-12 lg:px-10">
-        <h1 className="font-display text-[28px] font-semibold tracking-tight text-slate-900">
+        <h1 className="font-display text-[28px] font-semibold tracking-tight text-slate-900 dark:text-slate-50">
           Access unavailable
         </h1>
-        <p className="mt-1.5 text-[13.5px] leading-relaxed text-slate-500">
-          Your account is signed in, but no product entitlement is available yet. Contact your
-          platform administrator.
+        <p className="mt-1.5 text-[13.5px] leading-relaxed text-slate-500 dark:text-slate-400">
+          Your account is signed in, but no product entitlement is available yet. You can still
+          manage your profile, photo and password while you wait for access.
         </p>
-        <div className="mt-6">
+        <div className="mt-6 flex flex-wrap gap-2.5">
+          <Link
+            to="/profile"
+            className="inline-flex h-9 items-center rounded-md bg-primary px-3.5 text-[13px] font-semibold text-white shadow-brand hover:bg-primary/92"
+          >
+            Open My Profile
+          </Link>
           <Button variant="secondary" onClick={() => void logout()}>
             Sign out
           </Button>

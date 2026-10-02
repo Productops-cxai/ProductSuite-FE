@@ -20,6 +20,7 @@ export interface PersonBrief {
   status: string;
   organization_id: number;
   organization_name?: string | null;
+  avatar_url?: string | null;
 }
 
 export interface LoginResponse {
@@ -140,6 +141,25 @@ export interface EmailLog {
   created_at: string;
 }
 
+export interface PayflowNotification {
+  id: number;
+  notification_type: string;
+  title: string;
+  body?: string | null;
+  link?: string | null;
+  client_id?: number | null;
+  entity_type?: string | null;
+  entity_id?: string | null;
+  read: boolean;
+  read_at?: string | null;
+  created_at?: string | null;
+}
+
+export interface PayflowNotificationsListResponse {
+  notifications: PayflowNotification[];
+  unread_count: number;
+}
+
 export interface ProductSavePayload {
   id?: number;
   name: string;
@@ -197,6 +217,7 @@ export interface PayflowUser {
   assigned_clients: string[];
   permission_profile: string;
   role_permission_names?: string[];
+  role_permission_codes?: string[];
   last_active?: string | null;
   created_at?: string | null;
   organization_id?: number;
@@ -316,9 +337,30 @@ export interface PayflowPortfolio {
   name: string;
   code: string;
   status: string; // onboarding | active | paused
+  status_label?: string;
   description?: string | null;
+  account_count?: number;
+  case_count?: number;
+  outstanding?: number;
+  active_strategy_id?: number | null;
+  active_strategy_name?: string | null;
+  last_file_received?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
+}
+
+export interface PayflowPortfolioDetail extends PayflowPortfolio {
+  client_name: string;
+  client_code?: string | null;
+  strategies: {
+    id: number;
+    name: string;
+    code: string;
+    status: string;
+    origin?: string | null;
+    version?: number | null;
+    updated_at?: string | null;
+  }[];
 }
 
 export interface PayflowClientChannels {
@@ -333,6 +375,7 @@ export interface PayflowClientDetail extends PayflowClient {
   environment?: string | null;
   sync_frequency?: string | null;
   brand_name: string;
+  logo_url?: string | null;
   sender_name: string;
   email_from: string;
   sms_sender_id: string;
@@ -494,5 +537,370 @@ export interface PayflowIntegrationsListResponse {
   summary: PayflowIntegrationsSummary;
   categories: string[];
   statuses: string[];
+}
+
+export interface PayflowReviewContextItem {
+  label: string;
+  value: string;
+}
+
+export interface PayflowReviewTimelineItem {
+  at: string;
+  label: string;
+}
+
+export interface PayflowReviewHistoryItem {
+  at: string;
+  event: string;
+  detail?: string | null;
+  by?: string | null;
+}
+
+export interface PayflowReview {
+  id: number;
+  code: string;
+  client_id: number;
+  client_code?: string | null;
+  client_name?: string | null;
+  account_id: number;
+  customer_name?: string | null;
+  account_reference?: string | null;
+  case_reference?: string | null;
+  original_balance: number;
+  outstanding_balance: number;
+  recovered_balance: number;
+  days_past_due: number;
+  current_workflow?: string | null;
+  priority: string;
+  reason: string;
+  rule_id?: number | null;
+  rule_code?: string | null;
+  rule_name?: string | null;
+  condition_text?: string | null;
+  observed_value?: string | null;
+  proposed_action: string;
+  confidence?: number | null;
+  explanation: string[];
+  context: PayflowReviewContextItem[];
+  timeline: PayflowReviewTimelineItem[];
+  waiting_minutes: number;
+  waiting_label?: string | null;
+  status: string;
+  assigned_supervisor?: string | null;
+  final_action?: string | null;
+  guidance?: string | null;
+  rejection_reason?: string | null;
+  hold_until?: string | null;
+  history: PayflowReviewHistoryItem[];
+  can_decide?: boolean | null;
+  can_modify?: boolean | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface PayflowReviewsSummary {
+  awaiting: number;
+  high_priority: number;
+  due_today: number;
+  on_hold: number;
+}
+
+export interface PayflowReviewsListResponse {
+  reviews: PayflowReview[];
+  summary: PayflowReviewsSummary;
+  statuses: string[];
+  priorities: string[];
+  reasons: string[];
+  proposed_actions: string[];
+  rejection_reasons: string[];
+  waiting_buckets: string[];
+}
+
+export interface PayflowRuleCondition {
+  id?: string | null;
+  field: string;
+  operator: string;
+  value: string;
+}
+
+export interface PayflowRuleHistoryItem {
+  at: string;
+  change: string;
+  by: string;
+}
+
+export interface PayflowRuleRecentTrigger {
+  review_id: number;
+  review_code: string;
+  customer_name?: string | null;
+  account_reference?: string | null;
+  client_name?: string | null;
+  status: string;
+  waiting_minutes: number;
+}
+
+export interface PayflowRule {
+  id: number;
+  code: string;
+  name: string;
+  description?: string | null;
+  rule_type: string;
+  client_id?: number | null;
+  client_code?: string | null;
+  client_name?: string | null;
+  category: string;
+  logic: string;
+  conditions: PayflowRuleCondition[];
+  condition_summary?: string | null;
+  action: string;
+  status: string;
+  created_by?: string | null;
+  triggers_7d: number;
+  applied_to: string[];
+  history: PayflowRuleHistoryItem[];
+  can_edit?: boolean | null;
+  recent_triggers?: PayflowRuleRecentTrigger[];
+  created_at?: string | null;
+  updated_at?: string | null;
+  last_updated_label?: string | null;
+}
+
+export interface PayflowRulesSummary {
+  active: number;
+  system: number;
+  client: number;
+  triggers_7d: number;
+}
+
+export interface PayflowRuleFieldCatalogItem {
+  label: string;
+  category: string;
+  type: string;
+  options?: string[] | null;
+}
+
+export interface PayflowRulesListResponse {
+  rules: PayflowRule[];
+  summary: PayflowRulesSummary;
+  can_create: boolean;
+  categories: string[];
+  actions: string[];
+  fields: PayflowRuleFieldCatalogItem[];
+  statuses: string[];
+  types: string[];
+  logics: string[];
+}
+
+export interface PayflowStrategyStep {
+  id?: string | null;
+  kind: string;
+  title: string;
+  channel?: string | null;
+  purpose?: string | null;
+  timing?: string | null;
+  detail?: string | null;
+  disabled?: boolean;
+}
+
+export interface PayflowStrategyVersion {
+  version: number;
+  date: string;
+  note: string;
+}
+
+export interface PayflowStrategyStats {
+  steps: number;
+  branches: number;
+  emails: number;
+  sms: number;
+}
+
+export interface PayflowStrategyContextItem {
+  label: string;
+  value: string;
+}
+
+export interface PayflowStrategy {
+  id: number;
+  code: string;
+  name: string;
+  client_id: number;
+  client_code?: string | null;
+  client_name?: string | null;
+  portfolio_id?: number | null;
+  portfolio_name?: string | null;
+  status: string;
+  origin: string;
+  version: number;
+  summary?: string | null;
+  coverage?: string | null;
+  segment: Record<string, string>;
+  steps: PayflowStrategyStep[];
+  stats: PayflowStrategyStats;
+  ai_context: PayflowStrategyContextItem[];
+  versions: PayflowStrategyVersion[];
+  approved_by?: string | null;
+  approval_date?: string | null;
+  created_by?: string | null;
+  last_updated_label?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface PayflowStrategiesSummary {
+  total: number;
+  ai_proposed: number;
+  active: number;
+  under_review: number;
+}
+
+export interface PayflowStrategiesListResponse {
+  strategies: PayflowStrategy[];
+  summary: PayflowStrategiesSummary;
+  statuses: string[];
+  step_kinds: string[];
+}
+
+export interface PayflowCommEvent {
+  at: string;
+  label: string;
+  detail?: string | null;
+}
+
+export interface PayflowCommunication {
+  id: number;
+  code: string;
+  client_id: number;
+  client_code?: string | null;
+  client_name?: string | null;
+  account_id: number;
+  customer_name?: string | null;
+  account_reference?: string | null;
+  case_reference?: string | null;
+  channel: string;
+  purpose: string;
+  status: string;
+  workflow_name?: string | null;
+  engagement?: string | null;
+  date_bucket?: string | null;
+  date_label?: string | null;
+  time_label?: string | null;
+  subject?: string | null;
+  body_lines: string[];
+  payment_link: boolean;
+  why_message?: string | null;
+  why_channel?: string | null;
+  why_timing?: string | null;
+  events: PayflowCommEvent[];
+  balance: number;
+  review_id?: number | null;
+  drop_off_segment?: string | null;
+  brand_name?: string | null;
+  sender_name?: string | null;
+  email_from?: string | null;
+  sms_sender_id?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface PayflowCommunicationsSummary {
+  sent_today: number;
+  delivered: number;
+  engaged: number;
+  clicks: number;
+  failed: number;
+}
+
+export interface PayflowCommunicationsListResponse {
+  communications: PayflowCommunication[];
+  summary: PayflowCommunicationsSummary;
+  drop_off: Record<string, number>;
+  statuses: string[];
+  channels: string[];
+  purposes: string[];
+  workflows: string[];
+  drop_off_segments: string[];
+}
+
+export interface PayflowDashboardKpi {
+  id: string;
+  label: string;
+  value: number;
+  display: string;
+  hint?: string | null;
+  tone: "neutral" | "primary" | string;
+  href?: string | null;
+}
+
+export interface PayflowDashboardAttention {
+  id: string;
+  label: string;
+  count: number;
+  tone: string;
+  href?: string | null;
+}
+
+export interface PayflowDashboardFunnelStep {
+  step: string;
+  label: string;
+  value: number;
+  display: string;
+  rate?: string | null;
+  drop?: string | null;
+  bar: number;
+  paid: boolean;
+}
+
+export interface PayflowDashboardOutcome {
+  id: string;
+  label: string;
+  value: number;
+  display: string;
+  href?: string | null;
+}
+
+export interface PayflowDashboardClientAttention {
+  client_id: number;
+  name: string;
+  reviews: number;
+  flagged_accounts: number;
+  detail: string;
+  badge: string;
+  tone: string;
+  href?: string | null;
+}
+
+export interface PayflowDashboardActivity {
+  id: number;
+  text: string;
+  when: string;
+  href?: string | null;
+  created_at?: string | null;
+}
+
+export interface PayflowDashboardClientOption {
+  id: number;
+  name: string;
+  code: string;
+  status: string;
+}
+
+export interface PayflowDashboardResponse {
+  description: string;
+  filters: {
+    date_range?: string;
+    client_id?: number | null;
+    channel?: string | null;
+    workflow?: string | null;
+  };
+  clients: PayflowDashboardClientOption[];
+  channels: string[];
+  workflows: string[];
+  kpis: PayflowDashboardKpi[];
+  attention: PayflowDashboardAttention[];
+  funnel: PayflowDashboardFunnelStep[];
+  outcomes: PayflowDashboardOutcome[];
+  clients_attention: PayflowDashboardClientAttention[];
+  activity: PayflowDashboardActivity[];
 }
 

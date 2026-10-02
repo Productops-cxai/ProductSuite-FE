@@ -105,17 +105,17 @@ export function ActivatePage() {
     >
       {loading && !completed ? (
         <>
-          <h2 className="font-display text-[24px] font-bold tracking-tight text-slate-900">Set password</h2>
+          <h2 className="font-display text-[24px] font-bold tracking-tight text-slate-900 dark:text-slate-50">Set password</h2>
           <div className={ui.empty}>Validating invite…</div>
         </>
       ) : null}
 
       {completed ? (
         <>
-          <h2 className="font-display text-[24px] font-bold tracking-tight text-slate-900">
+          <h2 className="font-display text-[24px] font-bold tracking-tight text-slate-900 dark:text-slate-50">
             Account activated
           </h2>
-          <p className="mt-1.5 mb-6 text-[13px] text-slate-500">
+          <p className="mt-1.5 mb-6 text-[13px] text-slate-500 dark:text-slate-400">
             Your password is set. This invitation link cannot be used again.
           </p>
           {info ? <div className={`${ui.success} mb-4`}>{info}</div> : null}
@@ -129,10 +129,10 @@ export function ActivatePage() {
 
       {!loading && !completed && linkInvalid ? (
         <>
-          <h2 className="font-display text-[24px] font-bold tracking-tight text-slate-900">
+          <h2 className="font-display text-[24px] font-bold tracking-tight text-slate-900 dark:text-slate-50">
             Link expired or invalid
           </h2>
-          <p className="mt-1.5 mb-6 text-[13px] text-slate-500">
+          <p className="mt-1.5 mb-6 text-[13px] text-slate-500 dark:text-slate-400">
             Password setup cannot proceed with this invitation link.
           </p>
           <div className={ui.error}>{error || INVALID_LINK_MESSAGE}</div>
@@ -140,7 +140,7 @@ export function ActivatePage() {
             <Button type="button" style={{ width: "100%" }} onClick={() => navigate("/login")}>
               Back to sign in
             </Button>
-            <p className="text-sm leading-relaxed text-slate-500">
+            <p className="text-sm leading-relaxed text-slate-500 dark:text-slate-400">
               Need a new invitation? Contact your platform administrator to resend the account
               setup email.
             </p>
@@ -150,8 +150,8 @@ export function ActivatePage() {
 
       {showForm ? (
         <>
-          <h2 className="font-display text-[24px] font-bold tracking-tight text-slate-900">Set password</h2>
-          <p className="mt-1.5 mb-6 text-[13px] text-slate-500">
+          <h2 className="font-display text-[24px] font-bold tracking-tight text-slate-900 dark:text-slate-50">Set password</h2>
+          <p className="mt-1.5 mb-6 text-[13px] text-slate-500 dark:text-slate-400">
             {fullName ? `Welcome, ${fullName}. ` : null}
             Choose a password for your registered work email. You cannot change product access,
             roles or permissions here.
@@ -166,7 +166,7 @@ export function ActivatePage() {
               </label>
               <input
                 id="act-email"
-                className={`${ui.control} bg-slate-50 text-slate-500`}
+                className={`${ui.control} bg-slate-50 text-slate-600 dark:bg-slate-900 dark:text-slate-300`}
                 type="email"
                 value={email}
                 readOnly
@@ -191,7 +191,7 @@ export function ActivatePage() {
               minLength={PASSWORD_MIN_LENGTH}
               required
             />
-            <p className="mb-4 text-[0.82rem] text-slate-500">
+            <p className="mb-4 text-[0.82rem] text-slate-500 dark:text-slate-400">
               Password must be at least {PASSWORD_MIN_LENGTH} characters.
             </p>
             <Button type="submit" disabled={submitting} style={{ width: "100%" }}>
@@ -199,7 +199,7 @@ export function ActivatePage() {
             </Button>
           </form>
 
-          <p className="mt-4 text-sm text-slate-500">
+          <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">
             Already activated?{" "}
             <Link className={ui.link} to="/login">
               Sign in

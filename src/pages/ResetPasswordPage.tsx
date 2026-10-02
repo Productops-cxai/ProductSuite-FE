@@ -97,17 +97,17 @@ export function ResetPasswordPage() {
     >
       {loading && !completed ? (
         <>
-          <h2 className="font-display text-[24px] font-bold tracking-tight text-slate-900">Reset password</h2>
+          <h2 className="font-display text-[24px] font-bold tracking-tight text-slate-900 dark:text-slate-50">Reset password</h2>
           <div className={ui.empty}>Validating reset link…</div>
         </>
       ) : null}
 
       {completed ? (
         <>
-          <h2 className="font-display text-[24px] font-bold tracking-tight text-slate-900">
+          <h2 className="font-display text-[24px] font-bold tracking-tight text-slate-900 dark:text-slate-50">
             Password updated
           </h2>
-          <p className="mt-1.5 mb-6 text-[13px] text-slate-500">
+          <p className="mt-1.5 mb-6 text-[13px] text-slate-500 dark:text-slate-400">
             Your new password is set. This reset link cannot be used again.
           </p>
           {info ? <div className={`${ui.success} mb-4`}>{info}</div> : null}
@@ -121,10 +121,10 @@ export function ResetPasswordPage() {
 
       {!loading && !completed && linkInvalid ? (
         <>
-          <h2 className="font-display text-[24px] font-bold tracking-tight text-slate-900">
+          <h2 className="font-display text-[24px] font-bold tracking-tight text-slate-900 dark:text-slate-50">
             Link expired or invalid
           </h2>
-          <p className="mt-1.5 mb-6 text-[13px] text-slate-500">
+          <p className="mt-1.5 mb-6 text-[13px] text-slate-500 dark:text-slate-400">
             This password reset link cannot be used. It may be expired or already used.
           </p>
           <div className={ui.error}>{error || INVALID_LINK_MESSAGE}</div>
@@ -132,7 +132,7 @@ export function ResetPasswordPage() {
             <Button type="button" style={{ width: "100%" }} onClick={() => navigate("/login")}>
               Back to sign in
             </Button>
-            <p className="text-sm leading-relaxed text-slate-500">
+            <p className="text-sm leading-relaxed text-slate-500 dark:text-slate-400">
               Need a new link? Use <strong>Forgot password</strong> on the sign-in page.
             </p>
           </div>
@@ -141,8 +141,8 @@ export function ResetPasswordPage() {
 
       {showForm ? (
         <>
-          <h2 className="font-display text-[24px] font-bold tracking-tight text-slate-900">Reset password</h2>
-          <p className="mt-1.5 mb-6 text-[13px] text-slate-500">
+          <h2 className="font-display text-[24px] font-bold tracking-tight text-slate-900 dark:text-slate-50">Reset password</h2>
+          <p className="mt-1.5 mb-6 text-[13px] text-slate-500 dark:text-slate-400">
             Enter a new password for your account. This link can only be used once.
           </p>
 
@@ -155,7 +155,7 @@ export function ResetPasswordPage() {
               </label>
               <input
                 id="reset-email"
-                className={`${ui.control} bg-slate-50 text-slate-500`}
+                className={`${ui.control} bg-slate-50 text-slate-600 dark:bg-slate-900 dark:text-slate-300`}
                 type="email"
                 value={email}
                 readOnly
@@ -180,7 +180,7 @@ export function ResetPasswordPage() {
               minLength={PASSWORD_MIN_LENGTH}
               required
             />
-            <p className="mb-4 text-[0.82rem] text-slate-500">
+            <p className="mb-4 text-[0.82rem] text-slate-500 dark:text-slate-400">
               Password must be at least {PASSWORD_MIN_LENGTH} characters.
             </p>
             <Button type="submit" disabled={submitting} style={{ width: "100%" }}>

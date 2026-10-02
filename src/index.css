@@ -89,7 +89,7 @@ html.dark {
   --color-input: var(--color-border);
   --color-ring: var(--color-primary);
   --color-warning: #fbbf24;
-  --color-warning-foreground: #451a03;
+  --color-warning-foreground: #fef3c7;
   --color-info: #60a5fa;
   --color-info-foreground: #0b1220;
   --color-ai: #22d3ee;
@@ -125,6 +125,25 @@ html.dark {
     font: inherit;
   }
 
+  /*
+   * Native <select> menus on Windows often keep a light OS panel even in dark
+   * mode, while inheriting the control's light text (white-on-white). Pin
+   * option colors to a readable light panel. color-scheme still helps browsers
+   * that honor a dark popup chrome.
+   */
+  select option {
+    color: #0f172a;
+    background-color: #ffffff;
+  }
+
+  html.dark select {
+    color-scheme: dark;
+  }
+
+  html:not(.dark) select {
+    color-scheme: light;
+  }
+
   button {
     cursor: pointer;
   }
@@ -132,6 +151,18 @@ html.dark {
   a {
     color: inherit;
     text-decoration: none;
+  }
+
+  /* Autofill must not wipe input contrast in dark mode */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  textarea:-webkit-autofill,
+  select:-webkit-autofill {
+    -webkit-text-fill-color: var(--color-fg);
+    caret-color: var(--color-fg);
+    transition: background-color 99999s ease-out;
+    box-shadow: 0 0 0 1000px var(--color-card) inset;
   }
 }
 

@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
 import {
   Field,
   TextInput,
@@ -10,8 +12,11 @@ import {
   Td,
   type Tone,
 } from "./lovable/payflow-ui";
-import { cn } from "../../lib/utils";
-import type { PayflowClientMapping, PayflowUser } from "../../types";
+import { PermissionPicker } from "./PermissionPicker";
+import { resolveAvatarUrl } from "../ui/UserAvatar";
+import { removePayflowClientLogo, uploadPayflowClientLogo } from "../../api/payflow";
+import { ApiError } from "../../api/client";
+import type { PayflowClientMapping, PayflowPermissionGroup, PayflowUser } from "../../types";
 
 export type ClientTypeLabel = "First Party" | "Third Party";
 export type AiModeLabel = "Autopilot" | "Supervised AI";
@@ -38,6 +43,7 @@ export interface ClientDraftConfig {
     isRequired: boolean;
   }[];
   brandName: string;
+  logoUrl: string | null;
   senderName: string;
   emailFrom: string;
   smsSenderId: string;
@@ -58,9 +64,19 @@ export interface SectionProps {
   patch: (p: Partial<ClientDraft>) => void;
   patchConfig: (p: Partial<ClientDraftConfig>) => void;
   supervisorUsers?: PayflowUser[];
+  permissionGroups?: PayflowPermissionGroup[];
   payflowFields?: string[];
   governanceRules?: string[];
   readOnly?: boolean;
+  clientId?: number | null;
+  onClientUpdated?: (detail: {
+    logo_url?: string | null;
+    brand_name?: string;
+    sender_name?: string;
+    email_from?: string;
+    sms_sender_id?: string;
+    channels?: { email: boolean; sms: boolean; whatsapp: boolean };
+  }) => void;
 }
 
 export function connectionTone(state: ConnectionLabel): Tone {
@@ -100,6 +116,7 @@ export function emptyDraft(): ClientDraft {
       syncFrequency: "Every 15 minutes",
       mappings: [],
       brandName: "",
+      logoUrl: null,
       senderName: "",
       emailFrom: "collections@payflow.io",
       smsSenderId: "PAYFLOW",
@@ -122,6 +139,7 @@ export function draftFromDetail(
     environment?: string | null;
     sync_frequency?: string | null;
     brand_name?: string;
+    logo_url?: string | null;
     sender_name?: string;
     email_from?: string;
     sms_sender_id?: string;
@@ -152,6 +170,7 @@ export function draftFromDetail(
         isRequired: m.is_required,
       })),
       brandName: detail.brand_name || "",
+      logoUrl: detail.logo_url || null,
       senderName: detail.sender_name || "",
       emailFrom: detail.email_from || "collections@payflow.io",
       smsSenderId: detail.sms_sender_id || "PAYFLOW",
@@ -413,30 +432,179 @@ export function MappingSection({
 
 /* ---------------- Branding ---------------- */
 
-export function BrandingSection({ draft, patchConfig, readOnly }: SectionProps) {
+export function BrandingSection({
+  draft,
+  patchConfig,
+  readOnly,
+  clientId,
+  onClientUpdated,
+}: SectionProps) {
   const c = draft.config;
   const thirdParty = c.clientType === "Third Party";
   const clientBrand = c.brandName || draft.name || "Client";
   const brand = thirdParty ? "PayFlow Collections" : clientBrand;
   const initials = brand.slice(0, 2).toUpperCase();
+  const logoSrc = resolveAvatarUrl(c.logoUrl);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [logoBusy, setLogoBusy] = useState(false);
+  const [logoError, setLogoError] = useState("");
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  useEffect(() => {
+    if (!previewOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPreviewOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [previewOpen]);
+
+  async function onLogoSelected(file: File | null) {
+    if (!file || readOnly) return;
+    if (clientId == null) {
+      setLogoError("Save earlier steps first so this client exists, then upload a logo.");
+      return;
+    }
+    setLogoBusy(true);
+    setLogoError("");
+    try {
+      const updated = await uploadPayflowClientLogo(clientId, file);
+      patchConfig({ logoUrl: updated.logo_url || null });
+      onClientUpdated?.(updated);
+    } catch (err) {
+      setLogoError(err instanceof ApiError ? err.detail : "Failed to upload logo");
+    } finally {
+      setLogoBusy(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  async function onRemoveLogo() {
+    if (clientId == null || readOnly || !c.logoUrl) return;
+    setLogoBusy(true);
+    setLogoError("");
+    try {
+      const updated = await removePayflowClientLogo(clientId);
+      patchConfig({ logoUrl: null });
+      onClientUpdated?.(updated);
+      setPreviewOpen(false);
+    } catch (err) {
+      setLogoError(err instanceof ApiError ? err.detail : "Failed to remove logo");
+    } finally {
+      setLogoBusy(false);
+    }
+  }
 
   return (
     <div className="grid gap-5 lg:grid-cols-2">
+      {previewOpen && logoSrc ? (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/80 p-5 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Client logo"
+          onClick={() => setPreviewOpen(false)}
+        >
+          <button
+            type="button"
+            className="absolute right-5 top-5 grid size-9 place-items-center rounded-full bg-white/10 text-white hover:bg-white/20"
+            aria-label="Close"
+            onClick={() => setPreviewOpen(false)}
+          >
+            <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M6 6l12 12M18 6 6 18" strokeLinecap="round" />
+            </svg>
+          </button>
+          <img
+            src={logoSrc}
+            alt={`${clientBrand} logo`}
+            className="max-h-[min(80vh,640px)] max-w-[min(90vw,520px)] rounded-2xl object-contain shadow-2xl ring-1 ring-white/10"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      ) : null}
+
       <div className="space-y-4">
         <p className="rounded-lg border border-border bg-surface px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
           {thirdParty
             ? `This is a Third Party client, so customer-facing communications and the payment page use PayFlow collection-operator branding on behalf of ${clientBrand}.`
             : `This is a First Party client, so customer-facing communications and the payment page use ${clientBrand} branding.`}
         </p>
-        <div className="flex items-center gap-3">
-          <div className="grid size-11 place-items-center rounded-md border border-border bg-surface text-[13px] font-semibold text-foreground">
-            {initials}
-          </div>
-          <div>
+        <div className="flex items-start gap-3">
+          <button
+            type="button"
+            disabled={logoBusy || (readOnly && !logoSrc)}
+            title={logoSrc ? "View logo" : readOnly ? undefined : "Upload logo"}
+            onClick={() => {
+              if (logoSrc) setPreviewOpen(true);
+              else if (!readOnly) fileRef.current?.click();
+            }}
+            className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-md border border-border bg-surface text-[13px] font-semibold text-foreground transition hover:ring-2 hover:ring-primary/40 disabled:cursor-default disabled:hover:ring-0"
+          >
+            {logoSrc ? (
+              <img src={logoSrc} alt="" className="size-full object-cover" />
+            ) : (
+              initials
+            )}
+          </button>
+          <div className="min-w-0 flex-1">
             <p className="text-[13px] font-medium text-foreground">Client Logo</p>
             <p className="text-[11px] text-muted-foreground">
-              Logo upload is handled during technical setup; initials are used meanwhile.
+              JPG, PNG, WEBP or GIF · up to 2 MB. Used on customer-facing communications.
             </p>
+            {!readOnly ? (
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  className="hidden"
+                  onChange={(e) => void onLogoSelected(e.target.files?.[0] || null)}
+                />
+                <button
+                  type="button"
+                  className="text-[12px] font-semibold text-primary hover:text-primary-hover disabled:opacity-50"
+                  disabled={logoBusy || clientId == null}
+                  onClick={() => fileRef.current?.click()}
+                >
+                  {logoBusy ? "Uploading…" : c.logoUrl ? "Change logo" : "Upload logo"}
+                </button>
+                {c.logoUrl ? (
+                  <>
+                    <button
+                      type="button"
+                      className="text-[12px] font-medium text-muted-foreground hover:text-foreground disabled:opacity-50"
+                      disabled={logoBusy}
+                      onClick={() => setPreviewOpen(true)}
+                    >
+                      View
+                    </button>
+                    <button
+                      type="button"
+                      className="text-[12px] font-medium text-muted-foreground hover:text-red-600 dark:hover:text-red-400 disabled:opacity-50"
+                      disabled={logoBusy}
+                      onClick={() => void onRemoveLogo()}
+                    >
+                      Remove
+                    </button>
+                  </>
+                ) : null}
+                {clientId == null ? (
+                  <span className="text-[11px] text-muted-foreground">
+                    Save earlier steps first to enable upload.
+                  </span>
+                ) : null}
+              </div>
+            ) : c.logoUrl ? (
+              <button
+                type="button"
+                className="mt-2 text-[12px] font-semibold text-primary"
+                onClick={() => setPreviewOpen(true)}
+              >
+                View logo
+              </button>
+            ) : null}
+            {logoError ? <p className="mt-1.5 text-[11px] text-red-600 dark:text-red-400">{logoError}</p> : null}
           </div>
         </div>
         <Field label="Display / Brand Name">
@@ -496,8 +664,12 @@ export function BrandingSection({ draft, patchConfig, readOnly }: SectionProps) 
         <p className="text-eyebrow">Customer-facing preview</p>
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="flex items-center gap-2 border-b border-border pb-2.5">
-            <div className="grid size-7 place-items-center rounded bg-surface text-[11px] font-semibold">
-              {initials}
+            <div className="grid size-7 place-items-center overflow-hidden rounded bg-surface text-[11px] font-semibold">
+              {logoSrc ? (
+                <img src={logoSrc} alt="" className="size-full object-cover" />
+              ) : (
+                initials
+              )}
             </div>
             <div className="text-[12px]">
               <p className="font-medium text-foreground">{c.senderName || brand}</p>
@@ -580,12 +752,16 @@ export function AiGovernanceSection({
         <div className="rounded-lg border border-border bg-surface p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-[13px] font-semibold text-foreground">Governance Rules</p>
-            <Btn variant="ghost" disabled>
-              + Create Rule
-            </Btn>
+            {!readOnly ? (
+              <Link to="/payflow/rules/new" target="_blank" rel="noreferrer">
+                <Btn variant="ghost" className="text-primary hover:text-primary-hover">
+                  + Create Rule
+                </Btn>
+              </Link>
+            ) : null}
           </div>
           <p className="mt-0.5 text-[11px] text-muted-foreground">
-            Select existing rules. Full rule authoring arrives with the Rule Builder.
+            Select rules for this client. Use Create Rule to open the Rule Builder in a new tab.
           </p>
           <div className="mt-3 space-y-1">
             {library.map((rule) => (
@@ -598,7 +774,7 @@ export function AiGovernanceSection({
                   checked={rules.includes(rule)}
                   onChange={() => !readOnly && toggleRule(rule)}
                   disabled={readOnly}
-                  className="size-3.5 accent-[var(--color-primary)]"
+                  className="size-3.5 rounded border-border-strong accent-[var(--color-primary)] dark:border-slate-500"
                 />
                 <span className="text-[13px] text-foreground">{rule}</span>
               </label>
@@ -625,6 +801,7 @@ export function SupervisorSection({
   draft,
   patch,
   supervisorUsers = [],
+  permissionGroups = [],
   readOnly,
 }: SectionProps) {
   const toggle = (userId: string) =>
@@ -634,25 +811,40 @@ export function SupervisorSection({
         : [...draft.supervisorUserIds, userId],
     });
 
+  const selectedUsers = supervisorUsers.filter((u) =>
+    draft.supervisorUserIds.includes(String(u.id)),
+  );
+
+  const allCodes = permissionGroups.flatMap((g) => g.permissions.map((p) => p.code));
+
+  function codesForUser(user: PayflowUser) {
+    const fullAccess =
+      (user.role_permission_names || []).includes("Full Access") ||
+      user.role_scope === "platform_wide";
+    return fullAccess ? allCodes : user.role_permission_codes || [];
+  }
+
   return (
-    <div className="max-w-xl">
-      <p className="text-[13px] font-semibold text-foreground">Assigned Supervisors</p>
-      <p className="mb-2 text-[11px] text-muted-foreground">
-        Assignment decides where a supervisor works. Selecting a person shows their role
-        permissions (read-only). Permissions are managed under Users &amp; Permissions.
-      </p>
-      <div className="divide-y divide-border rounded-lg border border-border bg-card">
-        {supervisorUsers.length === 0 && (
-          <p className="px-3 py-3 text-[13px] text-muted-foreground">
-            No supervisor users available. Create a supervisor under Users & Permissions first.
-          </p>
-        )}
-        {supervisorUsers.map((user) => {
-          const selected = draft.supervisorUserIds.includes(String(user.id));
-          const permNames = user.role_permission_names || [];
-          return (
-            <div key={user.id} className="px-3 py-2.5">
-              <label className="flex cursor-pointer items-center gap-2.5">
+    <div className="grid gap-5 lg:grid-cols-2">
+      <div>
+        <p className="text-[13px] font-semibold text-foreground">Assigned Supervisors</p>
+        <p className="mb-2 text-[11px] text-muted-foreground">
+          Assignment decides where a supervisor works. Supervisors only see assigned clients.
+          You can assign more than one.
+        </p>
+        <div className="divide-y divide-border rounded-lg border border-border bg-card">
+          {supervisorUsers.length === 0 && (
+            <p className="px-3 py-3 text-[13px] text-muted-foreground">
+              No supervisor users available. Create a supervisor under Users &amp; Permissions first.
+            </p>
+          )}
+          {supervisorUsers.map((user) => {
+            const selected = draft.supervisorUserIds.includes(String(user.id));
+            return (
+              <label
+                key={user.id}
+                className="flex cursor-pointer items-center gap-2.5 px-3 py-2.5"
+              >
                 <input
                   type="checkbox"
                   checked={selected}
@@ -661,33 +853,62 @@ export function SupervisorSection({
                   className="size-3.5 accent-[var(--color-primary)]"
                 />
                 <span className="text-[13px] text-foreground">{user.full_name}</span>
-                <span className={cn("ml-auto text-[11px] text-muted-foreground")}>
+                <span className="ml-auto text-[11px] text-muted-foreground">
+                  {user.role_name ? `${user.role_name} · ` : ""}
                   {user.status_label || user.status}
                 </span>
               </label>
-              {selected ? (
-                <div className="mt-2 ml-6 rounded-md border border-border bg-muted/40 px-2.5 py-2">
-                  <p className="text-[11px] font-medium text-muted-foreground">
-                    Permissions from {user.role_name || "role"} (view only)
-                  </p>
-                  {permNames.length > 0 ? (
-                    <div className="mt-1.5 flex flex-wrap gap-1">
-                      {permNames.map((name) => (
-                        <StatusPill key={name} tone="neutral">
-                          {name}
-                        </StatusPill>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="mt-1 text-[11px] text-muted-foreground">
-                      {user.permission_profile || "No permissions on this role yet."}
+            );
+          })}
+        </div>
+      </div>
+
+      <div>
+        <p className="text-[13px] font-semibold text-foreground">Permissions</p>
+        <p className="mb-2 text-[11px] text-muted-foreground">
+          {selectedUsers.length === 0
+            ? "Select one or more supervisors to see each person’s role permissions."
+            : selectedUsers.length === 1
+              ? "Read-only view of this supervisor’s role permissions. Manage these under Users & Permissions."
+              : `${selectedUsers.length} supervisors selected — each person’s permissions are shown separately below.`}
+        </p>
+
+        {permissionGroups.length === 0 ? (
+          <p className="rounded-lg border border-border bg-card px-3 py-3 text-[13px] text-muted-foreground">
+            Permission catalog is unavailable.
+          </p>
+        ) : selectedUsers.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-border bg-card px-3 py-6 text-center text-[12.5px] text-muted-foreground">
+            No supervisor selected yet.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {selectedUsers.map((user) => (
+              <div
+                key={user.id}
+                className="rounded-lg border border-border bg-card p-3"
+              >
+                <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-[13px] font-semibold text-foreground">{user.full_name}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {user.role_name || "Supervisor"} · view only
                     </p>
-                  )}
+                  </div>
+                  <StatusPill>
+                    {(codesForUser(user).length || 0)} permissions
+                  </StatusPill>
                 </div>
-              ) : null}
-            </div>
-          );
-        })}
+                <PermissionPicker
+                  groups={permissionGroups}
+                  selected={codesForUser(user)}
+                  disabled
+                  onToggle={() => undefined}
+                />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

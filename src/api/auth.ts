@@ -1,4 +1,4 @@
-import { apiRequest, clearTokens, getRefreshToken, setTokens } from "./client";
+import { apiRequest, apiRequestMultipart, clearTokens, getRefreshToken, setTokens } from "./client";
 import { cachedAsync, invalidateCache } from "../lib/dedupeAsync";
 import type { LoginResponse, MeResponse } from "../types";
 
@@ -22,6 +22,20 @@ export async function updateProfile(full_name: string): Promise<MeResponse> {
     method: "PATCH",
     body: { full_name },
   });
+  invalidateCache("auth:me");
+  return me;
+}
+
+export async function uploadAvatar(file: File): Promise<MeResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  const me = await apiRequestMultipart<MeResponse>("/auth/me/avatar", form);
+  invalidateCache("auth:me");
+  return me;
+}
+
+export async function removeAvatar(): Promise<MeResponse> {
+  const me = await apiRequest<MeResponse>("/auth/me/avatar/delete", { method: "POST" });
   invalidateCache("auth:me");
   return me;
 }
