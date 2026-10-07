@@ -1,6 +1,6 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
-import { ApiError } from "../api/client";
+import { ApiError, takeSessionEndedMessage } from "../api/client";
 import { forgotPassword } from "../api/auth";
 import { AuthShell } from "../components/auth/AuthShell";
 import { Button } from "../components/ui/Button";
@@ -20,6 +20,11 @@ export function LoginPage() {
   const [info, setInfo] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
+
+  useEffect(() => {
+    const ended = takeSessionEndedMessage();
+    if (ended) setError(ended);
+  }, []);
 
   if (!loading && user && nextStep) {
     return <Navigate to={pathForNextStep(nextStep, products)} replace />;

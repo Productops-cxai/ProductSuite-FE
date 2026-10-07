@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import * as authApi from "../api/auth";
-import { clearTokens, getAccessToken } from "../api/client";
+import { ApiError, clearTokens, getAccessToken } from "../api/client";
 import type { LoginNextStep, LoginResponse, MeResponse, PersonBrief, ProductBrief } from "../types";
 
 type AuthState = {
@@ -49,11 +49,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const me = await authApi.fetchMe();
       applyMe(me);
-    } catch {
+    } catch (err) {
       clearTokens();
       setUser(null);
       setProducts([]);
       setNextStep(null);
+      if (err instanceof ApiError) {
+        // parseError already persisted session-replaced messaging when applicable
+      }
     } finally {
       setLoading(false);
     }
@@ -62,6 +65,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void refreshMe();
   }, [refreshMe]);
+
+  useEffect(() => {
+    const onSessionEnded = () => {
+      clearTokens();
+      setUser(null);
+      setProducts([]);
+      setNextStep(null);
+      setLoading(false);
+    };
+    window.addEventListener("ps:session-ended", onSessionEnded);
+    return () => window.removeEventListener("ps:session-ended", onSessionEnded);
+  }, []);
 
   const login = useCallback(async (email: string, password: string) => {
     const data = await authApi.login(email, password);
