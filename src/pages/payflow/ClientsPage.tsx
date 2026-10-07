@@ -1,11 +1,10 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import {
-  downloadPayflowClientsBulkTemplate,
+  deletePayflowClient,
   listPayflowClients,
   listPayflowUsers,
-  uploadPayflowClientsBulk,
 } from "../../api/payflow";
 import {
   Btn,
@@ -19,8 +18,9 @@ import {
   Tr,
   type Tone,
 } from "../../components/payflow/lovable/payflow-ui";
+import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
-import type { PayflowBulkUploadResult, PayflowClient, PayflowUser } from "../../types";
+import type { PayflowClient, PayflowUser } from "../../types";
 
 function clientStatusTone(status: string): Tone {
   const s = (status || "").toLowerCase();
@@ -48,7 +48,11 @@ function formatUpdatedAt(value?: string | null): string {
 }
 
 export function PayFlowClientsPage() {
-  const { isOperationsAdmin } = usePayFlowAccess();
+  const { isOperationsAdmin, hasPermission } = usePayFlowAccess();
+  const canCreate = hasPermission("create_client");
+  const canEdit = hasPermission("edit_client");
+  const canDelete = hasPermission("delete_client");
+  const canImport = hasPermission("import_clients");
   const [searchParams] = useSearchParams();
   const [clients, setClients] = useState<PayflowClient[]>([]);
   const [supervisors, setSupervisors] = useState<PayflowUser[]>([]);
@@ -64,10 +68,8 @@ export function PayFlowClientsPage() {
   });
   const [aiMode, setAiMode] = useState("All AI Modes");
   const [supervisor, setSupervisor] = useState("All Supervisors");
-  const [bulkOpen, setBulkOpen] = useState(false);
-  const [bulkBusy, setBulkBusy] = useState(false);
-  const [bulkResult, setBulkResult] = useState<PayflowBulkUploadResult | null>(null);
-  const [bulkError, setBulkError] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<PayflowClient | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -147,26 +149,18 @@ export function PayFlowClientsPage() {
     });
   }, [clients, search, status, aiMode, supervisor]);
 
-  async function onBulkFile(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const form = e.currentTarget;
-    const input = form.elements.namedItem("file") as HTMLInputElement | null;
-    const file = input?.files?.[0];
-    if (!file) {
-      setBulkError("Choose an Excel file first");
-      return;
-    }
-    setBulkBusy(true);
-    setBulkError("");
-    setBulkResult(null);
+  async function onDelete() {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    setError("");
     try {
-      const result = await uploadPayflowClientsBulk(file);
-      setBulkResult(result);
+      await deletePayflowClient(pendingDelete.id);
+      setPendingDelete(null);
       await load();
     } catch (err) {
-      setBulkError(err instanceof ApiError ? err.detail : "Bulk upload failed");
+      setError(err instanceof ApiError ? err.detail : "Failed to delete client");
     } finally {
-      setBulkBusy(false);
+      setDeleting(false);
     }
   }
 
@@ -176,12 +170,23 @@ export function PayFlowClientsPage() {
         title="Clients"
         description="Manage organizations and their collection operations."
         actions={
-          isOperationsAdmin ? (
+          canCreate || canImport ? (
             <div className="flex flex-wrap gap-2">
-              <Btn onClick={() => setBulkOpen(true)}>Bulk upload</Btn>
-              <Link to="/payflow/clients/new">
-                <Btn variant="primary">+ Add Client</Btn>
-              </Link>
+              {canImport ? (
+                <Link to="/payflow/imports?type=client">
+                  <Btn variant="ghost">Import History</Btn>
+                </Link>
+              ) : null}
+              {canImport ? (
+                <Link to="/payflow/clients/import">
+                  <Btn>Import from File</Btn>
+                </Link>
+              ) : null}
+              {canCreate ? (
+                <Link to="/payflow/clients/new">
+                  <Btn variant="primary">+ Add Client</Btn>
+                </Link>
+              ) : null}
             </div>
           ) : undefined
         }
@@ -279,14 +284,29 @@ export function PayFlowClientsPage() {
                   <StatusPill tone={clientStatusTone(statusLabel)}>{statusLabel}</StatusPill>
                 </Td>
                 <Td>
-                  {isOperationsAdmin && statusLabel.toLowerCase() === "draft" ? (
-                    <Link
-                      to={`/payflow/clients/${c.id}?tab=Configuration`}
-                      className="text-[12.5px] font-semibold text-primary hover:underline"
-                    >
-                      Edit draft
-                    </Link>
-                  ) : null}
+                  <div className="flex flex-col items-end gap-1">
+                    {canEdit && statusLabel.toLowerCase() === "draft" ? (
+                      <Link
+                        to={`/payflow/clients/${c.id}?tab=Configuration`}
+                        className="text-[12.5px] font-semibold text-primary hover:underline"
+                      >
+                        Edit draft
+                      </Link>
+                    ) : null}
+                    {canDelete ? (
+                      <button
+                        type="button"
+                        className="text-[12.5px] font-semibold text-destructive hover:underline"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setPendingDelete(c);
+                        }}
+                      >
+                        Delete
+                      </button>
+                    ) : null}
+                  </div>
                 </Td>
               </Tr>
             );
@@ -299,80 +319,14 @@ export function PayFlowClientsPage() {
         )}
       </DataTable>
 
-      {bulkOpen && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
-          <div className="panel w-full max-w-lg p-5">
-            <div className="mb-3 flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-[15px] font-semibold text-foreground">Bulk upload clients</h2>
-                <p className="mt-1 text-[12px] text-muted-foreground">
-                  Download the template, fill rows, then upload. Successful rows are created as
-                  Draft clients.
-                </p>
-              </div>
-              <Btn variant="ghost" onClick={() => setBulkOpen(false)}>
-                Close
-              </Btn>
-            </div>
-            <div className="mb-3">
-              <Btn
-                onClick={() => {
-                  void downloadPayflowClientsBulkTemplate().catch((err) =>
-                    setBulkError(err instanceof ApiError ? err.detail : "Template download failed"),
-                  );
-                }}
-              >
-                Download template
-              </Btn>
-            </div>
-            <form id="bulk-upload-form" onSubmit={onBulkFile} className="space-y-3">
-              <input
-                name="file"
-                type="file"
-                accept=".xlsx,.xlsm"
-                className="block w-full text-[13px] text-foreground"
-              />
-              {bulkError && (
-                <p className="text-[12px] text-destructive">{bulkError}</p>
-              )}
-              {bulkResult && (
-                <div className="rounded-md border border-border bg-surface px-3 py-2 text-[12px]">
-                  <p className="font-medium text-foreground">
-                    Created {bulkResult.created_count} · Errors {bulkResult.error_count}
-                  </p>
-                  {bulkResult.errors.slice(0, 5).map((e) => (
-                    <p key={`${e.row}-${e.message}`} className="text-muted-foreground">
-                      Row {e.row}: {e.message}
-                    </p>
-                  ))}
-                </div>
-              )}
-              <div className="flex justify-end gap-2">
-                <Btn
-                  variant="ghost"
-                  onClick={() => {
-                    setBulkOpen(false);
-                    setBulkResult(null);
-                    setBulkError("");
-                  }}
-                >
-                  Cancel
-                </Btn>
-                <Btn
-                  variant="primary"
-                  disabled={bulkBusy}
-                  onClick={() => {
-                    const form = document.getElementById("bulk-upload-form") as HTMLFormElement | null;
-                    form?.requestSubmit();
-                  }}
-                >
-                  {bulkBusy ? "Uploading…" : "Upload"}
-                </Btn>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <ConfirmDelete
+        open={Boolean(pendingDelete)}
+        title={pendingDelete ? `Delete ${pendingDelete.name}?` : "Delete client?"}
+        description="This deletes the client and related portfolios, accounts, cases, rules, workflows, reviews, communications, and supervisor assignments. The full record is saved in Deletion Logs."
+        busy={deleting}
+        onClose={() => setPendingDelete(null)}
+        onConfirm={() => void onDelete()}
+      />
     </>
   );
 }

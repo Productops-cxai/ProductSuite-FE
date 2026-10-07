@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import {
   activatePayflowClient,
   createPayflowClientPortfolio,
+  deletePayflowClient,
   getPayflowClient,
   getPayflowClientMappingCatalog,
   listPayflowPermissions,
@@ -14,7 +15,6 @@ import {
   AiGovernanceSection,
   BrandingSection,
   DataSourceSection,
-  MappingSection,
   ProfileSection,
   SupervisorSection,
   draftFromDetail,
@@ -42,6 +42,7 @@ import {
   type Tone,
 } from "../../components/payflow/lovable/payflow-ui";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
+import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { cn } from "../../lib/utils";
 import type { PayflowClientDetail, PayflowPermissionGroup, PayflowUser } from "../../types";
 
@@ -61,7 +62,6 @@ type MainTab = (typeof MAIN_TABS)[number];
 const CONFIG_SECTIONS = [
   "General",
   "Data Source",
-  "Data Mapping",
   "Branding & Channels",
   "AI & Governance",
   "Supervisors",
@@ -86,8 +86,11 @@ function stepTone(status: string): Tone {
 
 export function PayFlowClientDetailPage() {
   const { clientId } = useParams();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { isOperationsAdmin } = usePayFlowAccess();
+  const { hasPermission } = usePayFlowAccess();
+  const canEdit = hasPermission("edit_client");
+  const canDelete = hasPermission("delete_client");
   const id = Number(clientId);
 
   const initialTab = (searchParams.get("tab") as MainTab) || "Overview";
@@ -99,12 +102,12 @@ export function PayFlowClientDetailPage() {
   const [draft, setDraft] = useState<ClientDraft>(emptyDraft());
   const [supervisors, setSupervisors] = useState<PayflowUser[]>([]);
   const [permissionGroups, setPermissionGroups] = useState<PayflowPermissionGroup[]>([]);
-  const [payflowFields, setPayflowFields] = useState<string[]>(["— Not mapped —"]);
   const [governanceRules, setGovernanceRules] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const load = async () => {
     if (!Number.isFinite(id)) {
@@ -125,7 +128,6 @@ export function PayFlowClientDetailPage() {
       setDraft(draftFromDetail(client));
       setSupervisors(users.users || []);
       setPermissionGroups(perms.groups || []);
-      setPayflowFields(catalog.payflow_fields || ["— Not mapped —"]);
       setGovernanceRules(catalog.governance_rules || []);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Failed to load client");
@@ -142,7 +144,7 @@ export function PayFlowClientDetailPage() {
   const patchConfig = (p: Partial<ClientDraftConfig>) =>
     setDraft((d) => ({ ...d, config: { ...d.config, ...p } }));
 
-  const readOnly = !isOperationsAdmin;
+  const readOnly = !canEdit;
 
   async function saveConfig() {
     if (!detail || readOnly) return;
@@ -195,6 +197,20 @@ export function PayFlowClientDetailPage() {
     }
   }
 
+  async function deleteClient() {
+    if (!detail || readOnly) return;
+    setBusy(true);
+    setError("");
+    try {
+      await deletePayflowClient(detail.id);
+      navigate("/payflow/clients");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail : "Failed to delete client");
+      setBusy(false);
+      setConfirmDelete(false);
+    }
+  }
+
   const changeTab = (next: MainTab) => {
     setTab(next);
     setSearchParams(next === "Overview" ? {} : { tab: next });
@@ -231,7 +247,6 @@ export function PayFlowClientDetailPage() {
     patchConfig,
     supervisorUsers: supervisors,
     permissionGroups,
-    payflowFields,
     governanceRules,
     readOnly,
     clientId: detail.id,
@@ -264,8 +279,13 @@ export function PayFlowClientDetailPage() {
                 {detail.ai_mode_label}
               </StatusPill>
             )}
-            {detail.data_source_type === "crm" && <StatusPill tone="success">CRM</StatusPill>}
+            <StatusPill tone="info">Daily file</StatusPill>
             <span className="text-[12px] text-muted-foreground">Supervisors: {supervisorLabel}</span>
+            {canDelete ? (
+              <Btn variant="danger" onClick={() => setConfirmDelete(true)}>
+                Delete
+              </Btn>
+            ) : null}
           </div>
         }
       />
@@ -327,10 +347,11 @@ export function PayFlowClientDetailPage() {
           clientId={detail.id}
           clientName={detail.name}
           portfolios={detail.portfolios || []}
-          canEdit={isOperationsAdmin}
+          canEdit={canEdit}
           busy={busy}
           onAdd={addPortfolio}
           onError={setError}
+          onDeleted={() => void load()}
         />
       )}
 
@@ -376,19 +397,14 @@ export function PayFlowClientDetailPage() {
               </button>
             </Panel>
             <Panel title="DATA SOURCE">
-              <p className="text-[13px]">{detail.data_source_type === "crm" ? "CRM" : "Not selected"}</p>
-              <StatusPill tone={detail.connection_status === "connected" ? "success" : "neutral"}>
-                {detail.connection_status_label || "Not Connected"}
-              </StatusPill>
-            </Panel>
-            <Panel title="DATA MAPPING">
-              <p className="text-[13px]">
-                {detail.mapping_summary.mapped}/{detail.mapping_summary.total} mapped
-              </p>
-              <p className="text-[12px] text-muted-foreground">
-                {detail.mapping_summary.attention} need attention · {detail.mapping_summary.unmapped}{" "}
-                unmapped
-              </p>
+              <p className="text-[13px]">Daily file</p>
+              <StatusPill tone="success">Ready for file intake</StatusPill>
+              <Link
+                to="/payflow/system-mapping"
+                className="mt-2 inline-block text-[12.5px] font-semibold text-primary"
+              >
+                View system CRM mapping
+              </Link>
             </Panel>
             <Panel title="BRANDING & COMMUNICATION">
               <p className="text-[13px]">{detail.email_from || "—"}</p>
@@ -440,7 +456,7 @@ export function PayFlowClientDetailPage() {
                 </li>
               ))}
             </ul>
-            {isOperationsAdmin && detail.status === "draft" && (
+            {canEdit && detail.status === "draft" && (
               <div className="mt-3">
                 <Btn
                   variant="primary"
@@ -473,9 +489,9 @@ export function PayFlowClientDetailPage() {
             </div>
             <Panel
               title={configSection}
-              description={isOperationsAdmin ? "Changes save when you click Save." : "Read-only"}
+              description={canEdit ? "Changes save when you click Save." : "Read-only"}
               action={
-                isOperationsAdmin ? (
+                canEdit ? (
                   <Btn variant="primary" disabled={busy} onClick={() => void saveConfig()}>
                     {busy ? "Saving…" : "Save"}
                   </Btn>
@@ -484,7 +500,6 @@ export function PayFlowClientDetailPage() {
             >
               {configSection === "General" && <ProfileSection {...sectionProps} />}
               {configSection === "Data Source" && <DataSourceSection {...sectionProps} />}
-              {configSection === "Data Mapping" && <MappingSection {...sectionProps} />}
               {configSection === "Branding & Channels" && <BrandingSection {...sectionProps} />}
               {configSection === "AI & Governance" && <AiGovernanceSection {...sectionProps} />}
               {configSection === "Supervisors" && <SupervisorSection {...sectionProps} />}
@@ -492,6 +507,15 @@ export function PayFlowClientDetailPage() {
           </div>
         </div>
       )}
+
+      <ConfirmDelete
+        open={confirmDelete}
+        title={`Delete ${detail.name}?`}
+        description="This deletes the client and related portfolios, accounts, cases, rules, workflows, reviews, communications, and supervisor assignments. The full record is saved in Deletion Logs."
+        busy={busy}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={() => void deleteClient()}
+      />
     </>
   );
 }

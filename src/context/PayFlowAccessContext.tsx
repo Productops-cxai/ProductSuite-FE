@@ -1,11 +1,13 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
+import { Link } from "react-router-dom";
 import { getPayflowAccessContext, getPayflowMenus } from "../api/payflow";
 import type { MenuSection, PayflowAccessContext } from "../types";
 
@@ -16,6 +18,8 @@ interface PayFlowContextValue {
   menus: MenuSection[];
   isOperationsAdmin: boolean;
   roleLabel: string;
+  permissions: string[];
+  hasPermission: (code: string | string[]) => boolean;
   refresh: () => void;
 }
 
@@ -54,6 +58,19 @@ export function PayFlowAccessProvider({ children }: { children: ReactNode }) {
     };
   }, [tick]);
 
+  const permissions = access?.all_permissions || [];
+
+  const hasPermission = useCallback(
+    (code: string | string[]) => {
+      if (access?.is_operations_admin) return true;
+      const needed = Array.isArray(code) ? code : [code];
+      if (needed.length === 0) return true;
+      const held = new Set(permissions);
+      return needed.some((c) => held.has(c));
+    },
+    [permissions, access?.is_operations_admin],
+  );
+
   const value = useMemo<PayFlowContextValue>(
     () => ({
       loading,
@@ -62,9 +79,11 @@ export function PayFlowAccessProvider({ children }: { children: ReactNode }) {
       menus,
       isOperationsAdmin: Boolean(access?.is_operations_admin),
       roleLabel: access?.role?.name || "PayFlow User",
+      permissions,
+      hasPermission,
       refresh: () => setTick((t) => t + 1),
     }),
-    [loading, error, access, menus],
+    [loading, error, access, menus, permissions, hasPermission],
   );
 
   return <PayFlowContext.Provider value={value}>{children}</PayFlowContext.Provider>;
@@ -79,4 +98,64 @@ export function usePayFlowAccess() {
 /** Safe outside PayFlow shell (platform / launcher / no-access profile). */
 export function useOptionalPayFlowAccess() {
   return useContext(PayFlowContext);
+}
+
+/** Route / page permission gate. */
+export function RequirePayflowPermission({
+  anyOf,
+  children,
+  fallbackTo = "/payflow",
+}: {
+  anyOf: string[];
+  children: ReactNode;
+  fallbackTo?: string;
+}) {
+  const { loading, hasPermission } = usePayFlowAccess();
+  if (loading) {
+    return <p className="text-sm text-muted-foreground">Checking access…</p>;
+  }
+  if (!hasPermission(anyOf)) {
+    return (
+      <div className="rounded-lg border border-border bg-card p-6">
+        <h2 className="font-display text-[18px] font-semibold text-foreground">No access</h2>
+        <p className="mt-2 text-[13px] text-muted-foreground">
+          Your role does not include the permission needed for this page.
+        </p>
+        <Link to={fallbackTo} className="mt-3 inline-block text-[13px] font-medium text-primary">
+          Back to PayFlow
+        </Link>
+      </div>
+    );
+  }
+  return <>{children}</>;
+}
+
+/** Path → required permissions (any-of). Profile is always open. */
+export const PAYFLOW_ROUTE_PERMISSIONS: Array<{ prefix: string; anyOf: string[] }> = [
+  { prefix: "/payflow/users", anyOf: ["manage_users"] },
+  { prefix: "/payflow/integrations", anyOf: ["manage_integrations"] },
+  { prefix: "/payflow/clients", anyOf: ["view_client"] },
+  {
+    prefix: "/payflow/cases",
+    anyOf: ["view_customer_accounts", "view_collection_cases"],
+  },
+  {
+    prefix: "/payflow/imports",
+    anyOf: ["view_customer_accounts", "view_collection_cases"],
+  },
+  { prefix: "/payflow/review", anyOf: ["view_human_reviews"] },
+  { prefix: "/payflow/workflows", anyOf: ["view_workflows"] },
+  { prefix: "/payflow/comms", anyOf: ["view_communications"] },
+  { prefix: "/payflow/rules", anyOf: ["view_rules"] },
+];
+
+export function permissionsForPath(pathname: string): string[] | null {
+  if (pathname === "/payflow" || pathname === "/payflow/") {
+    return null; // Dashboard is open to every PayFlow member
+  }
+  if (pathname.startsWith("/payflow/profile")) return null;
+  const hit = PAYFLOW_ROUTE_PERMISSIONS.find(
+    (r) => pathname === r.prefix || pathname.startsWith(`${r.prefix}/`),
+  );
+  return hit ? hit.anyOf : null;
 }

@@ -1,9 +1,10 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import {
   getPayflowClientPortfolio,
   updatePayflowClientPortfolio,
+  deletePayflowClientPortfolio,
 } from "../../api/payflow";
 import {
   Btn,
@@ -18,6 +19,7 @@ import {
   type Tone,
 } from "../../components/payflow/lovable/payflow-ui";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
+import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import type { PayflowPortfolioDetail } from "../../types";
 
 const STATUS_OPTIONS = ["Onboarding", "Active", "Paused"] as const;
@@ -67,6 +69,7 @@ function labelFromStatus(status: string) {
 
 export function PayFlowPortfolioDetailPage() {
   const { clientId, portfolioId } = useParams();
+  const navigate = useNavigate();
   const { isOperationsAdmin } = usePayFlowAccess();
   const cid = Number(clientId);
   const pid = Number(portfolioId);
@@ -76,6 +79,7 @@ export function PayFlowPortfolioDetailPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [status, setStatus] = useState("Onboarding");
@@ -137,6 +141,20 @@ export function PayFlowPortfolioDetailPage() {
     }
   }
 
+  async function onDelete() {
+    if (!detail || !isOperationsAdmin) return;
+    setBusy(true);
+    setError("");
+    try {
+      await deletePayflowClientPortfolio(cid, pid);
+      navigate(`/payflow/clients/${cid}?tab=${encodeURIComponent("Sub-Clients / Portfolios")}`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail : "Failed to delete portfolio");
+      setBusy(false);
+      setConfirmDelete(false);
+    }
+  }
+
   if (loading) {
     return <p className="text-sm text-muted-foreground">Loading portfolio…</p>;
   }
@@ -177,6 +195,11 @@ export function PayFlowPortfolioDetailPage() {
               {detail.status_label || labelFromStatus(detail.status)}
             </StatusPill>
             <StatusPill>{detail.code}</StatusPill>
+            {isOperationsAdmin ? (
+              <Btn variant="danger" onClick={() => setConfirmDelete(true)}>
+                Delete
+              </Btn>
+            ) : null}
           </div>
         }
       />
@@ -290,6 +313,15 @@ export function PayFlowPortfolioDetailPage() {
           )}
         </Panel>
       </div>
+
+      <ConfirmDelete
+        open={confirmDelete}
+        title={`Delete ${detail.name}?`}
+        description="This deletes the portfolio and its accounts, cases, reviews, communications, and workflows. The action is logged."
+        busy={busy}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={() => void onDelete()}
+      />
     </>
   );
 }

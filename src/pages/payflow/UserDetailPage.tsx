@@ -7,6 +7,7 @@ import {
   reactivatePayflowUser,
   resendPayflowInvitation,
   updatePayflowUser,
+  deletePayflowUser,
 } from "../../api/payflow";
 import {
   Btn,
@@ -18,6 +19,8 @@ import {
   TextInput,
 } from "../../components/payflow-ui";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
+import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
+import { useAuth } from "../../context/AuthContext";
 import type { PayflowUser } from "../../types";
 
 function statusTone(status: string) {
@@ -29,6 +32,7 @@ function statusTone(status: string) {
 export function PayFlowUserDetailPage() {
   const { userId } = useParams<{ userId: string }>();
   const { isOperationsAdmin } = usePayFlowAccess();
+  const { user: me } = useAuth();
   const navigate = useNavigate();
   const [user, setUser] = useState<PayflowUser | null>(null);
   const [roleOptions, setRoleOptions] = useState<{ value: string; label: string }[]>([]);
@@ -37,6 +41,7 @@ export function PayFlowUserDetailPage() {
   const [editing, setEditing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [statusBusy, setStatusBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const load = () => {
     if (!userId) return;
@@ -158,6 +163,11 @@ export function PayFlowUserDetailPage() {
                 Resend Invitation
               </Btn>
             ) : null}
+            {me?.id !== user.id ? (
+              <Btn variant="danger" disabled={statusBusy} onClick={() => setConfirmDelete(true)}>
+                Delete
+              </Btn>
+            ) : null}
           </div>
         }
       />
@@ -226,6 +236,25 @@ export function PayFlowUserDetailPage() {
           </Btn>
         </Panel>
       </div>
+
+      <ConfirmDelete
+        open={confirmDelete}
+        title={`Delete ${user.full_name}?`}
+        description="This permanently deletes the person, PayFlow membership, client assignments, and sessions. The record is saved in Deletion Logs."
+        busy={statusBusy}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={() => {
+          setStatusBusy(true);
+          setMessage(null);
+          deletePayflowUser(user.id)
+            .then(() => navigate("/payflow/users"))
+            .catch((err: unknown) => {
+              setMessage(err instanceof Error ? err.message : "Failed to delete user");
+              setStatusBusy(false);
+              setConfirmDelete(false);
+            });
+        }}
+      />
     </>
   );
 }

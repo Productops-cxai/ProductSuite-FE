@@ -1,5 +1,6 @@
 import { apiRequest } from "./client";
 import { cachedAsync, dedupeAsync, invalidateCache } from "../lib/dedupeAsync";
+import { deletionSource } from "../lib/deletionSource";
 import type {
   MenusResponse,
   Organization,
@@ -10,6 +11,7 @@ import type {
   ProductAccessItem,
   ProductSavePayload,
   EmailLog,
+  DeletionLog,
 } from "../types";
 
 export function getOverview() {
@@ -35,6 +37,16 @@ export async function saveProduct(payload: ProductSavePayload) {
   invalidateCache("catalog:products");
   invalidateCache("platform:overview");
   return product;
+}
+
+export async function deleteProduct(id: number) {
+  const res = await apiRequest<{ message: string }>(`/products/${id}/delete${deletionSource()}`, {
+    method: "POST",
+  });
+  invalidateCache("catalog:products");
+  invalidateCache("platform:overview");
+  invalidateCache("access:");
+  return res;
 }
 
 export function listOrganizations() {
@@ -104,6 +116,15 @@ export async function savePerson(payload: PersonSavePayload) {
   return person;
 }
 
+export async function deletePerson(userId: string) {
+  const res = await apiRequest<{ message: string }>(`/people/${userId}/delete${deletionSource()}`, {
+    method: "POST",
+  });
+  invalidateCache("people:");
+  invalidateCache("me:products");
+  return res;
+}
+
 export async function assignProduct(user_id: string, product_id: number) {
   const person = await apiRequest<Person>("/people/assign-product", {
     method: "POST",
@@ -142,6 +163,19 @@ export function listEmailLogs(params?: {
   if (params?.limit) q.set("limit", String(params.limit));
   const qs = q.toString();
   return apiRequest<EmailLog[]>(`/email-logs${qs ? `?${qs}` : ""}`);
+}
+
+export function listDeletionLogs(params?: {
+  search?: string;
+  entity_type?: string;
+  limit?: number;
+}) {
+  const q = new URLSearchParams();
+  if (params?.search) q.set("search", params.search);
+  if (params?.entity_type) q.set("entity_type", params.entity_type);
+  if (params?.limit) q.set("limit", String(params.limit));
+  const qs = q.toString();
+  return apiRequest<DeletionLog[]>(`/deletion-logs${qs ? `?${qs}` : ""}`);
 }
 
 export function myProducts() {

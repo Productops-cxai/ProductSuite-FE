@@ -14,14 +14,12 @@ import {
   AiGovernanceSection,
   BrandingSection,
   DataSourceSection,
-  MappingSection,
   ProfileSection,
   SupervisorSection,
   connectionTone,
   draftFromDetail,
   draftToUpdatePayload,
   emptyDraft,
-  mappingSummary,
   type ClientDraft,
   type ClientDraftConfig,
 } from "../../components/payflow/client-config-sections";
@@ -33,7 +31,6 @@ import type { PayflowPermissionGroup, PayflowUser } from "../../types";
 const steps = [
   "Client Profile",
   "Data Source",
-  "Data Mapping",
   "Branding & Channels",
   "AI & Governance",
   "Supervisors",
@@ -42,8 +39,7 @@ const steps = [
 
 const stepDescriptions = [
   "Basic client information.",
-  "Select the single primary operational data source.",
-  "Map incoming client fields to PayFlow customer account fields.",
+  "Daily file intake for this client (CRM mapping is system-wide).",
   "How customer-facing communications represent this client.",
   "How PayFlow operates collection activity for this client.",
   "Who supervises this client.",
@@ -51,14 +47,14 @@ const stepDescriptions = [
 ];
 
 export function PayFlowClientNewPage() {
-  const { isOperationsAdmin } = usePayFlowAccess();
+  const { hasPermission } = usePayFlowAccess();
+  const canCreate = hasPermission("create_client");
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<ClientDraft>(emptyDraft());
   const [clientId, setClientId] = useState<number | null>(null);
   const [supervisors, setSupervisors] = useState<PayflowUser[]>([]);
   const [permissionGroups, setPermissionGroups] = useState<PayflowPermissionGroup[]>([]);
-  const [payflowFields, setPayflowFields] = useState<string[]>(["— Not mapped —"]);
   const [governanceRules, setGovernanceRules] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -72,7 +68,6 @@ export function PayFlowClientNewPage() {
     ])
       .then(([users, catalog, perms]) => {
         setSupervisors(users.users || []);
-        setPayflowFields(catalog.payflow_fields || ["— Not mapped —"]);
         setGovernanceRules(catalog.governance_rules || []);
         setPermissionGroups(perms.groups || []);
       })
@@ -85,10 +80,6 @@ export function PayFlowClientNewPage() {
   const patchConfig = (p: Partial<ClientDraftConfig>) =>
     setDraft((d) => ({ ...d, config: { ...d.config, ...p } }));
 
-  const summary = mappingSummary(draft.config);
-  const requiredUnmapped = draft.config.mappings.filter(
-    (m) => m.isRequired && (m.status === "Unmapped" || m.status === "Needs Attention"),
-  ).length;
   const supervisorNames = useMemo(() => {
     const map = new Map(supervisors.map((u) => [String(u.id), u.full_name]));
     return draft.supervisorUserIds.map((id) => map.get(id) || id);
@@ -97,12 +88,6 @@ export function PayFlowClientNewPage() {
   const issues: string[] = [];
   if (!draft.name.trim()) issues.push("Client name is required");
   if (!draft.config.code.trim()) issues.push("Client code is required");
-  if (!draft.config.dataSource) issues.push("A primary data source has not been selected");
-  else if (draft.config.connection !== "Connected")
-    issues.push("CRM connection is not established");
-  if (requiredUnmapped > 0)
-    issues.push(`${requiredUnmapped} required field mapping(s) are incomplete`);
-  if (summary.attention > 0) issues.push(`${summary.attention} field mapping(s) need attention`);
   if (!draft.config.channels.email && !draft.config.channels.sms)
     issues.push("At least one communication channel must be enabled");
   if (draft.supervisorUserIds.length === 0) issues.push("Assign at least one supervisor");
@@ -174,11 +159,11 @@ export function PayFlowClientNewPage() {
     }
   }
 
-  if (!isOperationsAdmin) {
+  if (!canCreate) {
     return (
       <Panel title="Client onboarding is restricted">
         <p className="text-sm text-muted-foreground">
-          Only Operations Admin can create and configure clients.
+          You need the Add Client permission to create clients.
         </p>
         <Link to="/payflow/clients" className="mt-3 inline-block text-[13px] font-medium text-primary">
           Back to clients
@@ -226,7 +211,6 @@ export function PayFlowClientNewPage() {
     patchConfig,
     supervisorUsers: supervisors,
     permissionGroups,
-    payflowFields,
     governanceRules,
     clientId,
     onClientUpdated: (updated: { logo_url?: string | null }) => {
@@ -298,11 +282,10 @@ export function PayFlowClientNewPage() {
       >
         {step === 0 && <ProfileSection {...sectionProps} />}
         {step === 1 && <DataSourceSection {...sectionProps} />}
-        {step === 2 && <MappingSection {...sectionProps} />}
-        {step === 3 && <BrandingSection {...sectionProps} />}
-        {step === 4 && <AiGovernanceSection {...sectionProps} />}
-        {step === 5 && <SupervisorSection {...sectionProps} />}
-        {step === 6 && (
+        {step === 2 && <BrandingSection {...sectionProps} />}
+        {step === 3 && <AiGovernanceSection {...sectionProps} />}
+        {step === 4 && <SupervisorSection {...sectionProps} />}
+        {step === 5 && (
           <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <ReviewBlock
@@ -316,16 +299,8 @@ export function PayFlowClientNewPage() {
               />
               <ReviewBlock
                 title="Data Source"
-                rows={[draft.config.dataSource ?? "Not selected", draft.config.connection]}
-                tone={connectionTone(draft.config.connection)}
-              />
-              <ReviewBlock
-                title="Data Mapping"
-                rows={[
-                  `${summary.mapped} Mapped`,
-                  `${summary.attention} Needs Attention`,
-                  `${summary.unmapped} Unmapped`,
-                ]}
+                rows={["Daily file", "Ready for file intake"]}
+                tone={connectionTone("Connected")}
               />
               <ReviewBlock
                 title="Channels"

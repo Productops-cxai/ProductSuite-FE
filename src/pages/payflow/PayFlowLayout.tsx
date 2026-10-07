@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import {
   listPayflowClients,
@@ -12,7 +12,12 @@ import { Icon } from "../../components/ui/Icon";
 import { UserAvatar } from "../../components/ui/UserAvatar";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useAuth } from "../../context/AuthContext";
-import { PayFlowAccessProvider, usePayFlowAccess } from "../../context/PayFlowAccessContext";
+import {
+  PayFlowAccessProvider,
+  permissionsForPath,
+  RequirePayflowPermission,
+  usePayFlowAccess,
+} from "../../context/PayFlowAccessContext";
 import type { MenuSection, PayflowNotification } from "../../types";
 import { normalizeMenuRoute } from "../../lib/utils";
 
@@ -495,6 +500,8 @@ function PayFlowShell() {
   const { user, logout } = useAuth();
   const { loading, error, menus, roleLabel, isOperationsAdmin, access } = usePayFlowAccess();
   const navigate = useNavigate();
+  const location = useLocation();
+  const routePerms = permissionsForPath(location.pathname);
   const isMobile = useIsMobile();
   const [desktopCollapsed, setDesktopCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -689,7 +696,13 @@ function PayFlowShell() {
         </header>
         <main className="relative flex-1">
           <div className="mx-auto w-full max-w-[1280px] px-5 py-7 lg:px-10 lg:py-9">
-            <Outlet />
+            {routePerms ? (
+              <RequirePayflowPermission anyOf={routePerms}>
+                <Outlet />
+              </RequirePayflowPermission>
+            ) : (
+              <Outlet />
+            )}
           </div>
         </main>
       </div>

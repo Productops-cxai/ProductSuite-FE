@@ -1,5 +1,8 @@
 import { FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
+import { ApiError } from "../../api/client";
+import { deletePayflowClientPortfolio } from "../../api/payflow";
+import { ConfirmDelete } from "../ui/ConfirmDelete";
 import {
   Btn,
   DataTable,
@@ -54,6 +57,7 @@ export function PortfolioSection({
   busy,
   onAdd,
   onError,
+  onDeleted,
 }: {
   clientId: number;
   clientName: string;
@@ -62,11 +66,14 @@ export function PortfolioSection({
   busy?: boolean;
   onAdd: (payload: { name: string; code: string; status: string }) => Promise<void>;
   onError?: (message: string) => void;
+  onDeleted?: () => void;
 }) {
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [status, setStatus] = useState<string>("Onboarding");
+  const [pendingDelete, setPendingDelete] = useState<PayflowPortfolio | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   async function submit(e?: FormEvent) {
     e?.preventDefault();
@@ -86,6 +93,20 @@ export function PortfolioSection({
       setAdding(false);
     } catch {
       // Parent surfaces the error message.
+    }
+  }
+
+  async function confirmPortfolioDelete() {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    try {
+      await deletePayflowClientPortfolio(clientId, pendingDelete.id);
+      setPendingDelete(null);
+      onDeleted?.();
+    } catch (err) {
+      onError?.(err instanceof ApiError ? err.detail : "Failed to delete portfolio");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -176,7 +197,11 @@ export function PortfolioSection({
                         {clientName} &gt; {p.name}
                       </span>
                     }
-                    subtitle={p.description || "Portfolio under this client"}
+                    subtitle={
+                      p.crm_client_number
+                        ? `CRM #${p.crm_client_number}${p.description ? ` · ${p.description}` : ""}`
+                        : p.description || "Portfolio under this client"
+                    }
                   />
                 </Link>
               </Td>
@@ -205,17 +230,37 @@ export function PortfolioSection({
                 )}
               </Td>
               <Td>
-                <Link
-                  to={`/payflow/clients/${clientId}/portfolios/${p.id}`}
-                  className="text-[12.5px] font-semibold text-primary hover:underline"
-                >
-                  View details
-                </Link>
+                <div className="flex flex-col items-end gap-1">
+                  <Link
+                    to={`/payflow/clients/${clientId}/portfolios/${p.id}`}
+                    className="text-[12.5px] font-semibold text-primary hover:underline"
+                  >
+                    View details
+                  </Link>
+                  {canEdit ? (
+                    <button
+                      type="button"
+                      className="text-[12.5px] font-semibold text-destructive hover:underline"
+                      onClick={() => setPendingDelete(p)}
+                    >
+                      Delete
+                    </button>
+                  ) : null}
+                </div>
               </Td>
             </Tr>
           ))}
         </DataTable>
       )}
+
+      <ConfirmDelete
+        open={Boolean(pendingDelete)}
+        title={pendingDelete ? `Delete ${pendingDelete.name}?` : "Delete portfolio?"}
+        description="This deletes the portfolio and its accounts, cases, reviews, communications, and workflows. The action is logged."
+        busy={deleting}
+        onClose={() => setPendingDelete(null)}
+        onConfirm={() => void confirmPortfolioDelete()}
+      />
     </div>
   );
 }

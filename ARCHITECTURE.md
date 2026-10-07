@@ -47,8 +47,11 @@ ProductSuite-FE/
 ├── vite.config.ts
 ├── tsconfig.json
 ├── .env.example
+├── README.md
 ├── ARCHITECTURE.md              ← this file
-├── public/assets/               # logos, login visuals
+├── docs/samples/README.md       # start guide + recent FE changes
+├── public/                      # favicon + assets/
+│   └── assets/                  # logos, login visuals
 └── src/
     ├── main.tsx                 # entry
     ├── App.tsx                  # route table
@@ -149,6 +152,7 @@ Defined entirely in `src/App.tsx`.
 | `/platform/access` | `AccessPage` |
 | `/platform/people` | `PeoplePage` |
 | `/platform/email-logs` | `EmailLogsPage` |
+| `/platform/deletion-logs` | `DeletionLogsPage` (platform workspace) |
 
 ### PayFlow (`PayFlowLayout`)
 
@@ -157,11 +161,15 @@ Defined entirely in `src/App.tsx`.
 | `/payflow` | Dashboard |
 | `/payflow/profile` | Profile |
 | `/payflow/clients` | Clients list |
-| `/payflow/clients/new` | Create client |
+| `/payflow/clients/new` | Create client (file data source) |
+| `/payflow/clients/import` | Client CSV/XLSX import |
 | `/payflow/clients/:clientId` | Client detail |
 | `/payflow/clients/:clientId/portfolios/:portfolioId` | Portfolio detail |
 | `/payflow/cases` | Cases / accounts list |
+| `/payflow/cases/import` | Daily account file import |
 | `/payflow/cases/:accountId` | Case detail |
+| `/payflow/imports` | Import run history |
+| `/payflow/imports/:importId` | Import run detail |
 | `/payflow/review` | Review queue |
 | `/payflow/review/:reviewId` | Review detail |
 | `/payflow/rules` | Rules list |
@@ -172,8 +180,9 @@ Defined entirely in `src/App.tsx`.
 | `/payflow/workflows/:strategyId` | Workflow detail |
 | `/payflow/comms` | Communications list |
 | `/payflow/comms/:communicationId` | Comm detail |
-| `/payflow/integrations` | Integrations list |
-| `/payflow/integrations/:integrationId` | Integration detail |
+| `/payflow/system-mapping` | Global CRM → PayFlow catalog (System Mapping) |
+| `/payflow/integrations` | Alias of System Mapping page |
+| `/payflow/integrations/:integrationId` | Integration detail (legacy card) |
 | `/payflow/users` | Users & roles |
 | `/payflow/users/:userId` | User detail |
 
@@ -272,6 +281,9 @@ Sent as `Authorization: Bearer …`.
 | `theme.ts` | Light / dark / system theme persistence and DOM class |
 | `productRouting.ts` | `next_step` → path; product shell homes; post-auth enter |
 | `dedupeAsync.ts` | In-flight dedupe + TTL cache for GETs |
+| `geo-api.ts` | Country / state / city lookups via `/payflow/geo/*` |
+| `import-data.ts` | Client/account import file helpers + column expectations |
+| `deletionSource.ts` | Soft-delete UI source tagging |
 | `utils.ts` | `cn`, menu route normalize, status/org helpers |
 | `ui.ts` | Shared Tailwind class recipes for platform screens |
 
@@ -316,6 +328,7 @@ Sent as `Authorization: Bearer …`.
 | `components/ui/Badge.tsx` | Status / label chips |
 | `components/ui/Icon.tsx` | Named SVG icons for menus |
 | `components/ui/Modal.tsx` | Modal dialog |
+| `components/ui/ConfirmDelete.tsx` | Soft-delete confirmation |
 | `components/ui/PasswordInput.tsx` | Password field with show/hide |
 | `components/ui/UserAvatar.tsx` | Avatar image / initials |
 | `components/payflow-ui.tsx` | Shared PageHeader, Panel, KpiCard, tables, form controls |
@@ -326,10 +339,11 @@ Sent as `Authorization: Bearer …`.
 |------|----------------|
 | `components/payflow/PermissionPicker.tsx` | Grouped permission checkboxes for roles/users |
 | `components/payflow/ClientAssignmentPicker.tsx` | Searchable multi-select of clients for supervisors |
-| `components/payflow/client-config-sections.tsx` | Client settings: channels, AI mode, mappings, etc. |
+| `components/payflow/client-config-sections.tsx` | Client settings: file data source, channels, AI mode, cascading address (geo), etc. |
 | `components/payflow/client-detail-tabs.tsx` | Related tabs: accounts, reviews, rules, workflows, comms |
 | `components/payflow/portfolio-section.tsx` | Portfolio list/create on client detail |
-| `components/payflow/lovable/payflow-ui.tsx` | Extended UI kit used by client config |
+| `components/payflow/import-flow.tsx` | Shared multi-step import UX |
+| `components/payflow/lovable/payflow-ui.tsx` | Extended UI kit; `SearchableSelect` portals menus to `document.body` |
 
 ---
 
@@ -364,11 +378,15 @@ Sent as `Authorization: Bearer …`.
 | `PayFlowLayout.tsx` | PayFlow shell: product gate, access provider, nav, notifications, outlet |
 | `DashboardPage.tsx` | Ops dashboard: KPIs, funnel, attention, activity |
 | `ClientsPage.tsx` | Client list with filters |
-| `ClientNewPage.tsx` | Create client form / wizard |
+| `ClientNewPage.tsx` | Create client (file-first; no per-client Data Mapping) |
+| `ClientImportPage.tsx` | Client hierarchy CSV/XLSX import |
 | `ClientDetailPage.tsx` | Client config, logo, onboarding, related tabs |
 | `PortfolioDetailPage.tsx` | Portfolio under a client |
 | `CasesPage.tsx` | Account / case list |
-| `CaseDetailPage.tsx` | Single account / case detail |
+| `AccountImportPage.tsx` | Daily CRM account file import |
+| `CaseDetailPage.tsx` | Single account / case detail (incl. persona / age where present) |
+| `ImportsPage.tsx` | Import run history |
+| `ImportDetailPage.tsx` | Single import run detail |
 | `ReviewsPage.tsx` | Human-in-the-loop review queue |
 | `ReviewDetailPage.tsx` | Approve / modify / reject / hold |
 | `RulesPage.tsx` | Decision / automation rules list |
@@ -379,13 +397,14 @@ Sent as `Authorization: Bearer …`.
 | `WorkflowDetailPage.tsx` | Edit, draft, approve / reject |
 | `CommsPage.tsx` | Communications list |
 | `CommDetailPage.tsx` | Communication detail / timeline |
-| `IntegrationsPage.tsx` | Integration connectors list |
-| `IntegrationDetailPage.tsx` | Integration detail + test connection |
+| `IntegrationsPage.tsx` | **System Mapping** — global CRM inbound/outbound catalog |
+| `IntegrationDetailPage.tsx` | Legacy integration detail + test connection |
 | `UsersPage.tsx` | PayFlow users **and** roles / permissions UI |
 | `UserDetailPage.tsx` | User detail, role, clients, deactivate / reactivate |
 | `ProfilePage.tsx` | Re-exports shared profile for PayFlow |
 | `ProductSwitcher.tsx` | Re-export of shared switcher |
 | `InsightIqPlaceholder.tsx` | Stub until InsightIQ screens exist |
+| `pages/shared/DeletionLogsPage.tsx` | Soft-delete audit (platform / payflow workspaces) |
 
 ---
 
@@ -410,13 +429,14 @@ Cross-product entry after login when user has multiple products (or no single di
 | Area | Capability |
 |------|------------|
 | Dashboard | KPIs, attention, funnel, activity |
-| Clients | CRUD, logo, bulk upload, portfolios, mappings, channels, AI mode |
-| Cases | Account list / detail |
+| Clients | CRUD, logo, master/sub hierarchy, file data source, portfolios, channels, AI mode, cascading address (geo) |
+| Client / account import | CSV/XLSX client import; daily account Excel; import run history |
+| Cases | Account list / detail (persona / age when present) |
 | Human Review | Queue + approve / modify / reject / hold |
 | Rules | Create / list / activate decision rules |
 | Workflows | Strategy create / edit / approve lifecycle |
 | Comms | Communication listing / detail |
-| Integrations | Connectors + connectivity test |
+| System Mapping | Global CRM → PayFlow field catalog (not per-client mapping) |
 | Users & Roles | Users, custom roles, permission groups, client assignment |
 
 ### D. InsightIQ
@@ -469,3 +489,6 @@ Runtime: `import.meta.env.VITE_*` only (Vite convention).
 4. **Updates prefer POST action URLs** on PayFlow (aligned with BE).
 5. **Minimal dependencies** — React + Router + Tailwind only.
 6. **API modules are pure functions** — no hooks inside `api/`; pages own fetch lifecycle.
+7. **File-first client onboarding** — CRM System Mapping is global; geo dropdowns use BE `/payflow/geo/*`.
+
+Operational start + recent changelog: `docs/samples/README.md`.

@@ -3,13 +3,16 @@ import { Link, useSearchParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import { listPayflowAccounts, listPayflowClients } from "../../api/payflow";
 import {
+  Btn,
   DataTable,
   FilterSelect,
   PageHeader,
+  SearchInput,
   StatusPill,
   Td,
   statusTone,
 } from "../../components/payflow/lovable/payflow-ui";
+import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import type { PayflowAccount, PayflowAccountsIntake, PayflowClient } from "../../types";
 
 function formatCurrency(value: number) {
@@ -24,11 +27,25 @@ function formatNumber(value: number) {
   return new Intl.NumberFormat("en-US").format(value);
 }
 
+function formatStamp(value?: string | null) {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export function PayFlowCasesPage() {
+  const { hasPermission } = usePayFlowAccess();
+  const canImport = hasPermission("import_accounts");
   const [searchParams] = useSearchParams();
   const [accounts, setAccounts] = useState<PayflowAccount[]>([]);
   const [clients, setClients] = useState<PayflowClient[]>([]);
-  const [workflows, setWorkflows] = useState<string[]>([]);
   const [statuses, setStatuses] = useState<string[]>([]);
   const [intake, setIntake] = useState<PayflowAccountsIntake>({
     files: 0,
@@ -39,18 +56,14 @@ export function PayFlowCasesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const [search, setSearch] = useState("");
   const [clientFilter, setClientFilter] = useState("All Clients");
+  const [subClient, setSubClient] = useState("All Sub-Clients");
   const [status, setStatus] = useState(searchParams.get("status") || "All Statuses");
-  const [workflow, setWorkflow] = useState(searchParams.get("workflow") || "All Workflows");
-  const [review, setReview] = useState(searchParams.get("human_review") || "All");
 
   useEffect(() => {
     const nextStatus = searchParams.get("status");
-    const nextWorkflow = searchParams.get("workflow");
-    const nextReview = searchParams.get("human_review");
     if (nextStatus) setStatus(nextStatus);
-    if (nextWorkflow) setWorkflow(nextWorkflow);
-    if (nextReview) setReview(nextReview);
   }, [searchParams]);
 
   useEffect(() => {
@@ -62,7 +75,6 @@ export function PayFlowCasesPage() {
         if (cancelled) return;
         setAccounts(accountRes.accounts || []);
         setIntake(accountRes.intake);
-        setWorkflows(accountRes.workflows || []);
         setStatuses(accountRes.statuses || []);
         setClients(clientRes.clients || []);
       })
@@ -79,16 +91,32 @@ export function PayFlowCasesPage() {
     };
   }, []);
 
+  const subClientOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const a of accounts) {
+      if (clientFilter !== "All Clients" && a.client_name !== clientFilter) continue;
+      if (a.portfolio_name) names.add(a.portfolio_name);
+    }
+    return ["All Sub-Clients", ...[...names].sort()];
+  }, [accounts, clientFilter]);
+
   const rows = useMemo(() => {
+    const q = search.trim().toLowerCase();
     return accounts.filter((a) => {
+      if (
+        q &&
+        !`${a.account_reference} ${a.customer_name} ${a.email || ""} ${a.client_name || ""}`
+          .toLowerCase()
+          .includes(q)
+      ) {
+        return false;
+      }
       if (clientFilter !== "All Clients" && a.client_name !== clientFilter) return false;
+      if (subClient !== "All Sub-Clients" && a.portfolio_name !== subClient) return false;
       if (status !== "All Statuses" && a.collection_status !== status) return false;
-      if (workflow !== "All Workflows" && a.current_workflow !== workflow) return false;
-      if (review === "Yes" && !a.human_review) return false;
-      if (review === "No" && a.human_review) return false;
       return true;
     });
-  }, [accounts, clientFilter, status, workflow, review]);
+  }, [accounts, search, clientFilter, subClient, status]);
 
   const scopedIntake = useMemo(() => {
     if (clientFilter === "All Clients") return intake;
@@ -105,6 +133,18 @@ export function PayFlowCasesPage() {
       <PageHeader
         title="Accounts / Cases"
         description="Customer accounts under collection across all clients in your access scope."
+        actions={
+          canImport ? (
+            <>
+              <Link to="/payflow/imports?type=account">
+                <Btn variant="ghost">Import History</Btn>
+              </Link>
+              <Link to="/payflow/cases/import">
+                <Btn variant="primary">Upload Daily CRM File</Btn>
+              </Link>
+            </>
+          ) : undefined
+        }
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border border-border bg-card px-4 py-3">
@@ -128,64 +168,62 @@ export function PayFlowCasesPage() {
         </p>
       </div>
 
-      <div className="mb-4 flex flex-wrap gap-2">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Search account ID or customer"
+          className="w-64"
+        />
         <FilterSelect
           label="Client"
           value={clientFilter}
-          onChange={setClientFilter}
+          onChange={(v) => {
+            setClientFilter(v);
+            setSubClient("All Sub-Clients");
+          }}
           options={["All Clients", ...clients.map((c) => c.name)]}
+        />
+        <FilterSelect
+          label="Sub-Client"
+          value={subClient}
+          onChange={setSubClient}
+          options={subClientOptions}
         />
         <FilterSelect
           label="Status"
           value={status}
           onChange={setStatus}
-          options={[
-            "All Statuses",
-            ...statuses.filter((s) => s !== "Promise to Pay"),
-          ]}
-        />
-        <FilterSelect
-          label="Workflow"
-          value={workflow}
-          onChange={setWorkflow}
-          options={["All Workflows", ...workflows]}
-        />
-        <FilterSelect
-          label="Human Review"
-          value={review}
-          onChange={setReview}
-          options={["All", "Yes", "No"]}
+          options={["All Statuses", ...statuses]}
         />
       </div>
 
       {error ? <p className="mb-3 text-sm text-destructive">{error}</p> : null}
       {loading ? <p className="text-sm text-muted-foreground">Loading accounts…</p> : null}
 
-      {!loading && !error ? (
+      {!loading && !error && accounts.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No accounts yet. Upload the daily CRM file to create them.</p>
+      ) : null}
+
+      {!loading && !error && accounts.length > 0 ? (
         <>
           <DataTable
+            minWidth={1180}
             head={[
-              "Client",
+              "Account ID",
               "Customer",
-              "Account Reference",
-              "Outstanding Balance",
-              "Collection Status",
-              "Current Workflow",
-              "Last Action",
-              "Next Action",
-              "Human Review",
+              "Client",
+              "Sub-Client",
+              "Outstanding",
+              "Status",
+              "Days past due",
+              "Last updated",
+              "",
             ]}
           >
             {rows.map((a) => (
               <tr key={a.id} className="border-b border-border last:border-0 hover:bg-surface">
-                <Td>
-                  <Link
-                    to={`/payflow/clients/${a.client_id}`}
-                    className="text-muted-foreground hover:text-foreground hover:underline"
-                  >
-                    {a.client_name}
-                  </Link>
-                </Td>
+                <Td className="tabular font-medium">{a.account_reference}</Td>
                 <Td>
                   <Link
                     to={`/payflow/cases/${a.id}`}
@@ -194,20 +232,32 @@ export function PayFlowCasesPage() {
                     {a.customer_name}
                   </Link>
                 </Td>
-                <Td className="tabular text-muted-foreground">{a.account_reference}</Td>
+                <Td>
+                  <Link
+                    to={`/payflow/clients/${a.client_id}`}
+                    className="text-muted-foreground hover:text-foreground hover:underline"
+                  >
+                    {a.client_name}
+                  </Link>
+                </Td>
+                <Td className="text-muted-foreground">{a.portfolio_name || "—"}</Td>
                 <Td className="tabular font-medium">{formatCurrency(a.outstanding_balance)}</Td>
                 <Td>
                   <StatusPill tone={statusTone(a.collection_status)}>{a.collection_status}</StatusPill>
                 </Td>
-                <Td className="text-muted-foreground">{a.current_workflow || "—"}</Td>
-                <Td className="text-muted-foreground">{a.last_action || "—"}</Td>
-                <Td className="text-muted-foreground">{a.next_action || "—"}</Td>
-                <Td
-                  className={
-                    a.human_review ? "font-medium text-destructive" : "text-muted-foreground"
-                  }
-                >
-                  {a.human_review ? "Yes" : "No"}
+                <Td className="tabular text-muted-foreground">
+                  {a.days_past_due == null ? "—" : a.days_past_due}
+                </Td>
+                <Td className="text-muted-foreground">
+                  {formatStamp(a.last_crm_refresh_at || a.updated_at)}
+                </Td>
+                <Td>
+                  <Link
+                    to={`/payflow/cases/${a.id}`}
+                    className="text-[12.5px] font-semibold text-primary hover:underline"
+                  >
+                    View Account
+                  </Link>
                 </Td>
               </tr>
             ))}

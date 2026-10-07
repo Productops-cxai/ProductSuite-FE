@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import { getPayflowDashboard } from "../../api/payflow";
 import { PageHeader, Panel, KpiCard, FilterSelect } from "../../components/payflow-ui";
+import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import type { PayflowDashboardResponse } from "../../types";
 
 const pillTone: Record<string, string> = {
@@ -37,6 +38,9 @@ const emptyDashboard: PayflowDashboardResponse = {
 };
 
 export function PayFlowDashboardPage() {
+  const { isOperationsAdmin, access, hasPermission } = usePayFlowAccess();
+  const assignedCount = access?.client_ids?.length ?? 0;
+  const showAssignHint = !isOperationsAdmin && assignedCount === 0;
   const [data, setData] = useState<PayflowDashboardResponse>(emptyDashboard);
   const [filterClients, setFilterClients] = useState<PayflowDashboardResponse["clients"]>([]);
   const [filterChannels, setFilterChannels] = useState<string[]>([]);
@@ -118,6 +122,21 @@ export function PayFlowDashboardPage() {
   return (
     <>
       <PageHeader title="Operations Dashboard" description={data.description} />
+
+      {showAssignHint ? (
+        <div className="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
+          Your role permissions control which pages you can open (sidebar). You are not assigned to
+          any client yet, so operational lists stay empty until an Operations Admin assigns you on{" "}
+          {hasPermission("view_client") ? (
+            <Link to="/payflow/clients" className="font-semibold underline">
+              Clients → edit → Supervisors
+            </Link>
+          ) : (
+            <span className="font-semibold">Clients → edit → Supervisors</span>
+          )}
+          .
+        </div>
+      ) : null}
 
       {error ? (
         <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-[13px] text-red-700 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-300">

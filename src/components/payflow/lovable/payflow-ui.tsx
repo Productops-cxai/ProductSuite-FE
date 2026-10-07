@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
-import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "../../../lib/utils";
 
 function SearchIcon({ className }: { className?: string }) {
@@ -689,6 +690,148 @@ export function SelectInput({
         </option>
       ))}
     </select>
+  );
+}
+
+/** Searchable single-select dropdown (type to filter options). */
+export function SearchableSelect({
+  value,
+  options,
+  onChange,
+  placeholder = "Search…",
+  disabled,
+  emptyLabel = "No matches",
+  className,
+}: {
+  value: string;
+  options: string[];
+  onChange: (v: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
+  emptyLabel?: string;
+  className?: string;
+}) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [menuStyle, setMenuStyle] = useState<CSSProperties>({});
+
+  useEffect(() => {
+    if (!open) setQuery("");
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const place = () => {
+      const el = rootRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const gap = 4;
+      const menuMax = 320;
+      const spaceBelow = window.innerHeight - rect.bottom - gap;
+      const openUp = spaceBelow < Math.min(menuMax, 240) && rect.top > spaceBelow;
+      const next: CSSProperties = {
+        position: "fixed",
+        left: Math.max(8, Math.min(rect.left, window.innerWidth - rect.width - 8)),
+        width: rect.width,
+        zIndex: 80,
+        maxHeight: openUp
+          ? Math.min(menuMax, Math.max(160, rect.top - gap - 8))
+          : Math.min(menuMax, Math.max(160, spaceBelow - 8)),
+      };
+      if (openUp) next.bottom = window.innerHeight - rect.top + gap;
+      else next.top = rect.bottom + gap;
+      setMenuStyle(next);
+    };
+
+    place();
+    window.addEventListener("resize", place);
+    // Capture scroll from nested panels / layout.
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (rootRef.current?.contains(t) || menuRef.current?.contains(t)) return;
+      setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter((o) => o.toLowerCase().includes(q));
+  }, [options, query]);
+
+  const menu =
+    open && !disabled ? (
+      <div
+        ref={menuRef}
+        style={menuStyle}
+        className="flex flex-col overflow-hidden rounded-md border border-border bg-card shadow-panel"
+      >
+        <div className="shrink-0 border-b border-border p-2">
+          <input
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={placeholder}
+            className="h-8 w-full rounded-md border border-border bg-surface px-2.5 text-[13px] outline-none focus:border-primary"
+          />
+        </div>
+        <ul className="min-h-0 flex-1 overflow-y-auto py-1">
+          {filtered.length === 0 ? (
+            <li className="px-3 py-2 text-[12px] text-muted-foreground">{emptyLabel}</li>
+          ) : (
+            filtered.map((opt) => (
+              <li key={opt}>
+                <button
+                  type="button"
+                  className={cn(
+                    "flex w-full px-3 py-2 text-left text-[13px] hover:bg-accent",
+                    opt === value && "bg-accent/60 font-medium text-primary",
+                  )}
+                  onClick={() => {
+                    onChange(opt);
+                    setOpen(false);
+                  }}
+                >
+                  {opt}
+                </button>
+              </li>
+            ))
+          )}
+        </ul>
+      </div>
+    ) : null;
+
+  return (
+    <div ref={rootRef} className={cn("relative", className)}>
+      <button
+        type="button"
+        disabled={disabled || options.length === 0}
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          controlClass,
+          "flex items-center justify-between gap-2 text-left",
+          !value && "text-muted-foreground",
+        )}
+      >
+        <span className="truncate">{value || (options.length ? placeholder : emptyLabel)}</span>
+        <span className="shrink-0 text-[10px] text-muted-foreground">{open ? "▴" : "▾"}</span>
+      </button>
+      {menu ? createPortal(menu, document.body) : null}
+    </div>
   );
 }
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import {
   approvePayflowWorkflow,
@@ -7,6 +7,7 @@ import {
   rejectPayflowWorkflow,
   savePayflowWorkflowDraft,
   updatePayflowWorkflow,
+  deletePayflowWorkflow,
 } from "../../api/payflow";
 import {
   Btn,
@@ -20,6 +21,8 @@ import {
   type Tone,
 } from "../../components/payflow/lovable/payflow-ui";
 import type { PayflowStrategy, PayflowStrategyStep } from "../../types";
+import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
+import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 
 const CHANNELS = ["Email", "SMS"];
 const PURPOSES = [
@@ -64,6 +67,10 @@ function stepTone(kind: string): Tone {
 
 export function PayFlowWorkflowDetailPage() {
   const { strategyId } = useParams<{ strategyId: string }>();
+  const navigate = useNavigate();
+  const { hasPermission } = usePayFlowAccess();
+  const canDelete = hasPermission("delete_workflows");
+  const canEdit = hasPermission("create_edit_workflows");
   const [strategy, setStrategy] = useState<PayflowStrategy | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -74,6 +81,7 @@ export function PayFlowWorkflowDetailPage() {
   const [rejectNote, setRejectNote] = useState("");
   const [showContext, setShowContext] = useState(false);
   const [showAudit, setShowAudit] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   async function load() {
     const id = Number(strategyId);
@@ -174,6 +182,19 @@ export function PayFlowWorkflowDetailPage() {
     }
   }
 
+  async function onDelete() {
+    if (!strategy) return;
+    setBusy(true);
+    try {
+      await deletePayflowWorkflow(strategy.id);
+      navigate("/payflow/workflows");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail : "Delete failed");
+      setBusy(false);
+      setConfirmDelete(false);
+    }
+  }
+
   if (loading) return <p className="text-sm text-muted-foreground">Loading workflow…</p>;
   if (error && !strategy) {
     return (
@@ -209,15 +230,24 @@ export function PayFlowWorkflowDetailPage() {
               {strategy.status}
             </StatusPill>
             <StatusPill>v{strategy.version}</StatusPill>
-            <Btn disabled={busy} onClick={() => void onSaveDraft()}>
-              Save Draft
-            </Btn>
-            <Btn variant="danger" disabled={busy} onClick={() => void onReject()}>
-              Reject / Request Regeneration
-            </Btn>
-            <Btn variant="primary" disabled={busy} onClick={() => void onApprove()}>
-              Approve Strategy
-            </Btn>
+            {canEdit ? (
+              <>
+                <Btn disabled={busy} onClick={() => void onSaveDraft()}>
+                  Save Draft
+                </Btn>
+                <Btn variant="danger" disabled={busy} onClick={() => void onReject()}>
+                  Reject / Request Regeneration
+                </Btn>
+                <Btn variant="primary" disabled={busy} onClick={() => void onApprove()}>
+                  Approve Strategy
+                </Btn>
+              </>
+            ) : null}
+            {canDelete ? (
+              <Btn variant="danger" disabled={busy} onClick={() => setConfirmDelete(true)}>
+                Delete
+              </Btn>
+            ) : null}
           </div>
         }
       />
@@ -455,6 +485,15 @@ export function PayFlowWorkflowDetailPage() {
           </Panel>
         </div>
       </div>
+
+      <ConfirmDelete
+        open={confirmDelete}
+        title={`Delete ${strategy.name}?`}
+        description="This deletes the workflow. Linked accounts are not deleted. The action is logged."
+        busy={busy}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={() => void onDelete()}
+      />
     </>
   );
 }

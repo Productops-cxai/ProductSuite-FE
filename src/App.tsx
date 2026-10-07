@@ -12,9 +12,14 @@ import { OverviewPage } from "./pages/platform/OverviewPage";
 import { PeoplePage } from "./pages/platform/PeoplePage";
 import { ProductDetailPage } from "./pages/platform/ProductDetailPage";
 import { ProductsPage } from "./pages/platform/ProductsPage";
+import { DeletionLogsPage } from "./pages/shared/DeletionLogsPage";
 import { PayFlowClientDetailPage } from "./pages/payflow/ClientDetailPage";
 import { PayFlowClientNewPage } from "./pages/payflow/ClientNewPage";
+import { PayFlowAccountImportPage } from "./pages/payflow/AccountImportPage";
+import { PayFlowClientImportPage } from "./pages/payflow/ClientImportPage";
 import { PayFlowClientsPage } from "./pages/payflow/ClientsPage";
+import { PayFlowImportDetailPage } from "./pages/payflow/ImportDetailPage";
+import { PayFlowImportsPage } from "./pages/payflow/ImportsPage";
 import { PayFlowPortfolioDetailPage } from "./pages/payflow/PortfolioDetailPage";
 import { PayFlowCaseDetailPage } from "./pages/payflow/CaseDetailPage";
 import { PayFlowCasesPage } from "./pages/payflow/CasesPage";
@@ -63,6 +68,7 @@ export default function App() {
         <Route path="products/:productId" element={<ProductDetailPage />} />
         <Route path="access" element={<AccessPage />} />
         <Route path="people" element={<PeoplePage />} />
+        <Route path="deletion-logs" element={<DeletionLogsPage workspace="platform" />} />
         <Route path="email-logs" element={<EmailLogsPage />} />
       </Route>
 
@@ -71,13 +77,17 @@ export default function App() {
         <Route path="profile" element={<PayFlowProfilePage />} />
         <Route path="clients" element={<PayFlowClientsPage />} />
         <Route path="clients/new" element={<PayFlowClientNewPage />} />
+        <Route path="clients/import" element={<PayFlowClientImportPage />} />
         <Route path="clients/:clientId" element={<PayFlowClientDetailPage />} />
         <Route
           path="clients/:clientId/portfolios/:portfolioId"
           element={<PayFlowPortfolioDetailPage />}
         />
         <Route path="cases" element={<PayFlowCasesPage />} />
+        <Route path="cases/import" element={<PayFlowAccountImportPage />} />
         <Route path="cases/:accountId" element={<PayFlowCaseDetailPage />} />
+        <Route path="imports" element={<PayFlowImportsPage />} />
+        <Route path="imports/:importId" element={<PayFlowImportDetailPage />} />
         <Route path="review" element={<PayFlowReviewsPage />} />
         <Route path="review/:reviewId" element={<PayFlowReviewDetailPage />} />
         <Route path="rules" element={<PayFlowRulesPage />} />
@@ -88,6 +98,7 @@ export default function App() {
         <Route path="workflows/:strategyId" element={<PayFlowWorkflowDetailPage />} />
         <Route path="comms" element={<PayFlowCommsPage />} />
         <Route path="comms/:communicationId" element={<PayFlowCommDetailPage />} />
+        <Route path="system-mapping" element={<PayFlowIntegrationsPage />} />
         <Route path="integrations" element={<PayFlowIntegrationsPage />} />
         <Route path="integrations/:integrationId" element={<PayFlowIntegrationDetailPage />} />
         <Route path="users" element={<PayFlowUsersPage />} />

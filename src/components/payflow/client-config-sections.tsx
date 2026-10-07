@@ -4,6 +4,7 @@ import {
   Field,
   TextInput,
   SelectInput,
+  SearchableSelect,
   ChoiceCard,
   ToggleRow,
   Btn,
@@ -16,6 +17,12 @@ import { PermissionPicker } from "./PermissionPicker";
 import { resolveAvatarUrl } from "../ui/UserAvatar";
 import { removePayflowClientLogo, uploadPayflowClientLogo } from "../../api/payflow";
 import { ApiError } from "../../api/client";
+import {
+  fetchCities,
+  fetchCountryNames,
+  fetchStates,
+  getCountryMeta,
+} from "../../lib/geo-api";
 import type { PayflowClientMapping, PayflowPermissionGroup, PayflowUser } from "../../types";
 
 export type ClientTypeLabel = "First Party" | "Third Party";
@@ -27,14 +34,29 @@ export type ConnectionLabel =
   | "Connection Failed";
 export type MappingStatusLabel = "Mapped" | "Needs Attention" | "Unmapped" | "Validated";
 
+export type DataSourceLabel = "CRM" | "File";
+
 export interface ClientDraftConfig {
   code: string;
   clientType: ClientTypeLabel;
   useCase: string;
-  dataSource: "CRM" | null;
+  dataSource: DataSourceLabel | null;
   connection: ConnectionLabel;
   environment: string;
   syncFrequency: string;
+  crmClientNumber: string;
+  contactName: string;
+  contactTitle: string;
+  contactEmail: string;
+  contactPhone: string;
+  addressLine1: string;
+  addressLine2: string;
+  city: string;
+  provinceState: string;
+  country: string;
+  postalCode: string;
+  correspondenceLanguage: string;
+  currencyCode: string;
   mappings: {
     sourceField: string;
     payflowField: string;
@@ -110,10 +132,23 @@ export function emptyDraft(): ClientDraft {
       code: "",
       clientType: "Third Party",
       useCase: "Collections",
-      dataSource: null,
-      connection: "Not Connected",
+      dataSource: "File",
+      connection: "Connected",
       environment: "Sandbox",
       syncFrequency: "Every 15 minutes",
+      crmClientNumber: "",
+      contactName: "",
+      contactTitle: "",
+      contactEmail: "",
+      contactPhone: "",
+      addressLine1: "",
+      addressLine2: "",
+      city: "",
+      provinceState: "",
+      country: "",
+      postalCode: "",
+      correspondenceLanguage: "",
+      currencyCode: "",
       mappings: [],
       brandName: "",
       logoUrl: null,
@@ -136,6 +171,19 @@ export function draftFromDetail(
     ai_mode_label?: string | null;
     data_source_type?: string | null;
     connection_status_label?: string | null;
+    crm_client_number?: string | null;
+    contact_name?: string | null;
+    contact_title?: string | null;
+    contact_email?: string | null;
+    contact_phone?: string | null;
+    address_line1?: string | null;
+    address_line2?: string | null;
+    city?: string | null;
+    province_state?: string | null;
+    country?: string | null;
+    postal_code?: string | null;
+    correspondence_language?: string | null;
+    currency_code?: string | null;
     environment?: string | null;
     sync_frequency?: string | null;
     brand_name?: string;
@@ -158,10 +206,23 @@ export function draftFromDetail(
       code: detail.code || "",
       clientType: (detail.client_type_label as ClientTypeLabel) || "Third Party",
       useCase: "Collections",
-      dataSource: detail.data_source_type === "crm" ? "CRM" : null,
-      connection: (detail.connection_status_label as ConnectionLabel) || "Not Connected",
+      dataSource: "File",
+      connection: "Connected",
       environment: detail.environment || "Sandbox",
       syncFrequency: detail.sync_frequency || "Every 15 minutes",
+      crmClientNumber: detail.crm_client_number || "",
+      contactName: detail.contact_name || "",
+      contactTitle: detail.contact_title || "",
+      contactEmail: detail.contact_email || "",
+      contactPhone: detail.contact_phone || "",
+      addressLine1: detail.address_line1 || "",
+      addressLine2: detail.address_line2 || "",
+      city: detail.city || "",
+      provinceState: detail.province_state || "",
+      country: detail.country || "",
+      postalCode: detail.postal_code || "",
+      correspondenceLanguage: detail.correspondence_language || "",
+      currencyCode: detail.currency_code || "",
       mappings: (detail.mappings || []).map((m) => ({
         sourceField: m.source_field,
         payflowField: m.payflow_field || "— Not mapped —",
@@ -181,6 +242,7 @@ export function draftFromDetail(
 }
 
 export function draftToUpdatePayload(draft: ClientDraft) {
+  // Phase-1: only daily file intake on clients; CRM catalog is system-wide.
   return {
     name: draft.name.trim(),
     code: draft.config.code.trim(),
@@ -188,8 +250,22 @@ export function draftToUpdatePayload(draft: ClientDraft) {
     business_domain: "Collections",
     industry: draft.industry.trim() || undefined,
     ai_mode: draft.aiMode,
-    data_source_type: draft.config.dataSource === "CRM" ? "crm" : null,
-    connection_status: draft.config.connection,
+    data_source_type: "file",
+    connection_status: "Connected",
+    crm_client_number: draft.config.crmClientNumber.trim() || undefined,
+    contact_name: draft.config.contactName.trim() || undefined,
+    contact_title: draft.config.contactTitle.trim() || undefined,
+    contact_email: draft.config.contactEmail.trim() || undefined,
+    contact_phone: draft.config.contactPhone.trim() || undefined,
+    address_line1: draft.config.addressLine1.trim() || undefined,
+    address_line2: draft.config.addressLine2.trim() || undefined,
+    city: draft.config.city.trim() || undefined,
+    province_state: draft.config.provinceState.trim() || undefined,
+    country: draft.config.country.trim() || undefined,
+    postal_code: draft.config.postalCode.trim() || undefined,
+    correspondence_language: draft.config.correspondenceLanguage.trim() || undefined,
+    currency_code: draft.config.currencyCode.trim() || undefined,
+    integration_ref: draft.config.crmClientNumber.trim() || undefined,
     environment: draft.config.environment,
     sync_frequency: draft.config.syncFrequency,
     brand_name: draft.config.brandName,
@@ -211,126 +287,348 @@ export function draftToUpdatePayload(draft: ClientDraft) {
 /* ---------------- Profile ---------------- */
 
 export function ProfileSection({ draft, patch, patchConfig, readOnly }: SectionProps) {
+  const [countries, setCountries] = useState<string[]>([]);
+  const [provinces, setProvinces] = useState<string[]>([]);
+  const [cities, setCities] = useState<string[]>([]);
+  const [languages, setLanguages] = useState<string[]>([]);
+  const [currencies, setCurrencies] = useState<string[]>([]);
+  const [geoError, setGeoError] = useState("");
+  const [loadingCountries, setLoadingCountries] = useState(true);
+  const [loadingProvinces, setLoadingProvinces] = useState(false);
+  const [loadingCities, setLoadingCities] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingCountries(true);
+    setGeoError("");
+    fetchCountryNames()
+      .then((names) => {
+        if (cancelled) return;
+        setCountries(names);
+        if (draft.config.country) {
+          const meta = getCountryMeta(draft.config.country);
+          setLanguages(meta.languages);
+          setCurrencies(meta.currencies);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setGeoError("Could not load country list. Check your network and try again.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingCountries(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Intentionally once on mount; country meta refreshes in the country effect below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const country = draft.config.country;
+    if (!country) {
+      setProvinces([]);
+      setCities([]);
+      setLanguages([]);
+      setCurrencies([]);
+      return;
+    }
+    const meta = getCountryMeta(country);
+    setLanguages(meta.languages);
+    setCurrencies(meta.currencies);
+
+    let cancelled = false;
+    setLoadingProvinces(true);
+    setGeoError("");
+    fetchStates(country)
+      .then((states) => {
+        if (!cancelled) setProvinces(states);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setProvinces([]);
+          setGeoError("Could not load provinces / states for this country.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingProvinces(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [draft.config.country]);
+
+  useEffect(() => {
+    const country = draft.config.country;
+    const province = draft.config.provinceState;
+    if (!country || !province) {
+      setCities([]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingCities(true);
+    setGeoError("");
+    fetchCities(country, province)
+      .then((list) => {
+        if (!cancelled) setCities(list);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCities([]);
+          setGeoError("Could not load cities for this province / state.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingCities(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [draft.config.country, draft.config.provinceState]);
+
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
-      <Field label="Client Name">
-        <TextInput
-          value={draft.name}
-          onChange={(v) => patch({ name: v })}
-          placeholder="PayPal"
-          disabled={readOnly}
-        />
-      </Field>
-      <Field label="Client Code / Reference">
-        <TextInput
-          value={draft.config.code}
-          onChange={(v) => patchConfig({ code: v })}
-          placeholder="PP-CLT-004"
-          disabled={readOnly}
-        />
-      </Field>
-      <Field label="Client Type">
-        <SelectInput
-          value={draft.config.clientType}
-          options={["First Party", "Third Party"]}
-          onChange={(v) => patchConfig({ clientType: v as ClientTypeLabel })}
-          disabled={readOnly}
-        />
-      </Field>
-      <Field label="Industry">
-        <TextInput
-          value={draft.industry}
-          onChange={(v) => patch({ industry: v })}
-          placeholder="Payments"
-          disabled={readOnly}
-        />
-      </Field>
-      <Field label="Business Use Case" hint="Additional use cases arrive in a later phase.">
-        <SelectInput
-          value={draft.config.useCase || "Collections"}
-          options={["Collections"]}
-          onChange={(v) => patchConfig({ useCase: v })}
-          disabled={readOnly}
-        />
-      </Field>
+    <div className="space-y-6">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Client Name">
+          <TextInput
+            value={draft.name}
+            onChange={(v) => patch({ name: v })}
+            placeholder="PayPal"
+            disabled={readOnly}
+          />
+        </Field>
+        <Field label="Client Code / Reference">
+          <TextInput
+            value={draft.config.code}
+            onChange={(v) => patchConfig({ code: v })}
+            placeholder="PP-CLT-004"
+            disabled={readOnly}
+          />
+        </Field>
+        <Field label="CRM Client Number" hint="Used to link PayFlow ↔ CRM later (two-way).">
+          <TextInput
+            value={draft.config.crmClientNumber}
+            onChange={(v) => patchConfig({ crmClientNumber: v })}
+            placeholder="2022-0001-001"
+            disabled={readOnly}
+          />
+        </Field>
+        <Field label="Client Type">
+          <SelectInput
+            value={draft.config.clientType}
+            options={["First Party", "Third Party"]}
+            onChange={(v) => patchConfig({ clientType: v as ClientTypeLabel })}
+            disabled={readOnly}
+          />
+        </Field>
+        <Field label="Industry">
+          <TextInput
+            value={draft.industry}
+            onChange={(v) => patch({ industry: v })}
+            placeholder="Payments"
+            disabled={readOnly}
+          />
+        </Field>
+        <Field label="Business Use Case" hint="Additional use cases arrive in a later phase.">
+          <SelectInput
+            value={draft.config.useCase || "Collections"}
+            options={["Collections"]}
+            onChange={(v) => patchConfig({ useCase: v })}
+            disabled={readOnly}
+          />
+        </Field>
+      </div>
+
+      <div>
+        <p className="mb-3 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">
+          Primary contact
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Contact Name">
+            <TextInput
+              value={draft.config.contactName}
+              onChange={(v) => patchConfig({ contactName: v })}
+              disabled={readOnly}
+            />
+          </Field>
+          <Field label="Contact Title">
+            <TextInput
+              value={draft.config.contactTitle}
+              onChange={(v) => patchConfig({ contactTitle: v })}
+              disabled={readOnly}
+            />
+          </Field>
+          <Field label="Email">
+            <TextInput
+              value={draft.config.contactEmail}
+              onChange={(v) => patchConfig({ contactEmail: v })}
+              disabled={readOnly}
+            />
+          </Field>
+          <Field label="Phone">
+            <TextInput
+              value={draft.config.contactPhone}
+              onChange={(v) => patchConfig({ contactPhone: v })}
+              disabled={readOnly}
+            />
+          </Field>
+        </div>
+      </div>
+
+      <div>
+        <p className="mb-3 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">
+          Address
+        </p>
+        {geoError ? (
+          <p className="mb-3 text-[12px] text-destructive">{geoError}</p>
+        ) : null}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Address line 1">
+            <TextInput
+              value={draft.config.addressLine1}
+              onChange={(v) => patchConfig({ addressLine1: v })}
+              disabled={readOnly}
+            />
+          </Field>
+          <Field label="Address line 2">
+            <TextInput
+              value={draft.config.addressLine2}
+              onChange={(v) => patchConfig({ addressLine2: v })}
+              disabled={readOnly}
+            />
+          </Field>
+          <Field
+            label="Country"
+            hint="Live country list. Province, city, language, and currency load from free public geo APIs."
+          >
+            <SearchableSelect
+              value={draft.config.country}
+              options={countries}
+              placeholder={loadingCountries ? "Loading countries…" : "Search countries…"}
+              emptyLabel={loadingCountries ? "Loading…" : "No countries found"}
+              disabled={readOnly || loadingCountries}
+              onChange={(country) => {
+                const meta = getCountryMeta(country);
+                patchConfig({
+                  country,
+                  provinceState: "",
+                  city: "",
+                  correspondenceLanguage: meta.languages[0] || "",
+                  currencyCode: meta.currencies[0] || "",
+                });
+              }}
+            />
+          </Field>
+          <Field label="Province / State">
+            <SearchableSelect
+              value={draft.config.provinceState}
+              options={provinces}
+              placeholder={
+                !draft.config.country
+                  ? "Select country first"
+                  : loadingProvinces
+                    ? "Loading provinces…"
+                    : "Search province / state…"
+              }
+              emptyLabel={loadingProvinces ? "Loading…" : "No provinces for this country"}
+              disabled={readOnly || !draft.config.country || loadingProvinces || provinces.length === 0}
+              onChange={(provinceState) => {
+                patchConfig({
+                  provinceState,
+                  city: "",
+                });
+              }}
+            />
+          </Field>
+          <Field label="City">
+            <SearchableSelect
+              value={draft.config.city}
+              options={cities}
+              placeholder={
+                !draft.config.country
+                  ? "Select country first"
+                  : !draft.config.provinceState
+                    ? "Select province / state first"
+                    : loadingCities
+                      ? "Loading cities…"
+                      : "Search cities…"
+              }
+              emptyLabel={loadingCities ? "Loading…" : "No cities available"}
+              disabled={
+                readOnly ||
+                !draft.config.country ||
+                !draft.config.provinceState ||
+                loadingCities ||
+                cities.length === 0
+              }
+              onChange={(city) => patchConfig({ city })}
+            />
+          </Field>
+          <Field label="Postal code">
+            <TextInput
+              value={draft.config.postalCode}
+              onChange={(v) => patchConfig({ postalCode: v })}
+              disabled={readOnly}
+            />
+          </Field>
+          <Field label="Language">
+            <SearchableSelect
+              value={draft.config.correspondenceLanguage}
+              options={languages}
+              placeholder={draft.config.country ? "Search language…" : "Select country first"}
+              emptyLabel="No languages listed"
+              disabled={readOnly || !draft.config.country || languages.length === 0}
+              onChange={(correspondenceLanguage) => patchConfig({ correspondenceLanguage })}
+            />
+          </Field>
+          <Field label="Currency">
+            <SearchableSelect
+              value={draft.config.currencyCode}
+              options={currencies}
+              placeholder={draft.config.country ? "Search currency…" : "Select country first"}
+              emptyLabel="No currencies listed"
+              disabled={readOnly || !draft.config.country || currencies.length === 0}
+              onChange={(currencyCode) => patchConfig({ currencyCode })}
+            />
+          </Field>
+        </div>
+      </div>
     </div>
   );
 }
 
-/* ---------------- Data source (CRM only) ---------------- */
+/* ---------------- Data source (daily file only for now) ---------------- */
 
-export function DataSourceSection({ draft, patchConfig, readOnly }: SectionProps) {
-  const { dataSource, connection } = draft.config;
-
-  const selectCrm = () =>
-    patchConfig({
-      dataSource: "CRM",
-      connection: dataSource === "CRM" ? connection : "Not Connected",
-    });
-
-  const test = () => {
-    if (readOnly) return;
-    patchConfig({ connection: "Connecting" });
-    window.setTimeout(() => patchConfig({ connection: "Connected" }), 900);
-  };
-
+export function DataSourceSection({ readOnly }: SectionProps) {
   return (
     <div className="space-y-4">
       <p className="text-[13px] text-muted-foreground">
-        Where will PayFlow receive customer and account data for this client? One primary
-        operational source only.
+        Clients receive account and reminder data through daily file upload. CRM field mapping
+        is configured once under System Mapping (not per client).
       </p>
-      <div className="grid gap-3 sm:grid-cols-1 max-w-xl">
+      <div className="grid gap-3 sm:grid-cols-2 max-w-3xl">
+        <ChoiceCard
+          title="Daily file"
+          description="Upload daily account / reminder files using client_code + sub_client_code after sub-clients exist."
+          selected
+          disabled={readOnly}
+        />
         <ChoiceCard
           title="CRM"
-          description="PayFlow receives customer and account records from the client's CRM system."
-          selected={dataSource === "CRM"}
-          onSelect={readOnly ? undefined : selectCrm}
-          disabled={readOnly}
+          description="Direct CRM connection — coming later. Use System Mapping for the global CRM → PayFlow field catalog."
+          selected={false}
+          badge="Coming later"
+          disabled
         />
       </div>
 
-      {dataSource === "CRM" && (
-        <div className="rounded-lg border border-border bg-surface p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-[13px] font-semibold text-foreground">CRM connection</p>
-              <p className="text-[11px] text-muted-foreground">
-                Connection details are confirmed with the client during technical setup.
-              </p>
-            </div>
-            <StatusPill tone={connectionTone(connection)}>{connection}</StatusPill>
-          </div>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <Field label="Environment">
-              <SelectInput
-                value={draft.config.environment}
-                options={["Sandbox", "Production"]}
-                onChange={(v) => patchConfig({ environment: v })}
-                disabled={readOnly}
-              />
-            </Field>
-            <Field label="Sync Frequency">
-              <SelectInput
-                value={draft.config.syncFrequency}
-                options={["Every 15 minutes", "Hourly", "Daily"]}
-                onChange={(v) => patchConfig({ syncFrequency: v })}
-                disabled={readOnly}
-              />
-            </Field>
-          </div>
-          {!readOnly && (
-            <div className="mt-3 flex gap-2">
-              <Btn onClick={test} disabled={connection === "Connecting"}>
-                Test Connection
-              </Btn>
-              <Btn variant="ghost" onClick={() => patchConfig({ connection: "Connection Failed" })}>
-                Simulate failure
-              </Btn>
-            </div>
-          )}
-        </div>
-      )}
+      <div className="rounded-lg border border-border bg-surface p-4">
+        <p className="text-[13px] font-semibold text-foreground">Daily file intake</p>
+        <p className="mt-1 text-[12px] text-muted-foreground">
+          Create the client and sub-clients, then upload daily files from Cases / Imports.
+          Global CRM source → PayFlow field mapping lives under Administration → System Mapping.
+        </p>
+      </div>
     </div>
   );
 }

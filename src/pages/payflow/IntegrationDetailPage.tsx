@@ -107,10 +107,10 @@ export function PayFlowIntegrationDetailPage() {
             "This integration either does not exist or belongs to a client outside your access."}
         </p>
         <Link
-          to="/payflow/integrations"
+          to="/payflow/system-mapping"
           className="mt-3 inline-block text-[13px] font-medium text-primary"
         >
-          Back to integrations
+          Back to System Mapping
         </Link>
       </Panel>
     );
@@ -132,10 +132,10 @@ export function PayFlowIntegrationDetailPage() {
     <>
       <PageHeader
         breadcrumb={[
-          { label: "Integrations", to: "/payflow/integrations" },
+          { label: "System Mapping", to: "/payflow/system-mapping" },
           { label: `${integration.name} · ${integration.client_name}` },
         ]}
-        title={`${integration.name} Integration`}
+        title={`${integration.name}`}
         description={integration.purpose}
         actions={
           <div className="flex flex-wrap items-center gap-2">

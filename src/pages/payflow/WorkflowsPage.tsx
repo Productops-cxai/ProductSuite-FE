@@ -11,6 +11,7 @@ import {
   StatusPill,
   type Tone,
 } from "../../components/payflow/lovable/payflow-ui";
+import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import type {
   PayflowClient,
   PayflowStrategiesSummary,
@@ -44,6 +45,8 @@ function segmentChips(segment: Record<string, string>) {
 }
 
 export function PayFlowWorkflowsPage() {
+  const { hasPermission } = usePayFlowAccess();
+  const canCreate = hasPermission("create_edit_workflows");
   const [strategies, setStrategies] = useState<PayflowStrategy[]>([]);
   const [clients, setClients] = useState<PayflowClient[]>([]);
   const [summary, setSummary] = useState<PayflowStrategiesSummary>({
@@ -124,9 +127,11 @@ export function PayFlowWorkflowsPage() {
                 {summary.ai_proposed} awaiting review
               </StatusPill>
             )}
-            <Link to="/payflow/workflows/new">
-              <Btn variant="primary">Create workflow</Btn>
-            </Link>
+            {canCreate ? (
+              <Link to="/payflow/workflows/new">
+                <Btn variant="primary">Create workflow</Btn>
+              </Link>
+            ) : null}
           </div>
         }
       />
