@@ -23,26 +23,21 @@ import { PayFlowImportsPage } from "./pages/payflow/ImportsPage";
 import { PayFlowPortfolioDetailPage } from "./pages/payflow/PortfolioDetailPage";
 import { PayFlowCaseDetailPage } from "./pages/payflow/CaseDetailPage";
 import { PayFlowCasesPage } from "./pages/payflow/CasesPage";
-import { PayFlowCommDetailPage } from "./pages/payflow/CommDetailPage";
-import { PayFlowCommsPage } from "./pages/payflow/CommsPage";
 import { PayFlowDashboardPage } from "./pages/payflow/DashboardPage";
 import { InsightIqPlaceholderPage } from "./pages/payflow/InsightIqPlaceholder";
 import { PayFlowIntegrationDetailPage } from "./pages/payflow/IntegrationDetailPage";
 import { PayFlowIntegrationsPage } from "./pages/payflow/IntegrationsPage";
 import { PayFlowLayout } from "./pages/payflow/PayFlowLayout";
 import { PayFlowProfilePage } from "./pages/payflow/ProfilePage";
-import { PayFlowReviewDetailPage } from "./pages/payflow/ReviewDetailPage";
-import { PayFlowReviewsPage } from "./pages/payflow/ReviewsPage";
 import { PayFlowRuleDetailPage } from "./pages/payflow/RuleDetailPage";
 import { PayFlowRuleNewPage } from "./pages/payflow/RuleNewPage";
 import { PayFlowRulesPage } from "./pages/payflow/RulesPage";
 import { PayFlowUserDetailPage } from "./pages/payflow/UserDetailPage";
 import { PayFlowUsersPage } from "./pages/payflow/UsersPage";
-import { PayFlowWorkflowDetailPage } from "./pages/payflow/WorkflowDetailPage";
-import { PayFlowWorkflowNewPage } from "./pages/payflow/WorkflowNewPage";
-import { PayFlowWorkflowsPage } from "./pages/payflow/WorkflowsPage";
 import { NoAccessPage, ProductLauncherPage } from "./pages/ProductLauncherPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
+// Human Review / Workflows / Communications UI parked for redesign:
+// see src/_design_backup/payflow-ai-ops/
 
 function HomeRedirect() {
   const { loading, user, nextStep, products } = useAuth();
@@ -88,16 +83,9 @@ export default function App() {
         <Route path="cases/:accountId" element={<PayFlowCaseDetailPage />} />
         <Route path="imports" element={<PayFlowImportsPage />} />
         <Route path="imports/:importId" element={<PayFlowImportDetailPage />} />
-        <Route path="review" element={<PayFlowReviewsPage />} />
-        <Route path="review/:reviewId" element={<PayFlowReviewDetailPage />} />
         <Route path="rules" element={<PayFlowRulesPage />} />
         <Route path="rules/new" element={<PayFlowRuleNewPage />} />
         <Route path="rules/:ruleId" element={<PayFlowRuleDetailPage />} />
-        <Route path="workflows" element={<PayFlowWorkflowsPage />} />
-        <Route path="workflows/new" element={<PayFlowWorkflowNewPage />} />
-        <Route path="workflows/:strategyId" element={<PayFlowWorkflowDetailPage />} />
-        <Route path="comms" element={<PayFlowCommsPage />} />
-        <Route path="comms/:communicationId" element={<PayFlowCommDetailPage />} />
         <Route path="system-mapping" element={<PayFlowIntegrationsPage />} />
         <Route path="integrations" element={<PayFlowIntegrationsPage />} />
         <Route path="integrations/:integrationId" element={<PayFlowIntegrationDetailPage />} />

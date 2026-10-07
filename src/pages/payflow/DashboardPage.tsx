@@ -349,12 +349,11 @@ export function PayFlowDashboardPage() {
                       {c.detail}
                     </span>
                   </div>
-                  <Link
-                    to={`/payflow/review?client=${encodeURIComponent(c.name)}`}
+                  <span
                     className={`shrink-0 rounded-full border px-2.5 py-[3px] text-[11px] font-medium ${badgeTone[c.tone] || badgeTone.tan}`}
                   >
                     {c.badge}
-                  </Link>
+                  </span>
                 </li>
               ))}
             </ul>

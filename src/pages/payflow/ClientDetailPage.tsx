@@ -25,10 +25,7 @@ import {
 } from "../../components/payflow/client-config-sections";
 import {
   ClientAccountsTab,
-  ClientCommunicationsTab,
-  ClientReviewsTab,
   ClientRulesTab,
-  ClientWorkflowsTab,
 } from "../../components/payflow/client-detail-tabs";
 import { PortfolioSection } from "../../components/payflow/portfolio-section";
 import {
@@ -46,14 +43,12 @@ import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { cn } from "../../lib/utils";
 import type { PayflowClientDetail, PayflowPermissionGroup, PayflowUser } from "../../types";
 
+// Workflows / Communications / Human Reviews tabs parked — see src/_design_backup/payflow-ai-ops
 const MAIN_TABS = [
   "Overview",
   "Sub-Clients / Portfolios",
   "Accounts",
-  "Workflows",
-  "Communications",
   "Rules",
-  "Human Reviews",
   "Configuration",
 ] as const;
 
@@ -319,12 +314,11 @@ export function PayFlowClientDetailPage() {
               <PrimaryCell title="—" subtitle="Change Since Previous File" />
             </div>
           </Panel>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <KpiCard label="Customer Accounts" value="0" />
             <KpiCard label="Active Cases" value="0" />
             <KpiCard label="Outstanding" value="—" />
             <KpiCard label="Recovered" value="—" />
-            <KpiCard label="Human Reviews" value="0" />
           </div>
           <div className="grid gap-4 lg:grid-cols-2">
             <Panel title="Collection Summary">
@@ -335,8 +329,10 @@ export function PayFlowClientDetailPage() {
                 <li className="flex justify-between"><span className="text-muted-foreground">Recovery rate</span><span>—</span></li>
               </ul>
             </Panel>
-            <Panel title="Communication Performance" description="Last 30 days, this client only.">
-              <p className="text-[13px] text-muted-foreground">No communication activity yet.</p>
+            <Panel title="File intake">
+              <p className="text-[13px] text-muted-foreground">
+                Performance panels for communications and human review will return after redesign.
+              </p>
             </Panel>
           </div>
         </div>
@@ -359,20 +355,8 @@ export function PayFlowClientDetailPage() {
         <ClientAccountsTab clientId={detail.id} clientName={detail.name} />
       )}
 
-      {tab === "Workflows" && (
-        <ClientWorkflowsTab clientId={detail.id} clientName={detail.name} />
-      )}
-
-      {tab === "Communications" && (
-        <ClientCommunicationsTab clientId={detail.id} clientName={detail.name} />
-      )}
-
       {tab === "Rules" && (
         <ClientRulesTab clientId={detail.id} clientName={detail.name} />
-      )}
-
-      {tab === "Human Reviews" && (
-        <ClientReviewsTab clientId={detail.id} clientName={detail.name} />
       )}
 
       {tab === "Configuration" && (

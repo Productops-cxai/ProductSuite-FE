@@ -199,29 +199,24 @@ export function PayFlowCaseDetailPage() {
             description={account.current_workflow || "No workflow assigned"}
           >
             <p className="text-[13px] text-muted-foreground">
-              Workflow stage and strategy map will appear with Strategies / Workflows.
+              Strategies / Workflows screens are temporarily parked for redesign.
             </p>
           </Panel>
 
           <Panel title="Communications">
             <p className="text-[13px] text-muted-foreground">
-              Customer communications for this case will appear with the Communications module.
+              Communications screens are temporarily parked for redesign.
             </p>
           </Panel>
         </div>
 
         <div className="space-y-5">
           <Panel title="Human Review">
-            {account.human_review ? (
-              <p className="text-[13px] text-muted-foreground">
-                This case is flagged for human review. Review queue details arrive with the Human
-                Review module.
-              </p>
-            ) : (
-              <p className="text-[13px] text-muted-foreground">
-                No human review items are open for this case.
-              </p>
-            )}
+            <p className="text-[13px] text-muted-foreground">
+              {account.human_review
+                ? "This case is flagged for human review. The review queue UI is parked for redesign."
+                : "No human review items are open for this case."}
+            </p>
           </Panel>
 
           <Panel title="Activity Timeline">

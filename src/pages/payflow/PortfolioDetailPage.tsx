@@ -44,21 +44,6 @@ function portfolioStatusTone(status: string): Tone {
   return "neutral";
 }
 
-function strategyStatusTone(status: string): Tone {
-  switch (status) {
-    case "AI Proposed":
-      return "ai";
-    case "Under Review":
-      return "warning";
-    case "Approved":
-      return "info";
-    case "Active":
-      return "success";
-    default:
-      return "neutral";
-  }
-}
-
 function labelFromStatus(status: string) {
   const s = status.toLowerCase();
   if (s === "onboarding") return "Onboarding";
@@ -273,44 +258,13 @@ export function PayFlowPortfolioDetailPage() {
         </Panel>
 
         <Panel
-          title="Strategies / Workflows for this portfolio"
-          description="Portfolios may run different strategies from their parent client."
-          action={
-            <Link to="/payflow/workflows">
-              <Btn>All strategies</Btn>
-            </Link>
-          }
+          title="Strategies / Workflows"
+          description="Workflow UI is temporarily parked for redesign. Backend data is unchanged."
         >
-          {(detail.strategies || []).length === 0 ? (
-            <EmptyState
-              title="No strategy applied yet"
-              description="PayFlow proposes a strategy once enough portfolio, payment and engagement context is available."
-            />
-          ) : (
-            <ul className="space-y-2">
-              {detail.strategies.map((s) => (
-                <li key={s.id}>
-                  <Link
-                    to={`/payflow/workflows/${s.id}`}
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/80 bg-card px-4 py-3 transition-colors hover:border-primary/40"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-[13px] font-semibold text-foreground">{s.name}</p>
-                      <p className="mt-0.5 text-[11.5px] text-muted-foreground">
-                        {s.origin || "Strategy"} · v{s.version ?? 1}
-                        {s.updated_at
-                          ? ` · updated ${new Date(s.updated_at).toLocaleDateString()}`
-                          : ""}
-                      </p>
-                    </div>
-                    <StatusPill tone={strategyStatusTone(s.status)} dot>
-                      {s.status}
-                    </StatusPill>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
+          <EmptyState
+            title="Workflow screens unavailable"
+            description="This area will return after the Strategies / Workflows frontend redesign."
+          />
         </Panel>
       </div>
 
