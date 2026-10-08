@@ -7,7 +7,6 @@ import {
   deletePayflowClient,
   getPayflowClient,
   getPayflowClientMappingCatalog,
-  listPayflowPermissions,
   listPayflowUsers,
   updatePayflowClient,
 } from "../../api/payflow";
@@ -41,7 +40,7 @@ import {
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { cn } from "../../lib/utils";
-import type { PayflowClientDetail, PayflowPermissionGroup, PayflowUser } from "../../types";
+import type { PayflowClientDetail, PayflowUser } from "../../types";
 
 // Workflows / Communications / Human Reviews tabs parked — see src/_design_backup/payflow-ai-ops
 const MAIN_TABS = [
@@ -96,7 +95,6 @@ export function PayFlowClientDetailPage() {
   const [detail, setDetail] = useState<PayflowClientDetail | null>(null);
   const [draft, setDraft] = useState<ClientDraft>(emptyDraft());
   const [supervisors, setSupervisors] = useState<PayflowUser[]>([]);
-  const [permissionGroups, setPermissionGroups] = useState<PayflowPermissionGroup[]>([]);
   const [governanceRules, setGovernanceRules] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -113,16 +111,14 @@ export function PayFlowClientDetailPage() {
     setLoading(true);
     setError("");
     try {
-      const [client, users, catalog, perms] = await Promise.all([
+      const [client, users, catalog] = await Promise.all([
         getPayflowClient(id),
         listPayflowUsers({ role_code: "supervisor" }),
         getPayflowClientMappingCatalog(),
-        listPayflowPermissions().catch(() => ({ groups: [] as PayflowPermissionGroup[] })),
       ]);
       setDetail(client);
       setDraft(draftFromDetail(client));
       setSupervisors(users.users || []);
-      setPermissionGroups(perms.groups || []);
       setGovernanceRules(catalog.governance_rules || []);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Failed to load client");
@@ -241,7 +237,6 @@ export function PayFlowClientDetailPage() {
     patch,
     patchConfig,
     supervisorUsers: supervisors,
-    permissionGroups,
     governanceRules,
     readOnly,
     clientId: detail.id,

@@ -6,7 +6,6 @@ import {
   createPayflowClient,
   getPayflowClient,
   getPayflowClientMappingCatalog,
-  listPayflowPermissions,
   listPayflowUsers,
   updatePayflowClient,
 } from "../../api/payflow";
@@ -26,7 +25,7 @@ import {
 import { Btn, PageHeader, Panel, StatusPill, type Tone } from "../../components/payflow/lovable/payflow-ui";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { cn } from "../../lib/utils";
-import type { PayflowPermissionGroup, PayflowUser } from "../../types";
+import type { PayflowUser } from "../../types";
 
 const steps = [
   "Client Profile",
@@ -54,7 +53,6 @@ export function PayFlowClientNewPage() {
   const [draft, setDraft] = useState<ClientDraft>(emptyDraft());
   const [clientId, setClientId] = useState<number | null>(null);
   const [supervisors, setSupervisors] = useState<PayflowUser[]>([]);
-  const [permissionGroups, setPermissionGroups] = useState<PayflowPermissionGroup[]>([]);
   const [governanceRules, setGovernanceRules] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -64,12 +62,10 @@ export function PayFlowClientNewPage() {
     void Promise.all([
       listPayflowUsers({ role_code: "supervisor" }),
       getPayflowClientMappingCatalog(),
-      listPayflowPermissions(),
     ])
-      .then(([users, catalog, perms]) => {
+      .then(([users, catalog]) => {
         setSupervisors(users.users || []);
         setGovernanceRules(catalog.governance_rules || []);
-        setPermissionGroups(perms.groups || []);
       })
       .catch(() => {
         /* non-blocking for initial render */
@@ -210,7 +206,6 @@ export function PayFlowClientNewPage() {
     patch,
     patchConfig,
     supervisorUsers: supervisors,
-    permissionGroups,
     governanceRules,
     clientId,
     onClientUpdated: (updated: { logo_url?: string | null }) => {

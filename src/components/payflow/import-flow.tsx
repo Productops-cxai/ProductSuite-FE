@@ -402,17 +402,13 @@ const formatInfo: Record<ImportKind, { required: string[]; note: string }> = {
   },
   account: {
     required: [
-      "client_code",
-      "sub_client_code",
-      "account_id",
-      "product_code",
-      "customer first/last name",
-      "country_code",
-      "currency_code",
+      "account_id (or account_number)",
+      "customer name (or first_name / last_name)",
       "outstanding_balance",
-      "email",
+      "email (or email_address)",
+      "client_code + sub_client_code — or CRM client_number",
     ],
-    note: "Daily CRM account file. Clients and sub-clients must already exist. Optional: crm_case_id, debtor_id, client_reference_number, date_listed, last email/SMS/contact dates, provincial_hold, hold_days, email_consent, source_updated_at, segmentation fields (persona/age).",
+    note: "Daily CRM account file (CSV or XLSX), including Debtor Summary dumps. Native CRM columns (account_number, first_name, email_address, client_number, …) are mapped automatically. Clients must already exist in PayFlow (matched by client_code or CRM client_number). Defaults: country CA, currency CAD, product P4 when missing.",
   },
 };
 
@@ -526,14 +522,9 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
   const onFile = (f: File | null) => {
     setFileError(null);
     setSubmitError(null);
-    if (f && isClient && !/\.(csv|xlsx)$/i.test(f.name)) {
+    if (f && !/\.(csv|xlsx)$/i.test(f.name)) {
       setFile(null);
       setFileError("This file type isn't supported. Please upload a CSV or XLSX file.");
-      return;
-    }
-    if (f && !isClient && !/\.xlsx$/i.test(f.name)) {
-      setFile(null);
-      setFileError("Please upload an XLSX file that matches the daily CRM template.");
       return;
     }
     setFile(f);
@@ -610,12 +601,17 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
             <div className="space-y-5">
               <PreviousImportPanel />
               <Panel title="Current Upload">
-                <FileDropzone file={file} onFile={onFile} error={fileError} accept=".xlsx" />
+                <FileDropzone
+                  file={file}
+                  onFile={onFile}
+                  error={fileError}
+                  accept={acceptedTypes}
+                />
               </Panel>
             </div>
           ) : (
             <Panel title="Upload File" description="Select the CRM client file you received.">
-              <FileDropzone file={file} onFile={onFile} error={fileError} />
+              <FileDropzone file={file} onFile={onFile} error={fileError} accept={acceptedTypes} />
             </Panel>
           )}
           <Panel title="Required Data / File Format">
@@ -628,7 +624,7 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
               ))}
             </ul>
             <p className="mt-3 text-[11.5px] text-muted-foreground">
-              {isClient ? "CSV or XLSX" : "XLSX"} · first row contains column headers.
+              CSV or XLSX · first row contains column headers.
             </p>
             {!isClient ? (
               <div className="mt-4">

@@ -27,7 +27,6 @@ import {
   TextInput,
   Tr,
 } from "../../components/payflow-ui";
-import { Modal } from "../../components/ui/Modal";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import type {
   PayflowPermissionGroup,
@@ -259,13 +258,26 @@ function AddUserForm({
   const [status, setStatus] = useState("Active");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [groups, setGroups] = useState<PayflowPermissionGroup[]>([]);
+
+  useEffect(() => {
+    listPayflowPermissions()
+      .then((res) => setGroups(res.groups || []))
+      .catch(() => setGroups([]));
+  }, []);
 
   const selectedRole = roles.find((r) => r.code === roleCode);
   const isPlatform = selectedRole?.scope === "platform_wide";
   const roleOptions = roles.map((r) => ({
     value: r.code,
-    label: `${r.name} (${r.scope === "platform_wide" ? "Platform-wide" : "Client-scoped"})`,
+    label: r.name,
   }));
+
+  const nameByCode = new Map(
+    groups.flatMap((g) => g.permissions.map((p) => [p.code, p.name] as const)),
+  );
+  const permissionLabels =
+    selectedRole?.permission_codes.map((code) => nameByCode.get(code) || code) || [];
 
   const valid =
     fullName.trim().length > 1 && /.+@.+\..+/.test(email.trim()) && Boolean(roleCode);
@@ -273,7 +285,7 @@ function AddUserForm({
   return (
     <Panel
       title="Add User"
-      description="Assign a role here. Client assignment happens when you create or edit a client."
+      description="The role decides what this user may do. Client assignment is managed in Client Management."
     >
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Full Name">
@@ -295,26 +307,27 @@ function AddUserForm({
       </div>
 
       {selectedRole ? (
-        <p className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3 text-[12px] text-slate-500 dark:border-slate-700 dark:bg-slate-800">
-          {isPlatform
-            ? `${selectedRole.name} is platform-wide and works across every client. No client assignment is required.`
-            : `${selectedRole.name} is client-scoped. Assign this user to clients from Client create/edit. Permissions come from the role (${selectedRole.permission_count} selected) and are managed under Roles.`}
-        </p>
+        <div className="mt-4 rounded-lg border border-border bg-surface px-3.5 py-3">
+          <p className="text-[12px] font-medium text-foreground">
+            {selectedRole.name} permissions (read-only)
+          </p>
+          {isPlatform ? (
+            <p className="mt-1 text-[12px] text-muted-foreground">
+              Platform-wide — every permission across all clients.
+            </p>
+          ) : (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {permissionLabels.length === 0 ? (
+                <p className="text-[12px] text-muted-foreground">No permissions on this role yet.</p>
+              ) : (
+                permissionLabels.map((label) => <StatusPill key={label}>{label}</StatusPill>)
+              )}
+            </div>
+          )}
+        </div>
       ) : null}
 
       {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
-
-      {!valid && !saving ? (
-        <p className="mt-3 text-[12px] text-amber-700 dark:text-amber-400">
-          {!fullName.trim() || fullName.trim().length < 2
-            ? "Enter a full name to continue."
-            : !/.+@.+\..+/.test(email.trim())
-              ? "Enter a valid email address."
-              : !roleCode
-                ? "Select a role."
-                : null}
-        </p>
-      ) : null}
 
       <div className="mt-4 flex gap-2">
         <Btn
@@ -367,19 +380,42 @@ function RolesPanel({
       .catch(() => setGroups([]));
   }, []);
 
-  const editingRole = editingId != null ? roles.find((r) => r.id === editingId) || null : null;
-
   return (
     <Panel
       title="Roles"
       description="Each role is a named permission set. Roles appear in the role dropdown when assigning users."
       action={
-        <Btn variant="secondary" onClick={() => setAdding(true)}>
-          + Add Role
+        <Btn variant={adding ? "ghost" : "secondary"} onClick={() => setAdding((v) => !v)}>
+          {adding ? "Close" : "+ Add Role"}
         </Btn>
       }
     >
       {error ? <p className="mb-3 text-sm text-red-600">{error}</p> : null}
+
+      {adding && (
+        <div className="mb-4">
+          <AddRoleForm
+            groups={groups}
+            existingNames={roles.map((r) => r.name)}
+            busy={busy}
+            onCancel={() => setAdding(false)}
+            onCreate={(input) => {
+              setBusy(true);
+              setError(null);
+              createPayflowRole(input)
+                .then((res) => {
+                  onRolesChanged(res.roles);
+                  setAdding(false);
+                  onChanged();
+                })
+                .catch((err: unknown) => {
+                  setError(err instanceof Error ? err.message : "Failed to create role");
+                })
+                .finally(() => setBusy(false));
+            }}
+          />
+        </div>
+      )}
 
       <DataTable head={["Role", "Scope", "Permissions", "Users", ""]} minWidth={720}>
         {roles.map((r) => (
@@ -398,8 +434,15 @@ function RolesPanel({
             <Td className="text-slate-500">{r.user_count}</Td>
             <Td>
               <div className="flex justify-end gap-1.5">
-                <Btn variant="ghost" onClick={() => setEditingId(r.id)}>
-                  {r.is_built_in ? "View access" : "Edit access"}
+                <Btn
+                  variant="ghost"
+                  onClick={() => setEditingId(editingId === r.id ? null : r.id)}
+                >
+                  {editingId === r.id
+                    ? "Hide"
+                    : r.scope === "platform_wide" || r.is_built_in
+                      ? "View access"
+                      : "Edit access"}
                 </Btn>
                 <Btn
                   variant="danger"
@@ -437,142 +480,93 @@ function RolesPanel({
         ))}
       </DataTable>
 
-      <AddRoleModal
-        open={adding}
-        groups={groups}
-        existingNames={roles.map((r) => r.name)}
-        busy={busy}
-        onClose={() => setAdding(false)}
-        onCreate={(input) => {
-          setBusy(true);
-          setError(null);
-          createPayflowRole(input)
-            .then((res) => {
-              onRolesChanged(res.roles);
-              setAdding(false);
-              onChanged();
-            })
-            .catch((err: unknown) => {
-              setError(err instanceof Error ? err.message : "Failed to create role");
-            })
-            .finally(() => setBusy(false));
-        }}
-      />
-
-      <RolePermissionsModal
-        open={editingRole != null}
-        role={editingRole}
-        groups={groups}
-        onClose={() => setEditingId(null)}
-        onSaved={(next) => {
-          onRolesChanged(next);
-          onChanged();
-          setEditingId(null);
-        }}
-        onError={setError}
-      />
+      {editingId != null && (
+        <RolePermissionsInline
+          roleId={editingId}
+          roles={roles}
+          groups={groups}
+          onRolesChanged={(next) => {
+            onRolesChanged(next);
+            onChanged();
+          }}
+          onError={setError}
+        />
+      )}
     </Panel>
   );
 }
 
-function RolePermissionsModal({
-  open,
-  role,
+function RolePermissionsInline({
+  roleId,
+  roles,
   groups,
-  onClose,
-  onSaved,
+  onRolesChanged,
   onError,
 }: {
-  open: boolean;
-  role: PayflowRoleListItem | null;
+  roleId: number;
+  roles: PayflowRoleListItem[];
   groups: PayflowPermissionGroup[];
-  onClose: () => void;
-  onSaved: (roles: PayflowRoleListItem[]) => void;
+  onRolesChanged: (roles: PayflowRoleListItem[]) => void;
   onError: (msg: string | null) => void;
 }) {
-  const [selected, setSelected] = useState<string[]>(role?.permission_codes || []);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    setSelected(role?.permission_codes || []);
-  }, [role?.id, role?.permission_codes]);
-
+  const role = roles.find((r) => r.id === roleId);
   if (!role) return null;
 
   const editable = !role.is_built_in && role.scope === "client_scoped";
   const allCodes = groups.flatMap((g) => g.permissions.map((p) => p.code));
-  const description =
-    role.scope === "platform_wide"
-      ? "Platform-wide roles always hold every permission across all clients."
-      : editable
-        ? "Choose view, add, edit, delete, and import actions for this role. Client data still requires assigning the user to a client."
-        : "Built-in role — its default permission set cannot be changed.";
+  const selected = role.scope === "platform_wide" ? allCodes : role.permission_codes || [];
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title={`${role.name} — permissions`}
-      description={description}
-      size="xl"
-      footer={
-        editable ? (
-          <div className="mt-3 flex shrink-0 justify-end gap-2.5">
-            <Btn variant="ghost" onClick={onClose}>
-              Cancel
-            </Btn>
-            <Btn
-              variant="primary"
-              disabled={saving || selected.length === 0}
-              onClick={() => {
-                setSaving(true);
-                onError(null);
-                updatePayflowRole(role.id, { permission_codes: selected })
-                  .then((res) => onSaved(res.roles))
-                  .catch((err: unknown) => {
-                    onError(err instanceof Error ? err.message : "Failed to update role");
-                  })
-                  .finally(() => setSaving(false));
-              }}
-            >
-              {saving ? "Saving…" : "Save access"}
-            </Btn>
-          </div>
-        ) : (
-          <div className="mt-3 flex shrink-0 justify-end">
-            <Btn variant="ghost" onClick={onClose}>
-              Close
-            </Btn>
-          </div>
-        )
-      }
-    >
+    <div className="mt-4 rounded-lg border border-border bg-surface px-3.5 py-3">
+      <p className="text-[13px] font-semibold text-foreground">{role.name} — permissions</p>
+      <p className="mb-3 text-[11px] text-muted-foreground">
+        {role.scope === "platform_wide"
+          ? "A platform-wide role holds every permission across all clients."
+          : editable
+            ? "Users with this role inherit these permissions inside their assigned clients."
+            : "Built-in role — its default permission set cannot be changed."}
+      </p>
+      {editable && role.user_count > 0 && (
+        <p className="mb-3 rounded-lg border border-warning/40 bg-warning/8 px-3 py-2 text-[12px] text-foreground">
+          Changes apply immediately to {role.user_count} user
+          {role.user_count === 1 ? "" : "s"} with this role.
+        </p>
+      )}
       <PermissionPicker
         groups={groups}
-        selected={role.scope === "platform_wide" ? allCodes : selected}
+        selected={selected}
         disabled={!editable}
-        onToggle={(code) =>
-          setSelected((prev) =>
-            prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code],
-          )
-        }
+        onToggle={(code) => {
+          if (!editable) return;
+          const next = selected.includes(code)
+            ? selected.filter((c) => c !== code)
+            : [...selected, code];
+          if (next.length === 0) {
+            onError("Select at least one permission");
+            return;
+          }
+          onError(null);
+          updatePayflowRole(role.id, { permission_codes: next })
+            .then((res) => onRolesChanged(res.roles))
+            .catch((err: unknown) => {
+              onError(err instanceof Error ? err.message : "Failed to update role");
+            });
+        }}
       />
-    </Modal>
+    </div>
   );
 }
 
-function AddRoleModal({
-  open,
+function AddRoleForm({
   groups,
   existingNames,
-  onClose,
+  onCancel,
   onCreate,
   busy,
 }: {
-  open: boolean;
   groups: PayflowPermissionGroup[];
   existingNames: string[];
-  onClose: () => void;
+  onCancel: () => void;
   onCreate: (input: {
     name: string;
     scope: string;
@@ -585,16 +579,6 @@ function AddRoleModal({
   const [scope, setScope] = useState("Client-scoped");
   const [description, setDescription] = useState("");
   const [permissions, setPermissions] = useState<string[]>([...SUPERVISOR_DEFAULT_CODES]);
-  const [permOpen, setPermOpen] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    setName("");
-    setScope("Client-scoped");
-    setDescription("");
-    setPermissions([...SUPERVISOR_DEFAULT_CODES]);
-    setPermOpen(false);
-  }, [open]);
 
   const duplicate = existingNames.some((n) => n.toLowerCase() === name.trim().toLowerCase());
   const scopeApi = scope === "Platform-wide" ? "platform_wide" : "client_scoped";
@@ -604,115 +588,72 @@ function AddRoleModal({
     (scopeApi === "platform_wide" || permissions.length > 0);
 
   return (
-    <>
-      <Modal
-        open={open}
-        onClose={() => {
-          if (permOpen) return;
-          onClose();
-        }}
-        title="Create Role"
-        description="Name the role and choose scope. Permissions open in a separate popup."
-        size="wide"
-        footer={
-          <div className="mt-3 flex shrink-0 justify-end gap-2.5">
-            <Btn
-              variant="ghost"
-              onClick={() => {
-                if (permOpen) return;
-                onClose();
-              }}
-            >
-              Cancel
-            </Btn>
-            <Btn
-              variant="primary"
-              disabled={!valid || busy || permOpen}
-              onClick={() =>
-                onCreate({
-                  name: name.trim(),
-                  scope: scopeApi,
-                  description: description.trim() || undefined,
-                  permission_codes: scopeApi === "platform_wide" ? [] : permissions,
-                })
-              }
-            >
-              {busy ? "Creating…" : "Create Role"}
-            </Btn>
-          </div>
-        }
-      >
-        <div className="grid gap-4">
-          <Field label="Role Name">
-            <TextInput value={name} onChange={setName} placeholder="Collections Team Lead" />
-          </Field>
-          <Field label="Scope">
-            <SelectInput
-              value={scope}
-              options={["Client-scoped", "Platform-wide"]}
-              onChange={setScope}
-            />
-          </Field>
-          <Field label="Description">
-            <TextInput
-              value={description}
-              onChange={setDescription}
-              placeholder="What this role is for"
-            />
-          </Field>
+    <div className="rounded-lg border border-border bg-surface px-3.5 py-3.5">
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Field label="Role Name">
+          <TextInput value={name} onChange={setName} placeholder="Collections Team Lead" />
+        </Field>
+        <Field label="Scope">
+          <SelectInput
+            value={scope}
+            options={["Client-scoped", "Platform-wide"]}
+            onChange={setScope}
+          />
+        </Field>
+        <Field label="Description">
+          <TextInput
+            value={description}
+            onChange={setDescription}
+            placeholder="What this role is for"
+          />
+        </Field>
+      </div>
 
-          {duplicate ? (
-            <p className="text-[11px] text-red-600">A role with this name already exists.</p>
-          ) : null}
+      {duplicate ? (
+        <p className="mt-2 text-[11px] text-destructive">A role with this name already exists.</p>
+      ) : null}
 
-          {scopeApi === "platform_wide" ? (
-            <p className="rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3 text-[12px] text-slate-500 dark:border-slate-600 dark:bg-slate-900">
-              Platform-wide = full access (every permission, every client). No client assignment
-              needed.
-            </p>
-          ) : (
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3 dark:border-slate-600 dark:bg-slate-900">
-              <div>
-                <p className="text-[12px] font-medium text-slate-800 dark:text-slate-200">
-                  Permissions
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  {permissions.length} selected · open popup to choose
-                </p>
-              </div>
-              <Btn variant="secondary" onClick={() => setPermOpen(true)}>
-                Choose permissions
-              </Btn>
-            </div>
-          )}
+      {scopeApi === "platform_wide" ? (
+        <p className="mt-4 rounded-lg border border-border bg-card px-3.5 py-3 text-[12px] text-muted-foreground">
+          A platform-wide role works across every client and holds every permission. No client
+          assignment is required.
+        </p>
+      ) : (
+        <div className="mt-4">
+          <p className="mb-1.5 text-[12px] font-medium text-foreground">
+            Permissions — what this role may do inside assigned clients
+          </p>
+          <PermissionPicker
+            groups={groups}
+            selected={permissions}
+            onToggle={(code) =>
+              setPermissions((prev) =>
+                prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code],
+              )
+            }
+          />
         </div>
-      </Modal>
+      )}
 
-      <Modal
-        open={open && permOpen}
-        onClose={() => setPermOpen(false)}
-        title="Role permissions"
-        description="Which pages and actions this role may use. Client data still requires assigning the user to a client."
-        size="xl"
-        overlayClassName="z-[60]"
-        footer={
-          <div className="mt-3 flex shrink-0 justify-end gap-2.5">
-            <Btn variant="primary" onClick={() => setPermOpen(false)}>
-              Done
-            </Btn>
-          </div>
-        }
-      >
-        <PermissionPicker
-          groups={groups}
-          selected={permissions}
-          onToggle={(code) =>
-            setPermissions((prev) =>
-              prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code],
-            )
+      <div className="mt-4 flex gap-2">
+        <Btn
+          variant="primary"
+          disabled={!valid || busy}
+          onClick={() =>
+            onCreate({
+              name: name.trim(),
+              scope: scopeApi,
+              description: description.trim() || undefined,
+              permission_codes: scopeApi === "platform_wide" ? [] : permissions,
+            })
           }
-        />
-      </Modal>
-    </>
+        >
+          {busy ? "Creating…" : "Create Role"}
+        </Btn>
+        <Btn variant="ghost" onClick={onCancel}>
+          Cancel
+        </Btn>
+      </div>
+    </div>
   );
 }

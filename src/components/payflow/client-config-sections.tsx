@@ -13,7 +13,6 @@ import {
   Td,
   type Tone,
 } from "./lovable/payflow-ui";
-import { PermissionPicker } from "./PermissionPicker";
 import { resolveAvatarUrl } from "../ui/UserAvatar";
 import { removePayflowClientLogo, uploadPayflowClientLogo } from "../../api/payflow";
 import { ApiError } from "../../api/client";
@@ -23,7 +22,7 @@ import {
   fetchStates,
   getCountryMeta,
 } from "../../lib/geo-api";
-import type { PayflowClientMapping, PayflowPermissionGroup, PayflowUser } from "../../types";
+import type { PayflowClientMapping, PayflowUser } from "../../types";
 
 export type ClientTypeLabel = "First Party" | "Third Party";
 export type AiModeLabel = "Autopilot" | "Supervised AI";
@@ -86,7 +85,6 @@ export interface SectionProps {
   patch: (p: Partial<ClientDraft>) => void;
   patchConfig: (p: Partial<ClientDraftConfig>) => void;
   supervisorUsers?: PayflowUser[];
-  permissionGroups?: PayflowPermissionGroup[];
   payflowFields?: string[];
   governanceRules?: string[];
   readOnly?: boolean;
@@ -1093,13 +1091,12 @@ export function AiGovernanceSection({
   );
 }
 
-/* ---------------- Supervisors only (permissions read-only) ---------------- */
+/* ---------------- Assigned users (role permissions managed under Users) ---------------- */
 
 export function SupervisorSection({
   draft,
   patch,
   supervisorUsers = [],
-  permissionGroups = [],
   readOnly,
 }: SectionProps) {
   const toggle = (userId: string) =>
@@ -1109,104 +1106,41 @@ export function SupervisorSection({
         : [...draft.supervisorUserIds, userId],
     });
 
-  const selectedUsers = supervisorUsers.filter((u) =>
-    draft.supervisorUserIds.includes(String(u.id)),
-  );
-
-  const allCodes = permissionGroups.flatMap((g) => g.permissions.map((p) => p.code));
-
-  function codesForUser(user: PayflowUser) {
-    const fullAccess =
-      (user.role_permission_names || []).includes("Full Access") ||
-      user.role_scope === "platform_wide";
-    return fullAccess ? allCodes : user.role_permission_codes || [];
-  }
-
   return (
-    <div className="grid gap-5 lg:grid-cols-2">
-      <div>
-        <p className="text-[13px] font-semibold text-foreground">Assigned Supervisors</p>
-        <p className="mb-2 text-[11px] text-muted-foreground">
-          Assignment decides where a supervisor works. Supervisors only see assigned clients.
-          You can assign more than one.
-        </p>
-        <div className="divide-y divide-border rounded-lg border border-border bg-card">
-          {supervisorUsers.length === 0 && (
-            <p className="px-3 py-3 text-[13px] text-muted-foreground">
-              No supervisor users available. Create a supervisor under Users &amp; Permissions first.
-            </p>
-          )}
-          {supervisorUsers.map((user) => {
-            const selected = draft.supervisorUserIds.includes(String(user.id));
-            return (
-              <label
-                key={user.id}
-                className="flex cursor-pointer items-center gap-2.5 px-3 py-2.5"
-              >
-                <input
-                  type="checkbox"
-                  checked={selected}
-                  onChange={() => !readOnly && toggle(String(user.id))}
-                  disabled={readOnly}
-                  className="size-3.5 accent-[var(--color-primary)]"
-                />
-                <span className="text-[13px] text-foreground">{user.full_name}</span>
-                <span className="ml-auto text-[11px] text-muted-foreground">
-                  {user.role_name ? `${user.role_name} · ` : ""}
-                  {user.status_label || user.status}
-                </span>
-              </label>
-            );
-          })}
-        </div>
-      </div>
-
-      <div>
-        <p className="text-[13px] font-semibold text-foreground">Permissions</p>
-        <p className="mb-2 text-[11px] text-muted-foreground">
-          {selectedUsers.length === 0
-            ? "Select one or more supervisors to see each person’s role permissions."
-            : selectedUsers.length === 1
-              ? "Read-only view of this supervisor’s role permissions. Manage these under Users & Permissions."
-              : `${selectedUsers.length} supervisors selected — each person’s permissions are shown separately below.`}
-        </p>
-
-        {permissionGroups.length === 0 ? (
-          <p className="rounded-lg border border-border bg-card px-3 py-3 text-[13px] text-muted-foreground">
-            Permission catalog is unavailable.
+    <div>
+      <p className="text-[13px] font-semibold text-foreground">Assigned Users</p>
+      <p className="mb-2 text-[11px] text-muted-foreground">
+        Assignment decides where a user works. What they may do comes from their role in Users
+        &amp; Permissions.
+      </p>
+      <div className="divide-y divide-border rounded-lg border border-border bg-card">
+        {supervisorUsers.length === 0 && (
+          <p className="px-3 py-3 text-[13px] text-muted-foreground">
+            No supervisor users available. Create a user under Users &amp; Permissions first.
           </p>
-        ) : selectedUsers.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-border bg-card px-3 py-6 text-center text-[12.5px] text-muted-foreground">
-            No supervisor selected yet.
-          </p>
-        ) : (
-          <div className="space-y-3">
-            {selectedUsers.map((user) => (
-              <div
-                key={user.id}
-                className="rounded-lg border border-border bg-card p-3"
-              >
-                <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="text-[13px] font-semibold text-foreground">{user.full_name}</p>
-                    <p className="text-[11px] text-muted-foreground">
-                      {user.role_name || "Supervisor"} · view only
-                    </p>
-                  </div>
-                  <StatusPill>
-                    {(codesForUser(user).length || 0)} permissions
-                  </StatusPill>
-                </div>
-                <PermissionPicker
-                  groups={permissionGroups}
-                  selected={codesForUser(user)}
-                  disabled
-                  onToggle={() => undefined}
-                />
-              </div>
-            ))}
-          </div>
         )}
+        {supervisorUsers.map((user) => {
+          const selected = draft.supervisorUserIds.includes(String(user.id));
+          return (
+            <label
+              key={user.id}
+              className="flex cursor-pointer items-center gap-2.5 px-3 py-2.5"
+            >
+              <input
+                type="checkbox"
+                checked={selected}
+                onChange={() => !readOnly && toggle(String(user.id))}
+                disabled={readOnly}
+                className="size-3.5 accent-[var(--color-primary)]"
+              />
+              <span className="text-[13px] text-foreground">{user.full_name}</span>
+              <span className="ml-auto text-[11px] text-muted-foreground">
+                {user.role_name ? `${user.role_name} · ` : ""}
+                {user.status_label || user.status}
+              </span>
+            </label>
+          );
+        })}
       </div>
     </div>
   );
