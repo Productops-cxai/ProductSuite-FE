@@ -55,7 +55,8 @@ function labelFromStatus(status: string) {
 export function PayFlowPortfolioDetailPage() {
   const { clientId, portfolioId } = useParams();
   const navigate = useNavigate();
-  const { isOperationsAdmin } = usePayFlowAccess();
+  const { isOperationsAdmin, hasPermission } = usePayFlowAccess();
+  const canEdit = isOperationsAdmin || hasPermission("edit_client");
   const cid = Number(clientId);
   const pid = Number(portfolioId);
 
@@ -93,9 +94,9 @@ export function PayFlowPortfolioDetailPage() {
     void load();
   }, [cid, pid]);
 
-  async function save(e: FormEvent) {
-    e.preventDefault();
-    if (!detail || !isOperationsAdmin) return;
+  async function save(e?: FormEvent) {
+    e?.preventDefault();
+    if (!detail || !canEdit) return;
     setBusy(true);
     setError("");
     setInfo("");
@@ -117,8 +118,11 @@ export function PayFlowPortfolioDetailPage() {
             }
           : prev,
       );
+      setName(updated.name);
+      setCode(updated.code);
+      setStatus(labelFromStatus(updated.status));
+      setDescription(updated.description || "");
       setInfo("Changes saved.");
-      await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Failed to save portfolio");
     } finally {
@@ -127,7 +131,7 @@ export function PayFlowPortfolioDetailPage() {
   }
 
   async function onDelete() {
-    if (!detail || !isOperationsAdmin) return;
+    if (!detail || !canEdit) return;
     setBusy(true);
     setError("");
     try {
@@ -180,7 +184,7 @@ export function PayFlowPortfolioDetailPage() {
               {detail.status_label || labelFromStatus(detail.status)}
             </StatusPill>
             <StatusPill>{detail.code}</StatusPill>
-            {isOperationsAdmin ? (
+            {canEdit ? (
               <Btn variant="danger" onClick={() => setConfirmDelete(true)}>
                 Delete
               </Btn>
@@ -221,14 +225,14 @@ export function PayFlowPortfolioDetailPage() {
               <TextInput
                 value={name}
                 onChange={setName}
-                disabled={!isOperationsAdmin}
+                disabled={!canEdit}
               />
             </Field>
             <Field label="Portfolio Code / Reference">
               <TextInput
                 value={code}
                 onChange={setCode}
-                disabled={!isOperationsAdmin}
+                disabled={!canEdit}
               />
             </Field>
             <Field label="Status">
@@ -236,7 +240,7 @@ export function PayFlowPortfolioDetailPage() {
                 value={status}
                 options={[...STATUS_OPTIONS]}
                 onChange={setStatus}
-                disabled={!isOperationsAdmin}
+                disabled={!canEdit}
               />
             </Field>
             <Field label="Description">
@@ -244,12 +248,12 @@ export function PayFlowPortfolioDetailPage() {
                 value={description}
                 onChange={setDescription}
                 placeholder="Optional notes"
-                disabled={!isOperationsAdmin}
+                disabled={!canEdit}
               />
             </Field>
-            {isOperationsAdmin ? (
+            {canEdit ? (
               <div className="sm:col-span-2">
-                <Btn variant="primary" disabled={busy}>
+                <Btn variant="primary" disabled={busy} onClick={() => void save()}>
                   {busy ? "Saving…" : "Save changes"}
                 </Btn>
               </div>

@@ -67,7 +67,7 @@ export function PageHeader({
           ))}
         </nav>
       )}
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-5 pb-2 sm:flex sm:flex-wrap sm:justify-between">
+      <div className="grid grid-cols-1 items-end gap-3 pb-2 md:grid-cols-[minmax(0,1fr)_auto] md:gap-5">
         <div className="min-w-0">
           <h1 className="font-display text-[28px] leading-tight font-semibold text-foreground">
             {title}
@@ -78,7 +78,9 @@ export function PageHeader({
             </p>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-2">{actions}</div>
+        {actions ? (
+          <div className="flex flex-wrap items-center gap-2 md:justify-end">{actions}</div>
+        ) : null}
       </div>
     </div>
   );
@@ -193,7 +195,7 @@ export function KpiCard({
 const toneStyles = {
   neutral: "bg-secondary text-secondary-foreground border-border",
   success: "bg-success/15 text-success border-success/30",
-  warning: "bg-warning/20 text-warning-foreground border-warning/40",
+  warning: "bg-warning/15 text-warning-foreground border-warning/30",
   info: "bg-info/15 text-info border-info/30",
   danger: "bg-destructive/15 text-destructive border-destructive/30",
   ai: "bg-ai/15 text-ai border-ai/30",

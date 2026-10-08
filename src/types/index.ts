@@ -310,6 +310,10 @@ export interface PayflowClient {
   connection_status?: string | null;
   connection_status_label?: string | null;
   supervisors?: PayflowClientSupervisor[];
+  /** Required config labels still incomplete (excludes portfolios / activation). */
+  setup_incomplete?: string[];
+  setup_steps_remaining?: number;
+  onboarding?: PayflowOnboardingProgress;
   created_at?: string | null;
   updated_at?: string | null;
 }

@@ -20,6 +20,8 @@ import {
 } from "../../components/payflow/lovable/payflow-ui";
 import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
+import { incompleteSetupSections, isClientSettingUp } from "../../lib/client-setup";
+import { invalidateCache } from "../../lib/dedupeAsync";
 import type { PayflowClient, PayflowUser } from "../../types";
 
 function clientStatusTone(status: string): Tone {
@@ -75,12 +77,15 @@ export function PayFlowClientsPage() {
     setLoading(true);
     setError("");
     try {
+      invalidateCache("payflow:clients");
       const clientRes = await listPayflowClients({});
       setClients(clientRes.clients || []);
       if (isOperationsAdmin) {
         try {
-          const userRes = await listPayflowUsers({ role_code: "supervisor" });
-          setSupervisors(userRes.users || []);
+          const userRes = await listPayflowUsers();
+          setSupervisors(
+            (userRes.users || []).filter((u) => u.role_scope === "client_scoped"),
+          );
         } catch {
           setSupervisors([]);
         }
@@ -249,6 +254,16 @@ export function PayFlowClientsPage() {
           rows.map((c) => {
             const statusLabel = c.status_label || c.status;
             const aiLabel = c.ai_mode_label || "—";
+            const settingUp = isClientSettingUp(statusLabel);
+            const remainingSteps = settingUp
+              ? incompleteSetupSections(c.onboarding, c.setup_incomplete)
+              : [];
+            const remaining = settingUp
+              ? Math.max(
+                  typeof c.setup_steps_remaining === "number" ? c.setup_steps_remaining : 0,
+                  remainingSteps.length,
+                )
+              : 0;
             const supervisorNames =
               (c.supervisors || [])
                 .map((s) => s.short_name || s.full_name.split(" ")[0] || s.full_name)
@@ -263,6 +278,23 @@ export function PayFlowClientsPage() {
                       subtitle={`${c.industry || c.category || c.business_domain_label || "Collections"} · ${c.code}`}
                     />
                   </Link>
+                  {settingUp ? (
+                    <div className="mt-2 flex flex-col items-start gap-1.5">
+                      {remaining > 0 ? (
+                        <StatusPill tone="warning">
+                          ⚠ {remaining} step{remaining > 1 ? "s" : ""} left
+                        </StatusPill>
+                      ) : null}
+                      {canEdit ? (
+                        <Link
+                          to={`/payflow/clients/${c.id}?tab=Configuration`}
+                          className="text-[12.5px] font-semibold text-primary hover:underline"
+                        >
+                          {remaining > 0 ? "Complete setup →" : "Edit draft"}
+                        </Link>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </Td>
                 <Td className="text-muted-foreground">
                   <PrimaryCell title={formatUpdatedAt(c.updated_at)} subtitle="Last updated" />
@@ -285,14 +317,6 @@ export function PayFlowClientsPage() {
                 </Td>
                 <Td>
                   <div className="flex flex-col items-end gap-1">
-                    {canEdit && statusLabel.toLowerCase() === "draft" ? (
-                      <Link
-                        to={`/payflow/clients/${c.id}?tab=Configuration`}
-                        className="text-[12.5px] font-semibold text-primary hover:underline"
-                      >
-                        Edit draft
-                      </Link>
-                    ) : null}
                     {canDelete ? (
                       <button
                         type="button"

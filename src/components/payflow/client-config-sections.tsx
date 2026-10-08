@@ -728,6 +728,32 @@ export function MappingSection({
 
 /* ---------------- Branding ---------------- */
 
+/** Shared FE checks aligned with BE activation / onboarding branding rules. */
+export function brandingConfigIssues(draft: ClientDraft): string[] {
+  const c = draft.config;
+  const issues: string[] = [];
+  if (!c.channels.email && !c.channels.sms) {
+    issues.push("At least one communication channel must be enabled");
+  }
+  if (c.clientType === "First Party") {
+    if (!c.brandName.trim()) {
+      issues.push("Display / brand name is required for First Party clients");
+    }
+    if (!c.senderName.trim()) {
+      issues.push("Sender name is required for First Party clients");
+    }
+    if (c.channels.email && !c.emailFrom.trim()) {
+      issues.push("Email from address is required when Email is enabled");
+    }
+    if (c.channels.sms && !c.smsSenderId.trim()) {
+      issues.push("SMS sender ID is required when SMS is enabled");
+    }
+  } else if (!(c.brandName.trim() || draft.name.trim())) {
+    issues.push("Client display / reference name is required for Third Party clients");
+  }
+  return issues;
+}
+
 export function BrandingSection({
   draft,
   patchConfig,
@@ -738,13 +764,19 @@ export function BrandingSection({
   const c = draft.config;
   const thirdParty = c.clientType === "Third Party";
   const clientBrand = c.brandName || draft.name || "Client";
+  // Customer-facing brand: First Party = client; Third Party = PayFlow operator.
   const brand = thirdParty ? "PayFlow Collections" : clientBrand;
-  const initials = brand.slice(0, 2).toUpperCase();
-  const logoSrc = resolveAvatarUrl(c.logoUrl);
+  const previewInitials = brand.slice(0, 2).toUpperCase();
+  const clientLogoSrc = resolveAvatarUrl(c.logoUrl);
+  // Third Party previews never show the client logo — PayFlow operator identity only.
+  const previewLogoSrc = thirdParty ? null : clientLogoSrc;
   const fileRef = useRef<HTMLInputElement>(null);
   const [logoBusy, setLogoBusy] = useState(false);
   const [logoError, setLogoError] = useState("");
   const [previewOpen, setPreviewOpen] = useState(false);
+  const previewSender = thirdParty
+    ? c.senderName.trim() || "PayFlow Collections"
+    : c.senderName.trim() || brand;
 
   useEffect(() => {
     if (!previewOpen) return;
@@ -756,7 +788,7 @@ export function BrandingSection({
   }, [previewOpen]);
 
   async function onLogoSelected(file: File | null) {
-    if (!file || readOnly) return;
+    if (!file || readOnly || thirdParty) return;
     if (clientId == null) {
       setLogoError("Save earlier steps first so this client exists, then upload a logo.");
       return;
@@ -776,7 +808,7 @@ export function BrandingSection({
   }
 
   async function onRemoveLogo() {
-    if (clientId == null || readOnly || !c.logoUrl) return;
+    if (clientId == null || readOnly || thirdParty || !c.logoUrl) return;
     setLogoBusy(true);
     setLogoError("");
     try {
@@ -793,7 +825,7 @@ export function BrandingSection({
 
   return (
     <div className="grid gap-5 lg:grid-cols-2">
-      {previewOpen && logoSrc ? (
+      {previewOpen && clientLogoSrc && !thirdParty ? (
         <div
           className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/80 p-5 backdrop-blur-sm"
           role="dialog"
@@ -812,7 +844,7 @@ export function BrandingSection({
             </svg>
           </button>
           <img
-            src={logoSrc}
+            src={clientLogoSrc}
             alt={`${clientBrand} logo`}
             className="max-h-[min(80vh,640px)] max-w-[min(90vw,520px)] rounded-2xl object-contain shadow-2xl ring-1 ring-white/10"
             onClick={(e) => e.stopPropagation()}
@@ -826,88 +858,113 @@ export function BrandingSection({
             ? `This is a Third Party client, so customer-facing communications and the payment page use PayFlow collection-operator branding on behalf of ${clientBrand}.`
             : `This is a First Party client, so customer-facing communications and the payment page use ${clientBrand} branding.`}
         </p>
-        <div className="flex items-start gap-3">
-          <button
-            type="button"
-            disabled={logoBusy || (readOnly && !logoSrc)}
-            title={logoSrc ? "View logo" : readOnly ? undefined : "Upload logo"}
-            onClick={() => {
-              if (logoSrc) setPreviewOpen(true);
-              else if (!readOnly) fileRef.current?.click();
-            }}
-            className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-md border border-border bg-surface text-[13px] font-semibold text-foreground transition hover:ring-2 hover:ring-primary/40 disabled:cursor-default disabled:hover:ring-0"
-          >
-            {logoSrc ? (
-              <img src={logoSrc} alt="" className="size-full object-cover" />
-            ) : (
-              initials
-            )}
-          </button>
-          <div className="min-w-0 flex-1">
-            <p className="text-[13px] font-medium text-foreground">Client Logo</p>
-            <p className="text-[11px] text-muted-foreground">
-              JPG, PNG, WEBP or GIF · up to 2 MB. Used on customer-facing communications.
-            </p>
-            {!readOnly ? (
-              <div className="mt-2 flex flex-wrap items-center gap-3">
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/gif"
-                  className="hidden"
-                  onChange={(e) => void onLogoSelected(e.target.files?.[0] || null)}
-                />
+        {readOnly ? (
+          <p className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-[11px] text-foreground">
+            Branding &amp; channels can only be edited while the client is in Draft status.
+          </p>
+        ) : null}
+
+        {thirdParty ? (
+          <div className="flex items-start gap-3 rounded-lg border border-border bg-card px-3 py-2.5">
+            <div className="grid size-14 shrink-0 place-items-center rounded-md border border-border bg-surface text-[13px] font-semibold text-foreground">
+              PF
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-medium text-foreground">PayFlow operator branding</p>
+              <p className="text-[11px] text-muted-foreground">
+                Customer-facing email/SMS use PayFlow Collections identity. Configure the client
+                display/reference name below so the obligation can be identified where required.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-start gap-3">
+            <button
+              type="button"
+              disabled={logoBusy || (readOnly && !clientLogoSrc)}
+              title={clientLogoSrc ? "View logo" : readOnly ? undefined : "Upload logo"}
+              onClick={() => {
+                if (clientLogoSrc) setPreviewOpen(true);
+                else if (!readOnly) fileRef.current?.click();
+              }}
+              className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-md border border-border bg-surface text-[13px] font-semibold text-foreground transition hover:ring-2 hover:ring-primary/40 disabled:cursor-default disabled:hover:ring-0"
+            >
+              {clientLogoSrc ? (
+                <img src={clientLogoSrc} alt="" className="size-full object-cover" />
+              ) : (
+                previewInitials
+              )}
+            </button>
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-medium text-foreground">Client Logo</p>
+              <p className="text-[11px] text-muted-foreground">
+                JPG, PNG, WEBP or GIF · up to 2 MB. Used on customer-facing communications.
+              </p>
+              {!readOnly ? (
+                <div className="mt-2 flex flex-wrap items-center gap-3">
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    className="hidden"
+                    onChange={(e) => void onLogoSelected(e.target.files?.[0] || null)}
+                  />
+                  <button
+                    type="button"
+                    className="text-[12px] font-semibold text-primary hover:text-primary-hover disabled:opacity-50"
+                    disabled={logoBusy || clientId == null}
+                    onClick={() => fileRef.current?.click()}
+                  >
+                    {logoBusy ? "Uploading…" : c.logoUrl ? "Change logo" : "Upload logo"}
+                  </button>
+                  {c.logoUrl ? (
+                    <>
+                      <button
+                        type="button"
+                        className="text-[12px] font-medium text-muted-foreground hover:text-foreground disabled:opacity-50"
+                        disabled={logoBusy}
+                        onClick={() => setPreviewOpen(true)}
+                      >
+                        View
+                      </button>
+                      <button
+                        type="button"
+                        className="text-[12px] font-medium text-muted-foreground hover:text-red-600 dark:hover:text-red-400 disabled:opacity-50"
+                        disabled={logoBusy}
+                        onClick={() => void onRemoveLogo()}
+                      >
+                        Remove
+                      </button>
+                    </>
+                  ) : null}
+                  {clientId == null ? (
+                    <span className="text-[11px] text-muted-foreground">
+                      Save earlier steps first to enable upload.
+                    </span>
+                  ) : null}
+                </div>
+              ) : c.logoUrl ? (
                 <button
                   type="button"
-                  className="text-[12px] font-semibold text-primary hover:text-primary-hover disabled:opacity-50"
-                  disabled={logoBusy || clientId == null}
-                  onClick={() => fileRef.current?.click()}
+                  className="mt-2 text-[12px] font-semibold text-primary"
+                  onClick={() => setPreviewOpen(true)}
                 >
-                  {logoBusy ? "Uploading…" : c.logoUrl ? "Change logo" : "Upload logo"}
+                  View logo
                 </button>
-                {c.logoUrl ? (
-                  <>
-                    <button
-                      type="button"
-                      className="text-[12px] font-medium text-muted-foreground hover:text-foreground disabled:opacity-50"
-                      disabled={logoBusy}
-                      onClick={() => setPreviewOpen(true)}
-                    >
-                      View
-                    </button>
-                    <button
-                      type="button"
-                      className="text-[12px] font-medium text-muted-foreground hover:text-red-600 dark:hover:text-red-400 disabled:opacity-50"
-                      disabled={logoBusy}
-                      onClick={() => void onRemoveLogo()}
-                    >
-                      Remove
-                    </button>
-                  </>
-                ) : null}
-                {clientId == null ? (
-                  <span className="text-[11px] text-muted-foreground">
-                    Save earlier steps first to enable upload.
-                  </span>
-                ) : null}
-              </div>
-            ) : c.logoUrl ? (
-              <button
-                type="button"
-                className="mt-2 text-[12px] font-semibold text-primary"
-                onClick={() => setPreviewOpen(true)}
-              >
-                View logo
-              </button>
-            ) : null}
-            {logoError ? <p className="mt-1.5 text-[11px] text-red-600 dark:text-red-400">{logoError}</p> : null}
+              ) : null}
+              {logoError ? (
+                <p className="mt-1.5 text-[11px] text-red-600 dark:text-red-400">{logoError}</p>
+              ) : null}
+            </div>
           </div>
-        </div>
-        <Field label="Display / Brand Name">
+        )}
+
+        <Field label={thirdParty ? "Client display / reference name" : "Display / Brand Name"}>
           <TextInput
             value={c.brandName}
             onChange={(v) => patchConfig({ brandName: v })}
             disabled={readOnly}
+            placeholder={thirdParty ? draft.name || "Shown when identifying the obligation" : undefined}
           />
         </Field>
         <Field label="Sender Name">
@@ -915,6 +972,7 @@ export function BrandingSection({
             value={c.senderName}
             onChange={(v) => patchConfig({ senderName: v })}
             disabled={readOnly}
+            placeholder={thirdParty ? "PayFlow Collections" : undefined}
           />
         </Field>
 
@@ -958,17 +1016,22 @@ export function BrandingSection({
 
       <div className="space-y-3">
         <p className="text-eyebrow">Customer-facing preview</p>
+        <p className="text-[11px] text-muted-foreground">
+          {thirdParty
+            ? "Preview uses PayFlow collection-operator branding."
+            : "Preview uses this client’s configured branding."}
+        </p>
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="flex items-center gap-2 border-b border-border pb-2.5">
             <div className="grid size-7 place-items-center overflow-hidden rounded bg-surface text-[11px] font-semibold">
-              {logoSrc ? (
-                <img src={logoSrc} alt="" className="size-full object-cover" />
+              {previewLogoSrc ? (
+                <img src={previewLogoSrc} alt="" className="size-full object-cover" />
               ) : (
-                initials
+                previewInitials
               )}
             </div>
             <div className="text-[12px]">
-              <p className="font-medium text-foreground">{c.senderName || brand}</p>
+              <p className="font-medium text-foreground">{previewSender}</p>
               <p className="text-muted-foreground">{c.emailFrom}</p>
             </div>
           </div>
@@ -976,8 +1039,9 @@ export function BrandingSection({
             Your {brand} balance is past due
           </p>
           <p className="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
-            Hello John, your outstanding balance of $4,250 is now overdue. You can settle it
-            securely, or set up a payment plan that works for you.
+            Hello John, your outstanding balance of $4,250 is now overdue
+            {thirdParty ? ` (on behalf of ${clientBrand})` : ""}. You can settle it securely, or
+            set up a payment plan that works for you.
           </p>
           <span className="mt-3 inline-block rounded-md bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground">
             Pay now
@@ -986,7 +1050,8 @@ export function BrandingSection({
         <div className="rounded-lg border border-border bg-card p-4">
           <p className="text-eyebrow mb-2">SMS · {c.smsSenderId || "SENDER"}</p>
           <p className="rounded-lg bg-surface px-3 py-2 text-[12px] text-foreground">
-            {brand}: your balance of $4,250 is overdue. Pay or arrange a plan here: pay.fl/x9k2
+            {brand}: your balance of $4,250 is overdue
+            {thirdParty ? ` (${clientBrand})` : ""}. Pay or arrange a plan here: pay.fl/x9k2
           </p>
         </div>
       </div>

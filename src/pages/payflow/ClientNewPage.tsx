@@ -12,6 +12,7 @@ import {
 import {
   AiGovernanceSection,
   BrandingSection,
+  brandingConfigIssues,
   DataSourceSection,
   ProfileSection,
   SupervisorSection,
@@ -60,11 +61,13 @@ export function PayFlowClientNewPage() {
 
   useEffect(() => {
     void Promise.all([
-      listPayflowUsers({ role_code: "supervisor" }),
+      listPayflowUsers(),
       getPayflowClientMappingCatalog(),
     ])
       .then(([users, catalog]) => {
-        setSupervisors(users.users || []);
+        setSupervisors(
+          (users.users || []).filter((u) => u.role_scope === "client_scoped"),
+        );
         setGovernanceRules(catalog.governance_rules || []);
       })
       .catch(() => {
@@ -81,11 +84,11 @@ export function PayFlowClientNewPage() {
     return draft.supervisorUserIds.map((id) => map.get(id) || id);
   }, [draft.supervisorUserIds, supervisors]);
 
+  const brandingIssues = brandingConfigIssues(draft);
   const issues: string[] = [];
   if (!draft.name.trim()) issues.push("Client name is required");
   if (!draft.config.code.trim()) issues.push("Client code is required");
-  if (!draft.config.channels.email && !draft.config.channels.sms)
-    issues.push("At least one communication channel must be enabled");
+  issues.push(...brandingIssues);
   if (draft.supervisorUserIds.length === 0) issues.push("Assign at least one supervisor");
 
   async function ensureDraftSaved(): Promise<number> {
@@ -298,12 +301,19 @@ export function PayFlowClientNewPage() {
                 tone={connectionTone("Connected")}
               />
               <ReviewBlock
-                title="Channels"
+                title="Branding & Channels"
                 rows={[
+                  draft.config.clientType === "Third Party"
+                    ? "PayFlow operator branding"
+                    : `Brand: ${draft.config.brandName || "—"}`,
+                  `Sender: ${draft.config.senderName || "—"}`,
                   `Email: ${draft.config.channels.email ? "Enabled" : "Disabled"}`,
                   `SMS: ${draft.config.channels.sms ? "Enabled" : "Disabled"}`,
-                  "WhatsApp: Coming Later",
+                  brandingIssues.length
+                    ? `Incomplete: ${brandingIssues.length} item(s)`
+                    : "Branding complete",
                 ]}
+                tone={brandingIssues.length ? "warning" : "success"}
               />
               <ReviewBlock title="AI Mode" rows={[draft.aiMode]} />
               <ReviewBlock

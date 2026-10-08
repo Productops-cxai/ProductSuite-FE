@@ -61,7 +61,8 @@ const SUPERVISOR_DEFAULT_CODES = [
 ];
 
 export function PayFlowUsersPage() {
-  const { isOperationsAdmin } = usePayFlowAccess();
+  const { hasPermission, loading: accessLoading } = usePayFlowAccess();
+  const canManageUsers = hasPermission("manage_users");
   const navigate = useNavigate();
   const [users, setUsers] = useState<PayflowUser[]>([]);
   const [roles, setRoles] = useState<PayflowRoleListItem[]>([]);
@@ -111,28 +112,32 @@ export function PayFlowUsersPage() {
   };
 
   useEffect(() => {
-    if (!isOperationsAdmin) return;
+    if (!canManageUsers) return;
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOperationsAdmin, roleFilter, statusFilter]);
+  }, [canManageUsers, roleFilter, statusFilter]);
 
   useEffect(() => {
-    if (!isOperationsAdmin) return;
+    if (!canManageUsers) return;
     const t = window.setTimeout(() => load(), 250);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
 
-  if (!isOperationsAdmin) {
+  if (accessLoading) {
+    return <p className="text-sm text-muted-foreground">Checking access…</p>;
+  }
+
+  if (!canManageUsers) {
     return (
       <>
         <PageHeader
           title="Users & Permissions"
           description="Manage PayFlow users, Client assignments and operational access."
         />
-        <Panel title="Administrator access required">
+        <Panel title="Access required">
           <p className="text-sm text-slate-500">
-            Only an Operations Admin can manage users, client assignments and permissions.
+            Your role needs the Manage Users &amp; Roles permission to open this page.
           </p>
         </Panel>
       </>
@@ -440,7 +445,7 @@ function RolesPanel({
                 >
                   {editingId === r.id
                     ? "Hide"
-                    : r.scope === "platform_wide" || r.is_built_in
+                    : r.scope === "platform_wide"
                       ? "View access"
                       : "Edit access"}
                 </Btn>
@@ -512,7 +517,8 @@ function RolePermissionsInline({
   const role = roles.find((r) => r.id === roleId);
   if (!role) return null;
 
-  const editable = !role.is_built_in && role.scope === "client_scoped";
+  // Lovable: only platform-wide (Ops Admin) is view-only; Supervisor + custom roles edit.
+  const editable = role.scope === "client_scoped";
   const allCodes = groups.flatMap((g) => g.permissions.map((p) => p.code));
   const selected = role.scope === "platform_wide" ? allCodes : role.permission_codes || [];
 
@@ -522,9 +528,7 @@ function RolePermissionsInline({
       <p className="mb-3 text-[11px] text-muted-foreground">
         {role.scope === "platform_wide"
           ? "A platform-wide role holds every permission across all clients."
-          : editable
-            ? "Users with this role inherit these permissions inside their assigned clients."
-            : "Built-in role — its default permission set cannot be changed."}
+          : "Users with this role inherit these permissions inside their assigned clients."}
       </p>
       {editable && role.user_count > 0 && (
         <p className="mb-3 rounded-lg border border-warning/40 bg-warning/8 px-3 py-2 text-[12px] text-foreground">

@@ -31,7 +31,8 @@ function statusTone(status: string) {
 
 export function PayFlowUserDetailPage() {
   const { userId } = useParams<{ userId: string }>();
-  const { isOperationsAdmin } = usePayFlowAccess();
+  const { hasPermission, loading: accessLoading } = usePayFlowAccess();
+  const canManageUsers = hasPermission("manage_users");
   const { user: me } = useAuth();
   const navigate = useNavigate();
   const [user, setUser] = useState<PayflowUser | null>(null);
@@ -59,15 +60,21 @@ export function PayFlowUserDetailPage() {
   };
 
   useEffect(() => {
-    if (!isOperationsAdmin) return;
+    if (!canManageUsers) return;
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, isOperationsAdmin]);
+  }, [userId, canManageUsers]);
 
-  if (!isOperationsAdmin) {
+  if (accessLoading) {
+    return <p className="text-sm text-slate-500">Checking access…</p>;
+  }
+
+  if (!canManageUsers) {
     return (
-      <Panel title="Administrator access required">
-        <p className="text-sm text-slate-500">Only an Operations Admin can view user access details.</p>
+      <Panel title="Access required">
+        <p className="text-sm text-slate-500">
+          Your role needs the Manage Users &amp; Roles permission to view user details.
+        </p>
       </Panel>
     );
   }
