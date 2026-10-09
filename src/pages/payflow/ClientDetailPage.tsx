@@ -278,6 +278,11 @@ export function PayFlowClientDetailPage() {
     ? Math.round((checksDone / activationChecks.length) * 100)
     : 0;
   const requiredBlockers = activationChecks.filter((c) => c.required && !c.done);
+  const canActivate =
+    Boolean(detail) &&
+    isClientSettingUp(detail?.status_label || detail?.status) &&
+    (detail?.activation_blockers.length ?? 0) === 0 &&
+    requiredBlockers.length === 0;
 
   if (loading) {
     return <p className="text-[13px] text-muted-foreground">Loading client…</p>;
@@ -330,9 +335,25 @@ export function PayFlowClientDetailPage() {
               ← Back to Clients
             </Link>
             {canEdit && isClientSettingUp(statusLabel) ? (
-              <Btn variant="primary" onClick={() => changeTab("Configuration")}>
-                Edit configuration
-              </Btn>
+              <>
+                <Btn variant="primary" onClick={() => changeTab("Configuration")}>
+                  Edit configuration
+                </Btn>
+                <span className="flex items-center gap-1.5">
+                  <Btn
+                    variant="primary"
+                    disabled={!canActivate || busy}
+                    onClick={() => void activate()}
+                  >
+                    Activate Client
+                  </Btn>
+                  {!canActivate ? (
+                    <span className="text-[11px] text-muted-foreground">
+                      Complete all required setup first
+                    </span>
+                  ) : null}
+                </span>
+              </>
             ) : null}
             <StatusPill tone={statusTone(statusLabel)}>{statusLabel}</StatusPill>
             {detail.ai_mode_label ? (
@@ -606,17 +627,6 @@ export function PayFlowClientDetailPage() {
                   <ActivationCheckRow key={x.label} check={x} />
                 ))}
               </ul>
-              {canEdit && detail.status === "draft" ? (
-                <div className="mt-3">
-                  <Btn
-                    variant="primary"
-                    disabled={busy || detail.activation_blockers.length > 0}
-                    onClick={() => void activate()}
-                  >
-                    Activate Client
-                  </Btn>
-                </div>
-              ) : null}
             </div>
           </Panel>
 
