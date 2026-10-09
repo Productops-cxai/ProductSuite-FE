@@ -134,6 +134,9 @@ export function RequirePayflowPermission({
 export const PAYFLOW_ROUTE_PERMISSIONS: Array<{ prefix: string; anyOf: string[] }> = [
   { prefix: "/payflow/users", anyOf: ["manage_users"] },
   { prefix: "/payflow/integrations", anyOf: ["manage_integrations"] },
+  // More specific import routes before parent /clients and /cases prefixes.
+  { prefix: "/payflow/clients/import", anyOf: ["import_clients"] },
+  { prefix: "/payflow/cases/import", anyOf: ["import_accounts"] },
   { prefix: "/payflow/clients", anyOf: ["view_client"] },
   {
     prefix: "/payflow/cases",
@@ -141,7 +144,7 @@ export const PAYFLOW_ROUTE_PERMISSIONS: Array<{ prefix: string; anyOf: string[] 
   },
   {
     prefix: "/payflow/imports",
-    anyOf: ["view_customer_accounts", "view_collection_cases"],
+    anyOf: ["view_customer_accounts", "view_collection_cases", "import_clients", "import_accounts"],
   },
   // /payflow/review, /workflows, /comms — FE parked in src/_design_backup/payflow-ai-ops
   { prefix: "/payflow/rules", anyOf: ["view_rules"] },
@@ -152,8 +155,9 @@ export function permissionsForPath(pathname: string): string[] | null {
     return null; // Dashboard is open to every PayFlow member
   }
   if (pathname.startsWith("/payflow/profile")) return null;
-  const hit = PAYFLOW_ROUTE_PERMISSIONS.find(
+  // Longest prefix wins so /clients/import is not swallowed by /clients.
+  const hit = PAYFLOW_ROUTE_PERMISSIONS.filter(
     (r) => pathname === r.prefix || pathname.startsWith(`${r.prefix}/`),
-  );
+  ).sort((a, b) => b.prefix.length - a.prefix.length)[0];
   return hit ? hit.anyOf : null;
 }

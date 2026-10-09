@@ -29,6 +29,8 @@ export interface ImportRecord {
   subClientId: string;
   subClientName: string;
   action: ImportAction;
+  /** Client hierarchy: false = master Client row, true = Sub-Client/Portfolio. */
+  isSub?: boolean;
   /** Account imports only. */
   currentBalance?: number | null;
   incomingBalance?: number;
@@ -41,6 +43,29 @@ export interface ImportCounts {
   updated: number;
   unchanged: number;
   failed: number;
+  rejected?: number;
+  successful?: number;
+}
+
+/** Successful = created + updated + unchanged. Rejected defaults from error rows when missing. */
+export function normalizeImportCounts(
+  counts: ImportCounts,
+  errors: ImportError[] = [],
+): Required<ImportCounts> {
+  const successful =
+    counts.successful ?? counts.created + counts.updated + counts.unchanged;
+  const rejected =
+    counts.rejected ??
+    errors.filter((e) => e.status === "Rejected").length;
+  return {
+    total: counts.total,
+    created: counts.created,
+    updated: counts.updated,
+    unchanged: counts.unchanged,
+    failed: counts.failed,
+    rejected,
+    successful,
+  };
 }
 
 export interface ImportRun {
@@ -219,6 +244,14 @@ export function mapApiImportRun(row: {
     status: string;
   }>;
 }): ImportRun {
+  const errors: ImportError[] = (row.errors || []).map((e) => ({
+    recordId: e.record_id,
+    client: e.client,
+    subClient: e.sub_client,
+    field: e.field,
+    error: e.error,
+    status: e.status === "Skipped" ? "Skipped" : "Rejected",
+  }));
   return {
     id: String(row.id),
     kind: row.kind === "client" ? "client" : "account",
@@ -226,15 +259,8 @@ export function mapApiImportRun(row: {
     dateTime: row.date_time,
     uploadedBy: row.uploaded_by,
     status: row.status as ImportStatus,
-    counts: row.counts,
-    errors: (row.errors || []).map((e) => ({
-      recordId: e.record_id,
-      client: e.client,
-      subClient: e.sub_client,
-      field: e.field,
-      error: e.error,
-      status: e.status === "Skipped" ? "Skipped" : "Rejected",
-    })),
+    counts: normalizeImportCounts(row.counts || { total: 0, created: 0, updated: 0, unchanged: 0, failed: 0 }, errors),
+    errors,
   };
 }
 

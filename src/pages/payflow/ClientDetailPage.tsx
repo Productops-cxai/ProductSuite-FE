@@ -646,11 +646,11 @@ export function PayFlowClientDetailPage() {
                         : "text-muted-foreground hover:bg-surface",
                     )}
                   >
-                    <span>{s}</span>
+                    <span className="min-w-0 truncate">{s}</span>
                     {hint ? (
                       <span
                         className={cn(
-                          "text-[10px] font-semibold uppercase tracking-wide",
+                          "shrink-0 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide",
                           hint === "Done" ? "text-success" : "text-warning",
                         )}
                       >

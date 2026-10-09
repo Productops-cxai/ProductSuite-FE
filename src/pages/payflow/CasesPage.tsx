@@ -47,6 +47,7 @@ export function PayFlowCasesPage() {
   const [accounts, setAccounts] = useState<PayflowAccount[]>([]);
   const [clients, setClients] = useState<PayflowClient[]>([]);
   const [statuses, setStatuses] = useState<string[]>([]);
+  const [workflows, setWorkflows] = useState<string[]>([]);
   const [intake, setIntake] = useState<PayflowAccountsIntake>({
     files: 0,
     latest_received_at: "—",
@@ -60,6 +61,8 @@ export function PayFlowCasesPage() {
   const [clientFilter, setClientFilter] = useState("All Clients");
   const [subClient, setSubClient] = useState("All Sub-Clients");
   const [status, setStatus] = useState(searchParams.get("status") || "All Statuses");
+  const [workflow, setWorkflow] = useState("All Workflows");
+  const [humanReview, setHumanReview] = useState("All");
 
   useEffect(() => {
     const nextStatus = searchParams.get("status");
@@ -76,6 +79,7 @@ export function PayFlowCasesPage() {
         setAccounts(accountRes.accounts || []);
         setIntake(accountRes.intake);
         setStatuses(accountRes.statuses || []);
+        setWorkflows(accountRes.workflows || []);
         setClients(clientRes.clients || []);
       })
       .catch((err) => {
@@ -114,9 +118,12 @@ export function PayFlowCasesPage() {
       if (clientFilter !== "All Clients" && a.client_name !== clientFilter) return false;
       if (subClient !== "All Sub-Clients" && a.portfolio_name !== subClient) return false;
       if (status !== "All Statuses" && a.collection_status !== status) return false;
+      if (workflow !== "All Workflows" && (a.current_workflow || "") !== workflow) return false;
+      if (humanReview === "Yes" && !a.human_review) return false;
+      if (humanReview === "No" && a.human_review) return false;
       return true;
     });
-  }, [accounts, search, clientFilter, subClient, status]);
+  }, [accounts, search, clientFilter, subClient, status, workflow, humanReview]);
 
   const scopedIntake = useMemo(() => {
     if (clientFilter === "All Clients") return intake;
@@ -195,6 +202,18 @@ export function PayFlowCasesPage() {
           value={status}
           onChange={setStatus}
           options={["All Statuses", ...statuses]}
+        />
+        <FilterSelect
+          label="Workflow"
+          value={workflow}
+          onChange={setWorkflow}
+          options={["All Workflows", ...workflows]}
+        />
+        <FilterSelect
+          label="Human Review"
+          value={humanReview}
+          onChange={setHumanReview}
+          options={["All", "Yes", "No"]}
         />
       </div>
 

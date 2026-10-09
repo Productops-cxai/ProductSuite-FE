@@ -16,6 +16,7 @@ import {
   importKindLabel,
   importStatusTone,
   mapApiImportRun,
+  normalizeImportCounts,
   type ImportKind,
   type ImportRun,
 } from "../../lib/import-data";
@@ -79,21 +80,38 @@ export function PayFlowImportsPage() {
       ) : null}
       {!loading && rows.length > 0 ? (
         <DataTable
-          minWidth={1080}
-          head={["File Name", "Date / Time", "Import Type", "Total", "Created", "Updated", "Unchanged", "Failed", "Status", ""]}
+          minWidth={1180}
+          head={[
+            "File Name",
+            "Date / Time",
+            "Import Type",
+            "Total",
+            "Successful",
+            "Created",
+            "Updated",
+            "Unchanged",
+            "Rejected",
+            "Failed",
+            "Status",
+            "",
+          ]}
         >
-          {rows.map((r) => (
+          {rows.map((r) => {
+            const c = normalizeImportCounts(r.counts, r.errors);
+            return (
             <Tr key={r.id}>
               <Td>
                 <PrimaryCell title={r.fileName} subtitle={`By ${r.uploadedBy}`} />
               </Td>
               <Td className="text-muted-foreground">{r.dateTime}</Td>
               <Td>{importKindLabel[r.kind]}</Td>
-              <Td className="tabular">{formatNumber(r.counts.total)}</Td>
-              <Td className="tabular">{formatNumber(r.counts.created)}</Td>
-              <Td className="tabular">{formatNumber(r.counts.updated)}</Td>
-              <Td className="tabular">{formatNumber(r.counts.unchanged)}</Td>
-              <Td className="tabular">{formatNumber(r.counts.failed)}</Td>
+              <Td className="tabular">{formatNumber(c.total)}</Td>
+              <Td className="tabular">{formatNumber(c.successful)}</Td>
+              <Td className="tabular">{formatNumber(c.created)}</Td>
+              <Td className="tabular">{formatNumber(c.updated)}</Td>
+              <Td className="tabular">{formatNumber(c.unchanged)}</Td>
+              <Td className="tabular">{formatNumber(c.rejected)}</Td>
+              <Td className="tabular">{formatNumber(c.failed)}</Td>
               <Td>
                 <StatusPill tone={importStatusTone(r.status)}>{r.status}</StatusPill>
               </Td>
@@ -110,7 +128,8 @@ export function PayFlowImportsPage() {
                 </div>
               </Td>
             </Tr>
-          ))}
+            );
+          })}
         </DataTable>
       ) : null}
     </>

@@ -15,6 +15,7 @@ import { useAuth } from "../../context/AuthContext";
 import { ApiError } from "../../api/client";
 import {
   downloadPayflowAccountImportTemplate,
+  downloadPayflowClientsBulkTemplate,
   listPayflowImports,
   uploadPayflowAccountImport,
   uploadPayflowClientsBulk,
@@ -33,6 +34,7 @@ import {
   lastImport,
   lastSuccessfulImport,
   mapApiImportRun,
+  normalizeImportCounts,
   type ImportAction,
   type ImportError,
   type ImportKind,
@@ -287,12 +289,21 @@ export function ImportResult({
         </div>
       </Panel>
       {run.status !== "Failed" && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          <KpiCard label="Total Records" value={formatNumber(run.counts.total)} tone="primary" />
-          <KpiCard label="Created" value={formatNumber(run.counts.created)} />
-          <KpiCard label="Updated" value={formatNumber(run.counts.updated)} />
-          <KpiCard label="Unchanged" value={formatNumber(run.counts.unchanged)} />
-          <KpiCard label="Failed" value={formatNumber(run.counts.failed)} />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+          {(() => {
+            const c = normalizeImportCounts(run.counts, run.errors);
+            return (
+              <>
+                <KpiCard label="Total Records" value={formatNumber(c.total)} tone="primary" />
+                <KpiCard label="Successful" value={formatNumber(c.successful)} />
+                <KpiCard label="Created" value={formatNumber(c.created)} />
+                <KpiCard label="Updated" value={formatNumber(c.updated)} />
+                <KpiCard label="Unchanged" value={formatNumber(c.unchanged)} />
+                <KpiCard label="Rejected" value={formatNumber(c.rejected)} />
+                <KpiCard label="Failed" value={formatNumber(c.failed)} />
+              </>
+            );
+          })()}
         </div>
       )}
       <div className="flex flex-wrap gap-2">
@@ -310,32 +321,64 @@ export function ImportResult({
 }
 
 function ClientPreviewTable({ records }: { records: ImportRecord[] }) {
-  const groups = records.reduce<Record<string, ImportRecord[]>>((acc, r) => {
-    (acc[r.clientName] ??= []).push(r);
+  type Group = {
+    name: string;
+    clientId: string;
+    master?: ImportRecord;
+    subs: ImportRecord[];
+  };
+
+  const groups = records.reduce<Record<string, Group>>((acc, r) => {
+    const isSub =
+      r.isSub === true ||
+      (r.isSub !== false && Boolean(r.subClientId) && r.subClientId !== "—");
+    const key = r.clientName || r.clientId || r.id;
+    const g = (acc[key] ??= { name: r.clientName || key, clientId: r.clientId, subs: [] });
+    if (isSub) {
+      g.subs.push(r);
+      if (r.clientId && (!g.clientId || g.clientId === g.name)) g.clientId = r.clientId;
+    } else {
+      g.master = r;
+      g.clientId = r.clientId || g.clientId;
+      g.name = r.clientName || g.name;
+    }
     return acc;
   }, {});
+
   return (
     <DataTable minWidth={760} head={["Client / Sub-Client", "Client ID", "Sub-Client ID", "Action", "Status"]}>
-      {Object.entries(groups).map(([name, rows]) => (
-        <Fragment key={name}>
+      {Object.values(groups).map((g) => (
+        <Fragment key={g.name}>
           <tr className="bg-muted/40">
             <Td>
-              <span className="font-semibold text-foreground">{name}</span>
-              <span className="ml-2 text-[11.5px] text-muted-foreground">{rows.length} sub-clients</span>
+              <span className="font-semibold text-foreground">{g.name}</span>
+              <span className="ml-2 text-[11.5px] text-muted-foreground">
+                {g.subs.length} sub-client{g.subs.length === 1 ? "" : "s"}
+              </span>
             </Td>
-            <Td className="tabular text-muted-foreground">{rows.find((r) => r.clientId)?.clientId || "—"}</Td>
+            <Td className="tabular text-muted-foreground">{g.clientId || "—"}</Td>
             <Td>{null}</Td>
-            <Td>{null}</Td>
-            <Td>{null}</Td>
+            <Td>
+              {g.master ? (
+                <StatusPill tone={actionTone(g.master.action)}>{g.master.action}</StatusPill>
+              ) : null}
+            </Td>
+            <Td className="text-[12.5px] text-muted-foreground">
+              {g.master?.action === "Error" ? (
+                <span className="text-destructive">{g.master.note}</span>
+              ) : g.master ? (
+                "Valid"
+              ) : null}
+            </Td>
           </tr>
-          {rows.map((r, i) => (
+          {g.subs.map((r, i) => (
             <Tr key={r.id}>
               <Td>
-                <span className="pl-3 text-muted-foreground">{i === rows.length - 1 ? "└" : "├"}─ </span>
-                {r.subClientName}
+                <span className="pl-3 text-muted-foreground">{i === g.subs.length - 1 ? "└" : "├"}─ </span>
+                {r.subClientName || "—"}
               </Td>
-              <Td className="tabular text-muted-foreground">{r.clientId || "Missing"}</Td>
-              <Td className="tabular">{r.subClientId}</Td>
+              <Td className="text-muted-foreground">—</Td>
+              <Td className="tabular font-medium">{r.subClientId && r.subClientId !== "—" ? r.subClientId : "Missing"}</Td>
               <Td>
                 <StatusPill tone={actionTone(r.action)}>{r.action}</StatusPill>
               </Td>
@@ -360,7 +403,14 @@ function AccountPreviewTable({ records }: { records: ImportRecord[] }) {
         <Tr key={r.id}>
           <Td className="tabular font-medium">{r.note}</Td>
           <Td>
-            <PrimaryCell title={r.subClientName} subtitle={r.clientName} />
+            <PrimaryCell
+              title={
+                r.subClientId && r.subClientId !== "—"
+                  ? `${r.subClientName} (${r.subClientId})`
+                  : r.subClientName
+              }
+              subtitle={r.clientName}
+            />
           </Td>
           <Td className="tabular text-muted-foreground">
             {r.currentBalance == null ? "New account" : formatCurrency(r.currentBalance)}
@@ -425,17 +475,23 @@ function mapPreviewAction(action: string): ImportAction {
 }
 
 function mapPreviewRecords(rows: PayflowImportPreviewResponse["preview"]): ImportRecord[] {
-  return rows.map((r) => ({
-    id: r.id,
-    clientId: r.client,
-    clientName: r.client_name,
-    subClientId: r.sub_client,
-    subClientName: r.sub_client_name,
-    action: mapPreviewAction(r.action),
-    currentBalance: r.current_balance,
-    incomingBalance: r.incoming_balance ?? undefined,
-    note: r.note ?? r.record_id,
-  }));
+  return rows.map((r) => {
+    const isSub =
+      r.is_sub === true ||
+      (r.is_sub !== false && Boolean(r.sub_client) && r.sub_client !== "—");
+    return {
+      id: r.id,
+      clientId: r.client_code || r.client,
+      clientName: r.client_name,
+      subClientId: r.sub_client,
+      subClientName: r.sub_client_name,
+      action: mapPreviewAction(r.action),
+      isSub,
+      currentBalance: r.current_balance,
+      incomingBalance: r.incoming_balance ?? undefined,
+      note: r.note ?? r.record_id,
+    };
+  });
 }
 
 function failedRunFromPreview(
@@ -450,7 +506,15 @@ function failedRunFromPreview(
     dateTime: nowStamp(),
     uploadedBy,
     status: "Failed",
-    counts: { total: 0, created: 0, updated: 0, unchanged: 0, failed: 0 },
+    counts: {
+      total: 0,
+      created: 0,
+      updated: 0,
+      unchanged: 0,
+      failed: 0,
+      rejected: preview.summary?.rejected ?? preview.errors.length,
+      successful: 0,
+    },
     errors: preview.errors.map((e) => ({
       recordId: e.record_id,
       client: e.client,
@@ -466,13 +530,22 @@ function bulkUploadToRun(file: File, result: PayflowBulkUploadResult, uploadedBy
   const summary = result.summary;
   const created = summary?.created ?? result.created_count;
   const updated = summary?.updated ?? 0;
+  const unchanged = summary?.unchanged ?? 0;
   const failed = summary?.failed ?? result.error_count;
-  const total = summary?.total ?? created + updated + failed;
+  const total = summary?.total ?? created + updated + unchanged + failed;
   let status: ImportStatus = (result.status as ImportStatus) || "Completed";
   if (!result.status) {
-    if (failed && (created || updated)) status = "Completed with Errors";
-    else if (failed && !created && !updated) status = "Failed";
+    if (failed && (created || updated || unchanged)) status = "Completed with Errors";
+    else if (failed && !created && !updated && !unchanged) status = "Failed";
   }
+  const errors: ImportError[] = (result.errors || []).map((e) => ({
+    recordId: String(e.row ?? "—"),
+    client: e.code || "—",
+    subClient: "—",
+    field: "client_code",
+    error: e.message,
+    status: "Rejected" as const,
+  }));
   return {
     id: result.import_id != null ? String(result.import_id) : `bulk-${Date.now()}`,
     kind: "client",
@@ -480,21 +553,19 @@ function bulkUploadToRun(file: File, result: PayflowBulkUploadResult, uploadedBy
     dateTime: nowStamp(),
     uploadedBy,
     status,
-    counts: {
-      total,
-      created,
-      updated,
-      unchanged: summary?.unchanged ?? 0,
-      failed,
-    },
-    errors: (result.errors || []).map((e) => ({
-      recordId: String(e.row ?? "—"),
-      client: e.code || "—",
-      subClient: "—",
-      field: "client_code",
-      error: e.message,
-      status: "Rejected" as const,
-    })),
+    counts: normalizeImportCounts(
+      {
+        total,
+        created,
+        updated,
+        unchanged,
+        failed,
+        rejected: summary?.rejected,
+        successful: summary?.successful,
+      },
+      errors,
+    ),
+    errors,
   };
 }
 
@@ -626,19 +697,20 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
             <p className="mt-3 text-[11.5px] text-muted-foreground">
               CSV or XLSX · first row contains column headers.
             </p>
-            {!isClient ? (
-              <div className="mt-4">
-                <Btn
-                  onClick={() => {
-                    void downloadPayflowAccountImportTemplate().catch((err) =>
-                      setSubmitError(err instanceof ApiError ? err.detail : "Template download failed"),
-                    );
-                  }}
-                >
-                  Download sample template
-                </Btn>
-              </div>
-            ) : null}
+            <div className="mt-4">
+              <Btn
+                onClick={() => {
+                  void (isClient
+                    ? downloadPayflowClientsBulkTemplate()
+                    : downloadPayflowAccountImportTemplate()
+                  ).catch((err) =>
+                    setSubmitError(err instanceof ApiError ? err.detail : "Template download failed"),
+                  );
+                }}
+              >
+                Download sample template
+              </Btn>
+            </div>
           </Panel>
           <div className="flex flex-wrap gap-2 lg:col-span-2">
             {submitError ? <p className="w-full text-[12.5px] font-medium text-destructive">{submitError}</p> : null}
@@ -661,6 +733,18 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
               <>
                 <KpiCard label="Total Records" value={formatNumber(previewTotal)} tone="primary" />
                 <KpiCard label="New Clients" value={formatNumber(previewSummary?.new_clients ?? 0)} />
+                <KpiCard
+                  label="Existing Clients"
+                  value={formatNumber(previewSummary?.existing_clients ?? 0)}
+                />
+                <KpiCard
+                  label="New Sub-Clients"
+                  value={formatNumber(previewSummary?.new_sub_clients ?? 0)}
+                />
+                <KpiCard
+                  label="Existing Sub-Clients"
+                  value={formatNumber(previewSummary?.existing_sub_clients ?? 0)}
+                />
                 <KpiCard label="Errors" value={formatNumber(previewSummary?.failed ?? 0)} />
               </>
             ) : (

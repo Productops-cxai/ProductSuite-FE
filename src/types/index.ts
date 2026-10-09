@@ -497,6 +497,8 @@ export interface PayflowImportPreviewRecord {
   client_name: string;
   sub_client_name: string;
   action: string;
+  client_code?: string | null;
+  is_sub?: boolean;
   current_balance?: number | null;
   incoming_balance?: number | null;
   note?: string | null;
@@ -508,8 +510,12 @@ export interface PayflowImportPreviewSummary {
   updated: number;
   unchanged: number;
   failed: number;
+  rejected?: number;
+  successful?: number;
   new_clients: number;
   existing_clients: number;
+  new_sub_clients?: number;
+  existing_sub_clients?: number;
 }
 
 export interface PayflowImportPreviewResponse {
@@ -632,6 +638,8 @@ export interface PayflowImportCounts {
   updated: number;
   unchanged: number;
   failed: number;
+  rejected?: number;
+  successful?: number;
 }
 
 export interface PayflowImportRun {
