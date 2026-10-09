@@ -68,7 +68,6 @@ type MainTab = (typeof MAIN_TABS)[number];
 const CONFIG_SECTIONS = [
   "General",
   "Data Source",
-  "Data Mapping",
   "Branding & Channels",
   "AI & Governance",
   "Assigned Users",
@@ -244,11 +243,6 @@ export function PayFlowClientDetailPage() {
       requestAnimationFrame(() => {
         document.getElementById("activation-readiness")?.scrollIntoView({ behavior: "smooth" });
       });
-      return;
-    }
-    if (target === "mapping" || target === "Data Mapping") {
-      changeTab("Configuration");
-      setConfigSection("Data Mapping");
       return;
     }
     if (target === "Supervisors") {
@@ -660,20 +654,16 @@ export function PayFlowClientDetailPage() {
             <Panel
               title={configSection}
               description={
-                configSection === "Data Mapping"
-                  ? "System CRM → PayFlow catalog used for all clients."
-                  : configSection === "Branding & Channels"
-                    ? brandingReadOnly
-                      ? "Branding is read-only after activation (Draft only)."
-                      : "Changes save when you click Save."
-                    : canEdit
-                      ? "Changes save when you click Save."
-                      : "Read-only"
+                configSection === "Branding & Channels"
+                  ? brandingReadOnly
+                    ? "Branding is read-only after activation (Draft only)."
+                    : "Changes save when you click Save."
+                  : canEdit
+                    ? "Changes save when you click Save."
+                    : "Read-only"
               }
               action={
-                canEdit &&
-                configSection !== "Data Mapping" &&
-                !(configSection === "Branding & Channels" && brandingReadOnly) ? (
+                canEdit && !(configSection === "Branding & Channels" && brandingReadOnly) ? (
                   <Btn variant="primary" disabled={busy} onClick={() => void saveConfig()}>
                     {busy ? "Saving…" : "Save"}
                   </Btn>
@@ -682,46 +672,6 @@ export function PayFlowClientDetailPage() {
             >
               {configSection === "General" && <ProfileSection {...sectionProps} />}
               {configSection === "Data Source" && <DataSourceSection {...sectionProps} />}
-              {configSection === "Data Mapping" && (
-                <div className="space-y-3 text-[13px]">
-                  <p className="text-muted-foreground">
-                    CRM → PayFlow field mapping is shared across all clients (system catalog). Client
-                    onboarding uses daily file intake against that catalog.
-                  </p>
-                  <ul className="grid gap-1.5 sm:grid-cols-2">
-                    <li className="rounded-md border border-border px-3 py-2">
-                      Mapped:{" "}
-                      <span className="font-semibold">
-                        {detail.mapping_summary?.mapped ?? "—"}
-                      </span>
-                    </li>
-                    <li className="rounded-md border border-border px-3 py-2">
-                      Need attention:{" "}
-                      <span className="font-semibold">
-                        {detail.mapping_summary?.attention ?? 0}
-                      </span>
-                    </li>
-                    <li className="rounded-md border border-border px-3 py-2">
-                      Unmapped:{" "}
-                      <span className="font-semibold">
-                        {detail.mapping_summary?.unmapped ?? 0}
-                      </span>
-                    </li>
-                    <li className="rounded-md border border-border px-3 py-2">
-                      Total:{" "}
-                      <span className="font-semibold">
-                        {detail.mapping_summary?.total ?? "—"}
-                      </span>
-                    </li>
-                  </ul>
-                  <Link
-                    to="/payflow/system-mapping"
-                    className="inline-block text-[12.5px] font-semibold text-primary hover:underline"
-                  >
-                    View system CRM mapping →
-                  </Link>
-                </div>
-              )}
               {configSection === "Branding & Channels" && (
                 <BrandingSection {...sectionProps} readOnly={brandingReadOnly} />
               )}

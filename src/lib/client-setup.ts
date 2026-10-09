@@ -22,35 +22,37 @@ export type OnboardingStage = {
   target?:
     | "General"
     | "Data Source"
-    | "Data Mapping"
     | "Branding & Channels"
     | "AI & Governance"
     | "Supervisors"
     | "portfolios"
-    | "activation"
-    | "mapping";
+    | "activation";
 };
 
-/** Display labels aligned with Lovable incomplete-setup chips. */
+/** Display labels aligned with incomplete-setup chips. */
 export function setupDisplayLabel(label: string): string {
   const l = label.trim().toLowerCase();
   if (l === "general" || l === "profile" || l === "client profile") return "Client Profile";
   if (l === "supervisors" || l === "assigned users" || l.includes("supervisor"))
     return "Supervisor Assignment";
   if (l.includes("portfolio") || l.includes("sub-client")) return "Portfolios";
-  if (l.includes("data mapping") || l === "mapping") return "Data Mapping";
   if (l.includes("data source")) return "Data Source";
   if (l.includes("branding")) return "Branding & Channels";
   if (l.includes("ai") || l.includes("governance")) return "AI Mode & Governance";
   return label;
 }
 
-/** Banner / clients-grid chips (excludes AI & activation; includes Portfolios). */
+/** Hidden from client journey — mapping is system-fixed under System Mapping. */
+function isHiddenJourneyLabel(label: string): boolean {
+  const l = label.trim().toLowerCase();
+  return l.includes("data mapping") || l === "mapping";
+}
+
+/** Banner / clients-grid chips (excludes AI, activation, and Data Mapping). */
 const BANNER_CHIP_KEYS = new Set([
   "profile",
   "portfolios",
   "data_source",
-  "data_mapping",
   "branding",
   "supervisors",
 ]);
@@ -61,7 +63,9 @@ export function incompleteSetupSections(
   setupIncomplete?: string[] | null,
 ): string[] {
   if (Array.isArray(setupIncomplete) && setupIncomplete.length > 0) {
-    return setupIncomplete.map(setupDisplayLabel);
+    return setupIncomplete
+      .filter((label) => !isHiddenJourneyLabel(label))
+      .map(setupDisplayLabel);
   }
   if (!onboarding?.steps?.length) return [];
   return onboarding.steps
@@ -73,7 +77,7 @@ export function incompleteSetupSections(
     .map((s) => setupDisplayLabel(s.label));
 }
 
-/** Lovable banner chips — derived from live detail (includes Data Mapping). */
+/** Live incomplete chips for detail header / grid. */
 export function missingSetupChips(detail: PayflowClientDetail): string[] {
   return buildOnboardingStages(detail)
     .filter((s) => BANNER_CHIP_KEYS.has(s.key) && !s.done)
@@ -98,19 +102,12 @@ export function setupTargetForLabel(label: string): OnboardingStage["target"] {
   const l = label.toLowerCase();
   if (l.includes("profile") || l === "general") return "General";
   if (l.includes("portfolio") || l.includes("sub-client")) return "portfolios";
-  if (l.includes("data mapping") || l === "mapping") return "mapping";
   if (l.includes("data source")) return "Data Source";
   if (l.includes("branding") || l.includes("channel")) return "Branding & Channels";
   if (l.includes("ai") || l.includes("governance")) return "AI & Governance";
   if (l.includes("supervisor") || l.includes("assigned user")) return "Supervisors";
   if (l.includes("activation") || l.includes("review")) return "activation";
   return "General";
-}
-
-function mappingOk(detail: PayflowClientDetail): boolean {
-  const mapped = detail.mapping_summary;
-  if (!mapped) return true; // system mapping used when per-client summary absent
-  return mapped.unmapped === 0 && mapped.attention === 0 && mapped.mapped > 0;
 }
 
 export function buildActivationChecks(detail: PayflowClientDetail): SetupCheck[] {
@@ -132,11 +129,6 @@ export function buildActivationChecks(detail: PayflowClientDetail): SetupCheck[]
     detail.client_type_label === "Third Party"
       ? detail.brand_name || detail.name || "PayFlow branded"
       : detail.brand_name || "Brand name missing";
-  const mapped = detail.mapping_summary;
-  const total = mapped?.total ?? 0;
-  const mapDetail = mapped
-    ? `${mapped.mapped}/${total || mapped.mapped} mapped`
-    : "System CRM mapping";
 
   return [
     {
@@ -158,12 +150,6 @@ export function buildActivationChecks(detail: PayflowClientDetail): SetupCheck[]
         ds === "file"
           ? "Ready for file intake"
           : detail.connection_status_label || detail.connection_status || "Not Connected",
-      required: true,
-    },
-    {
-      label: "Required fields mapped",
-      done: mappingOk(detail),
-      detail: mapDetail,
       required: true,
     },
     {
@@ -199,7 +185,7 @@ export function buildActivationChecks(detail: PayflowClientDetail): SetupCheck[]
   ];
 }
 
-/** Lovable-aligned 8-stage onboarding stepper. */
+/** Client onboarding stepper — Data Mapping omitted (system-fixed). */
 export function buildOnboardingStages(detail: PayflowClientDetail): OnboardingStage[] {
   const steps = detail.onboarding?.steps || [];
   const byKey = (key: string) => steps.find((s) => s.key === key);
@@ -207,7 +193,6 @@ export function buildOnboardingStages(detail: PayflowClientDetail): OnboardingSt
   const requiredReady = checks.filter((c) => c.required).every((c) => c.done);
   const sourceSelected = checks.find((c) => c.label === "Data source selected")?.done ?? false;
   const sourceReady = checks.find((c) => c.label === "Data source connected")?.done ?? false;
-  const mapDone = mappingOk(detail);
   const portfolioCount = detail.portfolio_count ?? detail.portfolios?.length ?? 0;
 
   const profileDone = byKey("profile")
@@ -219,9 +204,6 @@ export function buildOnboardingStages(detail: PayflowClientDetail): OnboardingSt
   const supervisorsDone = byKey("supervisors")
     ? stepIsComplete(byKey("supervisors"))
     : (detail.supervisors || []).length > 0;
-  const mappingDone = byKey("data_mapping")
-    ? stepIsComplete(byKey("data_mapping"))
-    : mapDone;
 
   return [
     {
@@ -248,14 +230,6 @@ export function buildOnboardingStages(detail: PayflowClientDetail): OnboardingSt
       blocked: false,
       pending: !(sourceSelected && sourceReady),
       target: "Data Source",
-    },
-    {
-      key: "data_mapping",
-      label: "Data Mapping",
-      done: mappingDone,
-      blocked: !sourceSelected,
-      pending: sourceSelected && !mappingDone,
-      target: "mapping",
     },
     {
       key: "branding",
@@ -301,7 +275,6 @@ export function configSectionHint(
   const map: Record<string, string> = {
     General: "profile",
     "Data Source": "data_source",
-    "Data Mapping": "data_mapping",
     "Branding & Channels": "branding",
     "AI & Governance": "ai_governance",
     Supervisors: "supervisors",
