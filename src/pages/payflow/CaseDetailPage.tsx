@@ -197,9 +197,19 @@ export function PayFlowCaseDetailPage() {
           <Panel
             title="Current Workflow"
             description={account.current_workflow || "No workflow assigned"}
+            action={
+              <Link
+                to="/payflow/workflows"
+                className="text-[12.5px] font-semibold text-primary hover:underline"
+              >
+                Open strategies
+              </Link>
+            }
           >
             <p className="text-[13px] text-muted-foreground">
-              Strategies / Workflows screens are temporarily parked for redesign.
+              {account.current_workflow
+                ? `This case is associated with “${account.current_workflow}”. Open Strategies / Workflows to review or modify collection strategies.`
+                : "No collection strategy is currently assigned to this case."}
             </p>
           </Panel>
 

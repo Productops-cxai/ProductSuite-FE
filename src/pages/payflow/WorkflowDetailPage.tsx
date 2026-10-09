@@ -1,14 +1,19 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import {
+  activatePayflowWorkflow,
   approvePayflowWorkflow,
+  beginPayflowWorkflowReview,
+  deactivatePayflowWorkflow,
+  deletePayflowWorkflow,
   getPayflowWorkflow,
   rejectPayflowWorkflow,
   savePayflowWorkflowDraft,
+  submitPayflowWorkflowReview,
   updatePayflowWorkflow,
-  deletePayflowWorkflow,
 } from "../../api/payflow";
+import { StrategyCanvas } from "../../components/payflow/strategy-canvas";
 import {
   Btn,
   Field,
@@ -18,51 +23,31 @@ import {
   StatusPill,
   TextArea,
   TextInput,
-  type Tone,
 } from "../../components/payflow/lovable/payflow-ui";
-import type { PayflowStrategy, PayflowStrategyStep } from "../../types";
-import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
+import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
+import {
+  CASE_ACTIONS,
+  CHANNELS,
+  CONDITION_ATTRIBUTES,
+  CONDITION_OPERATORS,
+  CONDITION_VALUES,
+  MESSAGE_PURPOSES,
+  OUTCOMES,
+  PAYMENT_ACTIONS,
+  REFERENCE_EVENTS,
+  TIME_DIRECTIONS,
+  TIME_UNITS,
+  ensureStepLinks,
+  originTone,
+  stepConfig,
+  strategyStatusTone,
+} from "../../lib/strategy-workflow";
+import type { PayflowStrategy, PayflowStrategyStep, PayflowStrategyStepConfig } from "../../types";
 
-const CHANNELS = ["Email", "SMS"];
-const PURPOSES = [
-  "Payment Reminder",
-  "Promise-to-Pay Follow-Up",
-  "Payment Plan Offer",
-  "Final Notice",
-  "Hardship Outreach",
-];
-
-function strategyStatusTone(status: string): Tone {
-  switch (status) {
-    case "AI Proposed":
-      return "ai";
-    case "Under Review":
-      return "warning";
-    case "Approved":
-      return "info";
-    case "Active":
-      return "success";
-    default:
-      return "neutral";
-  }
-}
-
-function stepTone(kind: string): Tone {
-  switch (kind) {
-    case "Communication":
-      return "info";
-    case "Condition":
-      return "warning";
-    case "AI Reassessment":
-      return "ai";
-    case "Human Review":
-      return "danger";
-    case "Outcome":
-      return "success";
-    default:
-      return "neutral";
-  }
+function findStep(strategy: PayflowStrategy, id: string | null): PayflowStrategyStep | null {
+  if (!id) return null;
+  return (strategy.steps || []).find((s, i) => (s.id || `s${i + 1}`) === id) || null;
 }
 
 export function PayFlowWorkflowDetailPage() {
@@ -93,12 +78,12 @@ export function PayFlowWorkflowDetailPage() {
     setLoading(true);
     setError("");
     try {
-      const row = await getPayflowWorkflow(id);
+      const row = ensureStepLinks(await getPayflowWorkflow(id));
       setStrategy(row);
-      const firstId = row.steps?.[0]?.id || (row.steps?.[0] ? "step-0" : null);
+      const firstId = row.entry_node_id || row.steps?.[0]?.id || null;
       setSelectedId((prev) => prev || firstId);
-      const first = row.steps?.[0] || null;
-      if (first) setDraftStep({ ...first, id: first.id || "step-0" });
+      const first = findStep(row, firstId) || row.steps?.[0] || null;
+      if (first) setDraftStep({ ...first, id: first.id || firstId || "s1" });
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Failed to load workflow");
       setStrategy(null);
@@ -112,10 +97,22 @@ export function PayFlowWorkflowDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [strategyId]);
 
-  function selectStep(step: PayflowStrategyStep, index: number) {
-    const id = step.id || `step-${index}`;
+  function selectStep(id: string) {
+    if (!strategy) return;
+    const step = findStep(strategy, id);
+    if (!step) return;
     setSelectedId(id);
-    setDraftStep({ ...step, id });
+    setDraftStep({ ...step, id, config: { ...(step.config || {}) } });
+  }
+
+  function patchConfig(patch: Partial<PayflowStrategyStepConfig>) {
+    if (!draftStep) return;
+    setDraftStep({
+      ...draftStep,
+      config: { ...(draftStep.config || {}), ...patch },
+      channel: patch.channel !== undefined ? patch.channel : draftStep.channel,
+      purpose: patch.purpose !== undefined ? patch.purpose : draftStep.purpose,
+    });
   }
 
   async function applyStepChanges() {
@@ -124,12 +121,28 @@ export function PayFlowWorkflowDetailPage() {
     setError("");
     try {
       const next = strategy.steps.map((s, i) => {
-        const id = s.id || `step-${i}`;
-        return id === draftStep.id ? { ...draftStep } : s;
+        const id = s.id || `s${i + 1}`;
+        if (id !== draftStep.id) return s;
+        const cfg = { ...(draftStep.config || {}) };
+        return {
+          ...draftStep,
+          id,
+          config: cfg,
+          channel: cfg.channel ?? draftStep.channel,
+          purpose: cfg.purpose ?? draftStep.purpose,
+          origin: "Human Modified",
+        };
       });
-      const updated = await updatePayflowWorkflow(strategy.id, { steps: next });
+      const updated = ensureStepLinks(
+        await updatePayflowWorkflow(strategy.id, {
+          steps: next,
+          entry_node_id: strategy.entry_node_id || undefined,
+        }),
+      );
       setStrategy(updated);
-      setNotice("Change recorded as Human Modified.");
+      setNotice("Change recorded as Human Modified. Workflow is not activated by editing.");
+      const refreshed = findStep(updated, draftStep.id!);
+      if (refreshed) setDraftStep({ ...refreshed, id: draftStep.id });
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Failed to update workflow");
     } finally {
@@ -137,46 +150,19 @@ export function PayFlowWorkflowDetailPage() {
     }
   }
 
-  async function onSaveDraft() {
+  async function runAction(
+    action: () => Promise<PayflowStrategy>,
+    success: string | ((row: PayflowStrategy) => string),
+  ) {
     if (!strategy) return;
     setBusy(true);
+    setError("");
     try {
-      setStrategy(await savePayflowWorkflowDraft(strategy.id));
-      setNotice("Draft saved.");
-    } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Save draft failed");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function onApprove() {
-    if (!strategy) return;
-    setBusy(true);
-    try {
-      const updated = await approvePayflowWorkflow(strategy.id);
+      const updated = ensureStepLinks(await action());
       setStrategy(updated);
-      setNotice(`Strategy approved${updated.approved_by ? ` by ${updated.approved_by}` : ""} and is now active.`);
+      setNotice(typeof success === "function" ? success(updated) : success);
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Approve failed");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function onReject() {
-    if (!strategy) return;
-    setBusy(true);
-    try {
-      setStrategy(
-        await rejectPayflowWorkflow(strategy.id, {
-          note: rejectNote.trim() || undefined,
-        }),
-      );
-      setNotice("Regeneration requested. PayFlow will propose a revised strategy.");
-      setRejectNote("");
-    } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Reject failed");
+      setError(err instanceof ApiError ? err.detail : "Action failed");
     } finally {
       setBusy(false);
     }
@@ -195,6 +181,9 @@ export function PayFlowWorkflowDetailPage() {
     }
   }
 
+  const cfg = useMemo(() => (draftStep ? stepConfig(draftStep) : {}), [draftStep]);
+  const conditionValueOptions = CONDITION_VALUES[cfg.attribute || ""] || [];
+
   if (loading) return <p className="text-sm text-muted-foreground">Loading workflow…</p>;
   if (error && !strategy) {
     return (
@@ -212,14 +201,40 @@ export function PayFlowWorkflowDetailPage() {
   if (!strategy) return null;
 
   const segmentEntries = Object.entries(strategy.segment || {}).filter(([, v]) => !!v);
+  const isAiProposed = strategy.status === "AI Proposed";
+  const isDraft = strategy.status === "Draft";
+  const isUnderReview = strategy.status === "Under Review";
+  const isApproved = strategy.status === "Approved";
+  const isActive = strategy.status === "Active";
+  const isInactive = strategy.status === "Inactive";
+  const canApprove = canEdit && isUnderReview;
+  const canReject = canEdit && (isAiProposed || isUnderReview || isApproved);
+  const canActivate = canEdit && (isApproved || (isInactive && !!strategy.approved_by));
+  const canDeactivate = canEdit && isActive;
+  const canBeginReview = canEdit && isAiProposed;
+  const canSubmitReview = canEdit && isDraft;
+  const canSaveDraft = canEdit && !isActive;
+  const showAiBanner =
+    (strategy.source === "AI Generated" || strategy.origin === "AI Proposed") &&
+    strategy.status !== "Active";
 
   return (
     <>
       <PageHeader
         breadcrumb={[
           { label: "Strategies / Workflows", to: "/payflow/workflows" },
-          { label: strategy.client_name || "Client" },
-          ...(strategy.portfolio_name ? [{ label: strategy.portfolio_name }] : []),
+          {
+            label: strategy.client_name || "Client",
+            to: `/payflow/clients/${strategy.client_id}`,
+          },
+          ...(strategy.portfolio_id && strategy.portfolio_name
+            ? [
+                {
+                  label: strategy.portfolio_name,
+                  to: `/payflow/clients/${strategy.client_id}/portfolios/${strategy.portfolio_id}`,
+                },
+              ]
+            : []),
           { label: strategy.name },
         ]}
         title={strategy.name}
@@ -230,19 +245,104 @@ export function PayFlowWorkflowDetailPage() {
               {strategy.status}
             </StatusPill>
             <StatusPill>v{strategy.version}</StatusPill>
-            {canEdit ? (
-              <>
-                <Btn disabled={busy} onClick={() => void onSaveDraft()}>
-                  Save Draft
-                </Btn>
-                <Btn variant="danger" disabled={busy} onClick={() => void onReject()}>
-                  Reject / Request Regeneration
-                </Btn>
-                <Btn variant="primary" disabled={busy} onClick={() => void onApprove()}>
-                  Approve Strategy
-                </Btn>
-              </>
-            ) : null}
+            {(strategy.human_modified || strategy.origin === "Human Modified") && (
+              <StatusPill tone="info">Human Modified</StatusPill>
+            )}
+            {canBeginReview && (
+              <Btn
+                disabled={busy}
+                onClick={() =>
+                  void runAction(
+                    () => beginPayflowWorkflowReview(strategy.id),
+                    "Review started — status is now Under Review.",
+                  )
+                }
+              >
+                Begin review
+              </Btn>
+            )}
+            {canSubmitReview && (
+              <Btn
+                disabled={busy}
+                onClick={() =>
+                  void runAction(
+                    () => submitPayflowWorkflowReview(strategy.id),
+                    "Submitted for review.",
+                  )
+                }
+              >
+                Submit for review
+              </Btn>
+            )}
+            {canSaveDraft && (
+              <Btn
+                disabled={busy}
+                onClick={() =>
+                  void runAction(() => savePayflowWorkflowDraft(strategy.id), "Draft saved.")
+                }
+              >
+                Save Draft
+              </Btn>
+            )}
+            {canReject && (
+              <Btn
+                variant="danger"
+                disabled={busy}
+                onClick={() =>
+                  void runAction(
+                    () =>
+                      rejectPayflowWorkflow(strategy.id, {
+                        note: rejectNote.trim() || undefined,
+                      }),
+                    "Returned for regeneration. Status reset; AI proposal history is retained.",
+                  )
+                }
+              >
+                Reject / Request Regeneration
+              </Btn>
+            )}
+            {canApprove && (
+              <Btn
+                variant="primary"
+                disabled={busy}
+                onClick={() =>
+                  void runAction(
+                    () => approvePayflowWorkflow(strategy.id),
+                    (row) =>
+                      `Strategy approved${row.approved_by ? ` by ${row.approved_by}` : ""}. Activate it when ready for collection execution.`,
+                  )
+                }
+              >
+                Approve Strategy
+              </Btn>
+            )}
+            {canActivate && (
+              <Btn
+                variant="primary"
+                disabled={busy}
+                onClick={() =>
+                  void runAction(
+                    () => activatePayflowWorkflow(strategy.id),
+                    "Workflow is now Active for collection execution.",
+                  )
+                }
+              >
+                Activate
+              </Btn>
+            )}
+            {canDeactivate && (
+              <Btn
+                disabled={busy}
+                onClick={() =>
+                  void runAction(
+                    () => deactivatePayflowWorkflow(strategy.id),
+                    "Workflow deactivated. History and prior executions are retained.",
+                  )
+                }
+              >
+                Deactivate
+              </Btn>
+            )}
             {canDelete ? (
               <Btn variant="danger" disabled={busy} onClick={() => setConfirmDelete(true)}>
                 Delete
@@ -263,18 +363,22 @@ export function PayFlowWorkflowDetailPage() {
         </div>
       )}
 
-      {strategy.origin === "AI Proposed" && strategy.status !== "Active" && (
+      {showAiBanner && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-ai/25 bg-ai/[0.06] px-4 py-3.5">
           <div>
-            <p className="text-[13px] font-semibold text-foreground">AI Proposed Strategy</p>
+            <p className="text-[13px] font-semibold text-foreground">
+              {isAiProposed ? "AI Proposed Strategy" : "AI-generated strategy"}
+            </p>
             <p className="mt-0.5 max-w-2xl text-[12.5px] leading-relaxed text-muted-foreground">
               PayFlow generated this strategy using portfolio, account, payment and engagement
-              context. Review each step, adjust what needs changing, then approve.
+              context. It cannot become Active until a human reviews and approves it.
             </p>
           </div>
-          <Btn onClick={() => setShowContext((v) => !v)}>
-            {showContext ? "Hide reasoning" : "Why PayFlow proposed this"}
-          </Btn>
+          {(strategy.ai_context || []).length > 0 && (
+            <Btn onClick={() => setShowContext((v) => !v)}>
+              {showContext ? "Hide reasoning" : "Why PayFlow proposed this"}
+            </Btn>
+          )}
         </div>
       )}
 
@@ -320,59 +424,24 @@ export function PayFlowWorkflowDetailPage() {
         </Panel>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-[1fr_310px]">
+      <div className="grid gap-4 xl:grid-cols-[1fr_320px]">
         <Panel
           title="Strategy flow"
-          description="Select a step to review its configuration."
+          description="Connected nodes with conditions, waits and outcomes. Select a step to configure it."
           bodyClassName="p-3"
         >
-          <ol className="space-y-2">
-            {(strategy.steps || []).map((step, i) => {
-              const id = step.id || `step-${i}`;
-              const active = id === selectedId;
-              return (
-                <li key={id}>
-                  <button
-                    type="button"
-                    onClick={() => selectStep(step, i)}
-                    className={
-                      "flex w-full items-start gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors " +
-                      (active
-                        ? "border-primary/40 bg-primary/[0.06]"
-                        : "border-border/80 bg-card hover:border-primary/25") +
-                      (step.disabled ? " opacity-50" : "")
-                    }
-                  >
-                    <span className="mt-0.5 text-[11px] font-bold text-muted-foreground">
-                      {i + 1}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <StatusPill tone={stepTone(step.kind)}>{step.kind}</StatusPill>
-                        {step.channel && <StatusPill>{step.channel}</StatusPill>}
-                        {step.disabled && <StatusPill tone="danger">Disabled</StatusPill>}
-                      </div>
-                      <p className="mt-1 truncate text-[13px] font-medium text-foreground">
-                        {step.title}
-                      </p>
-                      {(step.timing || step.detail) && (
-                        <p className="mt-0.5 text-[11.5px] text-muted-foreground">
-                          {[step.timing, step.detail].filter(Boolean).join(" · ")}
-                        </p>
-                      )}
-                    </div>
-                  </button>
-                </li>
-              );
-            })}
-          </ol>
+          <StrategyCanvas
+            strategy={strategy}
+            selectedId={selectedId}
+            onSelect={selectStep}
+          />
         </Panel>
 
         <div className="space-y-4">
           {!draftStep ? (
             <Panel title="Step configuration">
               <p className="text-[12.5px] leading-relaxed text-muted-foreground">
-                Select a step on the left to review timing, channel and purpose.
+                Select a step on the canvas to review timing, channel and purpose.
               </p>
             </Panel>
           ) : (
@@ -382,55 +451,161 @@ export function PayFlowWorkflowDetailPage() {
                   <TextInput
                     value={draftStep.title}
                     onChange={(v) => setDraftStep({ ...draftStep, title: v })}
-                    disabled={busy}
+                    disabled={busy || !canEdit || isActive}
                   />
                 </Field>
+
                 {draftStep.kind === "Communication" && (
                   <>
                     <Field label="Channel">
                       <SelectInput
-                        value={draftStep.channel || "Email"}
+                        value={cfg.channel || "Email"}
                         options={CHANNELS}
-                        onChange={(v) => setDraftStep({ ...draftStep, channel: v })}
+                        onChange={(v) => patchConfig({ channel: v })}
                       />
                     </Field>
                     <Field label="Purpose">
                       <SelectInput
-                        value={draftStep.purpose || PURPOSES[0]}
-                        options={PURPOSES}
-                        onChange={(v) => setDraftStep({ ...draftStep, purpose: v })}
+                        value={cfg.purpose || MESSAGE_PURPOSES[0]!}
+                        options={MESSAGE_PURPOSES}
+                        onChange={(v) => patchConfig({ purpose: v })}
                       />
                     </Field>
                   </>
                 )}
-                <Field label="Timing">
-                  <TextInput
-                    value={draftStep.timing || ""}
-                    onChange={(v) => setDraftStep({ ...draftStep, timing: v })}
-                    placeholder="e.g. Day 0 · 48 Hours After"
-                    disabled={busy}
-                  />
-                </Field>
-                <Field label="Detail">
-                  <TextArea
-                    value={draftStep.detail || ""}
-                    onChange={(v) => setDraftStep({ ...draftStep, detail: v })}
-                    placeholder="Optional step notes"
-                  />
-                </Field>
-                <div className="flex flex-wrap gap-2">
-                  <Btn
-                    disabled={busy}
-                    onClick={() =>
-                      setDraftStep({ ...draftStep, disabled: !draftStep.disabled })
-                    }
-                  >
-                    {draftStep.disabled ? "Mark enabled" : "Mark disabled"}
-                  </Btn>
-                  <Btn variant="primary" disabled={busy} onClick={() => void applyStepChanges()}>
-                    Apply step changes
-                  </Btn>
-                </div>
+
+                {(draftStep.kind === "Communication" ||
+                  draftStep.kind === "Wait" ||
+                  draftStep.kind === "Trigger") && (
+                  <>
+                    <Field label="Reference event">
+                      <SelectInput
+                        value={cfg.reference_event || REFERENCE_EVENTS[0]!}
+                        options={REFERENCE_EVENTS}
+                        onChange={(v) => patchConfig({ reference_event: v })}
+                      />
+                    </Field>
+                    <div className="grid grid-cols-3 gap-2">
+                      <Field label="Amount">
+                        <TextInput
+                          value={String(cfg.amount ?? 0)}
+                          onChange={(v) =>
+                            patchConfig({
+                              amount: Math.max(0, Number(v.replace(/[^\d.]/g, "")) || 0),
+                            })
+                          }
+                          disabled={busy || !canEdit || isActive}
+                        />
+                      </Field>
+                      <Field label="Unit">
+                        <SelectInput
+                          value={cfg.unit || "Days"}
+                          options={TIME_UNITS}
+                          onChange={(v) => patchConfig({ unit: v })}
+                        />
+                      </Field>
+                      <Field label="Direction">
+                        <SelectInput
+                          value={cfg.direction || "After"}
+                          options={TIME_DIRECTIONS}
+                          onChange={(v) => patchConfig({ direction: v })}
+                        />
+                      </Field>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Timing uses an explicit event (e.g. 3 Days After Due Date), never Day N.
+                    </p>
+                  </>
+                )}
+
+                {draftStep.kind === "Condition" && (
+                  <>
+                    <Field label="Attribute">
+                      <SelectInput
+                        value={cfg.attribute || CONDITION_ATTRIBUTES[0]!}
+                        options={CONDITION_ATTRIBUTES}
+                        onChange={(v) =>
+                          patchConfig({
+                            attribute: v,
+                            value: (CONDITION_VALUES[v] || [])[0] || "",
+                          })
+                        }
+                      />
+                    </Field>
+                    <Field label="Operator">
+                      <SelectInput
+                        value={cfg.operator || "Equals"}
+                        options={CONDITION_OPERATORS}
+                        onChange={(v) => patchConfig({ operator: v })}
+                      />
+                    </Field>
+                    <Field label="Value">
+                      <SelectInput
+                        value={cfg.value || conditionValueOptions[0] || ""}
+                        options={conditionValueOptions.length ? conditionValueOptions : [cfg.value || ""]}
+                        onChange={(v) => patchConfig({ value: v })}
+                      />
+                    </Field>
+                  </>
+                )}
+
+                {draftStep.kind === "Payment Action" && (
+                  <Field label="Action">
+                    <SelectInput
+                      value={cfg.action || PAYMENT_ACTIONS[0]!}
+                      options={PAYMENT_ACTIONS}
+                      onChange={(v) => patchConfig({ action: v })}
+                    />
+                  </Field>
+                )}
+
+                {draftStep.kind === "Case Action" && (
+                  <Field label="Action">
+                    <SelectInput
+                      value={cfg.action || CASE_ACTIONS[0]!}
+                      options={CASE_ACTIONS}
+                      onChange={(v) => patchConfig({ action: v })}
+                    />
+                  </Field>
+                )}
+
+                {draftStep.kind === "Outcome" && (
+                  <Field label="Outcome">
+                    <SelectInput
+                      value={cfg.outcome || OUTCOMES[0]!}
+                      options={OUTCOMES}
+                      onChange={(v) => patchConfig({ outcome: v })}
+                    />
+                  </Field>
+                )}
+
+                {(draftStep.kind === "Human Review" || draftStep.kind === "AI Reassessment") && (
+                  <Field label="Note">
+                    <TextArea
+                      value={cfg.note || draftStep.detail || ""}
+                      onChange={(v) => patchConfig({ note: v })}
+                      placeholder="Guidance for this step"
+                    />
+                  </Field>
+                )}
+
+                {canEdit && !isActive && (
+                  <div className="flex flex-wrap gap-2">
+                    {draftStep.kind !== "Trigger" && (
+                      <Btn
+                        disabled={busy}
+                        onClick={() =>
+                          setDraftStep({ ...draftStep, disabled: !draftStep.disabled })
+                        }
+                      >
+                        {draftStep.disabled ? "Enable step" : "Disable step"}
+                      </Btn>
+                    )}
+                    <Btn variant="primary" disabled={busy} onClick={() => void applyStepChanges()}>
+                      Apply step changes
+                    </Btn>
+                  </div>
+                )}
               </div>
             </Panel>
           )}
@@ -439,50 +614,77 @@ export function PayFlowWorkflowDetailPage() {
             title="Approval & versions"
             action={
               <Btn onClick={() => setShowAudit((v) => !v)}>
-                {showAudit ? "Hide" : "View changes"}
+                {showAudit ? "Hide" : "View history"}
               </Btn>
             }
           >
             <dl className="space-y-1.5 text-[12.5px]">
               {[
+                ["Source", strategy.source || "—"],
                 ["Origin", strategy.origin],
+                ["Human Modified", strategy.human_modified || strategy.origin === "Human Modified" ? "Yes" : "No"],
+                ["Reviewed By", strategy.reviewed_by || "—"],
                 ["Approved By", strategy.approved_by || "Not yet approved"],
                 ["Approval Date", strategy.approval_date || "—"],
                 ["Strategy Version", `v${strategy.version}`],
-                ["Coverage", strategy.coverage || "—"],
+                [
+                  "Coverage",
+                  strategy.cases_covered != null
+                    ? `${strategy.cases_covered.toLocaleString()} cases`
+                    : strategy.coverage || "—",
+                ],
               ].map(([label, value]) => (
                 <div key={label} className="flex items-baseline justify-between gap-3">
                   <dt className="text-muted-foreground">{label}</dt>
-                  <dd className="font-medium text-foreground">{value}</dd>
+                  <dd className="font-medium text-foreground">
+                    {label === "Origin" ? (
+                      <StatusPill tone={originTone(String(value))}>{value}</StatusPill>
+                    ) : (
+                      value
+                    )}
+                  </dd>
                 </div>
               ))}
             </dl>
             {showAudit && (
               <ul className="mt-3 space-y-2 border-t border-border/60 pt-3">
-                {(strategy.versions || []).map((v, i) => (
-                  <li key={`${v.version}-${i}`}>
-                    <div className="flex items-baseline justify-between gap-3">
-                      <span className="text-[12.5px] font-semibold text-foreground">
-                        v{v.version}
-                      </span>
-                      <span className="text-[11px] text-muted-foreground">{v.date}</span>
-                    </div>
-                    <p className="text-[11.5px] text-muted-foreground">{v.note}</p>
-                  </li>
-                ))}
+                {(strategy.versions || []).length === 0 ? (
+                  <li className="text-[11.5px] text-muted-foreground">No version history yet.</li>
+                ) : (
+                  (strategy.versions || []).map((v, i) => (
+                    <li key={`${v.version}-${i}`}>
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="text-[12.5px] font-semibold text-foreground">
+                          v{v.version}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground">{v.date}</span>
+                      </div>
+                      <p className="text-[11.5px] text-muted-foreground">{v.note}</p>
+                      {(v.changes || []).length > 0 && (
+                        <ul className="mt-1 list-inside list-disc text-[11px] text-muted-foreground">
+                          {v.changes!.map((c) => (
+                            <li key={c}>{c}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  ))
+                )}
               </ul>
             )}
           </Panel>
 
-          <Panel title="Request regeneration">
-            <Field label="Note for PayFlow" hint="Optional. Explain what should change.">
-              <TextArea
-                value={rejectNote}
-                onChange={setRejectNote}
-                placeholder="e.g. reduce contact volume for low balances"
-              />
-            </Field>
-          </Panel>
+          {canReject && (
+            <Panel title="Request regeneration">
+              <Field label="Note for PayFlow" hint="Optional. Explain what should change.">
+                <TextArea
+                  value={rejectNote}
+                  onChange={setRejectNote}
+                  placeholder="e.g. reduce contact volume for low balances"
+                />
+              </Field>
+            </Panel>
+          )}
         </div>
       </div>
 

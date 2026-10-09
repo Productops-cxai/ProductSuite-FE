@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import {
   createPayflowWorkflow,
   listPayflowClientPortfolios,
   listPayflowClients,
 } from "../../api/payflow";
+import { StrategyCanvas } from "../../components/payflow/strategy-canvas";
 import {
   Btn,
   Field,
@@ -16,43 +17,28 @@ import {
   TextArea,
   TextInput,
 } from "../../components/payflow/lovable/payflow-ui";
-import type { PayflowClient, PayflowPortfolio } from "../../types";
+import {
+  CHANNELS,
+  MESSAGE_PURPOSES,
+  buildStepsFromDraft,
+  draftStepTitle,
+  makeDraftStep,
+  suggestFromPrompt,
+  type DraftStep,
+  type DraftStepKind,
+} from "../../lib/strategy-workflow";
+import type { PayflowClient, PayflowPortfolio, PayflowStrategy } from "../../types";
 
-type StepKind =
-  | "Communication"
-  | "Wait"
-  | "Condition"
-  | "AI Reassessment"
-  | "Case Action"
-  | "Human Review";
-
-type DraftStep = {
-  id: string;
-  kind: StepKind;
-  title: string;
-  channel?: string;
-  purpose?: string;
-  timing?: string;
-  detail?: string;
-};
-
-const ADDABLE_KINDS: StepKind[] = [
+const ADDABLE_KINDS: DraftStepKind[] = [
   "Communication",
   "Wait",
   "Condition",
   "AI Reassessment",
   "Case Action",
+  "Payment Action",
   "Human Review",
 ];
 
-const CHANNELS = ["Email", "SMS"];
-const PURPOSES = [
-  "Payment Reminder",
-  "Promise-to-Pay Follow-Up",
-  "Payment Plan Offer",
-  "Final Notice",
-  "Hardship Outreach",
-];
 const AGE_BANDS = ["All ages", "18 – 24", "25 – 34", "35 – 49", "50 – 64", "65 and over"];
 const POSTAL_REGIONS = [
   "All regions",
@@ -85,89 +71,9 @@ const TENURES = [
   "Long-standing (2 years+)",
 ];
 
-function uid() {
-  return `s${Date.now().toString(36)}-${Math.floor(Math.random() * 1000)}`;
-}
-
-function makeStep(kind: StepKind): DraftStep {
-  if (kind === "Communication") {
-    return {
-      id: uid(),
-      kind,
-      title: "Send Email — Payment Reminder",
-      channel: "Email",
-      purpose: PURPOSES[0],
-      timing: "0 Days After previous",
-    };
-  }
-  if (kind === "Wait") {
-    return { id: uid(), kind, title: "Wait / observe", timing: "3 Days" };
-  }
-  if (kind === "Condition") {
-    return {
-      id: uid(),
-      kind,
-      title: "Payment received?",
-      detail: "YES closes as paid; NO continues",
-    };
-  }
-  if (kind === "AI Reassessment") {
-    return { id: uid(), kind, title: "AI reassessment" };
-  }
-  if (kind === "Case Action") {
-    return { id: uid(), kind, title: "Case action" };
-  }
-  return { id: uid(), kind, title: "Human review" };
-}
-
-function stepTitle(step: DraftStep) {
-  if (step.kind === "Communication") {
-    return `Send ${step.channel || "Email"} — ${step.purpose || PURPOSES[0]}`;
-  }
-  return step.title;
-}
-
-function suggestFromPrompt(prompt: string): DraftStep[] {
-  const p = prompt.toLowerCase();
-  const gentle = /gentle|soft|early|gradual|remind/.test(p);
-  const urgent = /urgent|fast|aggressive|escalat|final|late|overdue/.test(p);
-  const smsFirst = /sms|text|mobile/.test(p);
-  const wantsPlan = /plan|installment|instalment|arrangement|afford/.test(p);
-  const wantsReview = /review|supervisor|approval|sensitive/.test(p);
-
-  const first = makeStep("Communication");
-  first.channel = smsFirst ? "SMS" : "Email";
-  first.purpose = PURPOSES[0];
-  first.timing = urgent ? "0 Days" : "1 Day After";
-  first.title = stepTitle(first);
-
-  const wait = makeStep("Wait");
-  wait.timing = urgent ? "2 Days" : gentle ? "5 Days" : "3 Days";
-  wait.title = `Wait ${wait.timing}`;
-
-  const check = makeStep("Condition");
-
-  const second = makeStep("Communication");
-  second.channel = smsFirst ? "Email" : "SMS";
-  second.purpose = wantsPlan ? "Payment Plan Offer" : PURPOSES[1] || PURPOSES[0];
-  second.timing = urgent ? "1 Day After" : "3 Days After";
-  second.title = stepTitle(second);
-
-  const steps: DraftStep[] = [first, wait, check, second, makeStep("AI Reassessment")];
-  if (urgent) {
-    const finalNotice = makeStep("Communication");
-    finalNotice.channel = "Email";
-    finalNotice.purpose = "Final Notice";
-    finalNotice.timing = "5 Days After";
-    finalNotice.title = stepTitle(finalNotice);
-    steps.push(finalNotice);
-  }
-  if (wantsReview) steps.push(makeStep("Human Review"));
-  return steps;
-}
-
 export function PayFlowWorkflowNewPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [clients, setClients] = useState<PayflowClient[]>([]);
   const [portfolios, setPortfolios] = useState<PayflowPortfolio[]>([]);
   const [loading, setLoading] = useState(true);
@@ -177,17 +83,17 @@ export function PayFlowWorkflowNewPage() {
   const [name, setName] = useState("");
   const [summary, setSummary] = useState("");
   const [prompt, setPrompt] = useState("");
-  const [clientId, setClientId] = useState("");
-  const [portfolioId, setPortfolioId] = useState("");
-  const [addKind, setAddKind] = useState<StepKind>("Communication");
+  const [clientId, setClientId] = useState(searchParams.get("clientId") || "");
+  const [portfolioId, setPortfolioId] = useState(searchParams.get("portfolioId") || "");
+  const [addKind, setAddKind] = useState<DraftStepKind>("Communication");
   const [steps, setSteps] = useState<DraftStep[]>([]);
   const [segment, setSegment] = useState({
-    age_band: AGE_BANDS[0],
-    postal_region: POSTAL_REGIONS[0],
-    balance_band: BALANCE_BANDS[0],
-    delinquency: DELINQUENCY_BANDS[0],
-    language: LANGUAGES[0],
-    tenure: TENURES[0],
+    age_band: AGE_BANDS[0]!,
+    postal_region: POSTAL_REGIONS[0]!,
+    balance_band: BALANCE_BANDS[0]!,
+    delinquency: DELINQUENCY_BANDS[0]!,
+    language: LANGUAGES[0]!,
+    tenure: TENURES[0]!,
   });
 
   useEffect(() => {
@@ -197,7 +103,7 @@ export function PayFlowWorkflowNewPage() {
         if (cancelled) return;
         const list = res.clients || [];
         setClients(list);
-        if (list[0]) setClientId(String(list[0].id));
+        if (!clientId && list[0]) setClientId(String(list[0].id));
       })
       .catch((err) => {
         if (!cancelled) {
@@ -210,6 +116,7 @@ export function PayFlowWorkflowNewPage() {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -220,12 +127,17 @@ export function PayFlowWorkflowNewPage() {
       return;
     }
     let cancelled = false;
+    const preferred = searchParams.get("portfolioId");
     listPayflowClientPortfolios(id)
       .then((res) => {
         if (cancelled) return;
         const list = res.portfolios || [];
         setPortfolios(list);
-        setPortfolioId(list[0] ? String(list[0].id) : "");
+        if (preferred && list.some((p) => String(p.id) === preferred)) {
+          setPortfolioId(preferred);
+        } else {
+          setPortfolioId(list[0] ? String(list[0].id) : "");
+        }
       })
       .catch(() => {
         if (!cancelled) {
@@ -236,7 +148,7 @@ export function PayFlowWorkflowNewPage() {
     return () => {
       cancelled = true;
     };
-  }, [clientId]);
+  }, [clientId, searchParams]);
 
   const clientOptions = useMemo(
     () => clients.map((c) => ({ label: c.name, value: String(c.id) })),
@@ -247,13 +159,41 @@ export function PayFlowWorkflowNewPage() {
     [portfolios],
   );
 
+  const previewStrategy: PayflowStrategy | null = useMemo(() => {
+    if (!steps.length) return null;
+    const built = buildStepsFromDraft(steps);
+    return {
+      id: 0,
+      code: "preview",
+      name: name || "Preview",
+      client_id: Number(clientId) || 0,
+      status: "Draft",
+      origin: "Human Created",
+      source: "Human Created",
+      version: 1,
+      segment,
+      entry_node_id: "t1",
+      steps: built,
+      stats: {
+        steps: built.length,
+        branches: built.filter((s) => s.kind === "Condition").length,
+        emails: built.filter(
+          (s) => s.kind === "Communication" && (s.config?.channel || s.channel) === "Email",
+        ).length,
+        sms: built.filter(
+          (s) => s.kind === "Communication" && (s.config?.channel || s.channel) === "SMS",
+        ).length,
+      },
+      ai_context: [],
+      versions: [],
+    };
+  }, [steps, name, clientId, segment]);
+
   function patchStep(id: string, patch: Partial<DraftStep>) {
     setSteps((prev) =>
       prev.map((s) => {
         if (s.id !== id) return s;
-        const next = { ...s, ...patch };
-        if (next.kind === "Communication") next.title = stepTitle(next);
-        return next;
+        return { ...s, ...patch };
       }),
     );
   }
@@ -280,29 +220,28 @@ export function PayFlowWorkflowNewPage() {
       setError("Select a client.");
       return;
     }
+    if (!portfolioId) {
+      setError("Select a portfolio. Every workflow must be scoped to a client and portfolio.");
+      return;
+    }
     if (steps.length === 0) {
       setError("Add at least one step.");
       return;
     }
     setBusy(true);
     try {
+      const built = buildStepsFromDraft(steps);
       const created = await createPayflowWorkflow({
         name: name.trim(),
         client_id: Number(clientId),
-        portfolio_id: portfolioId ? Number(portfolioId) : null,
-        summary: summary.trim() || "Human-created workflow with AI assistance.",
+        portfolio_id: Number(portfolioId),
+        summary: summary.trim() || "Human-created workflow with optional AI assistance.",
         coverage: "Targeted segment",
         segment,
-        steps: steps.map((s) => ({
-          id: s.id,
-          kind: s.kind,
-          title: s.title,
-          channel: s.channel,
-          purpose: s.purpose,
-          timing: s.timing,
-          detail: s.detail,
-        })),
-        status: "Under Review",
+        steps: built,
+        entry_node_id: "t1",
+        status: "Draft",
+        source: "Human Created",
       });
       navigate(`/payflow/workflows/${created.id}`);
     } catch (err) {
@@ -322,7 +261,7 @@ export function PayFlowWorkflowNewPage() {
           { label: "Create workflow" },
         ]}
         title="Create a workflow"
-        description="Describe what you want and let PayFlow AI suggest a starting flow, or add the steps yourself and reorder them."
+        description="Describe what you want and let PayFlow AI suggest a starting flow, or add the steps yourself. New workflows save as Draft until you submit them for review."
       />
 
       <div className="grid gap-4 xl:grid-cols-[360px_1fr]">
@@ -333,7 +272,7 @@ export function PayFlowWorkflowNewPage() {
                 <TextInput
                   value={name}
                   onChange={setName}
-                  placeholder="e.g. PayPal Loans Early Reminder"
+                  placeholder="e.g. Early Reminder — Small Balances"
                 />
               </Field>
               <Field label="Client">
@@ -415,16 +354,15 @@ export function PayFlowWorkflowNewPage() {
                 />
               </Field>
               <p className="text-[11.5px] text-muted-foreground">
-                Excluded from targeting: race, ethnicity, gender, religion, disability, national
-                origin.
+                Excluded from targeting: ethnicity, religion, gender, health status, marital status.
               </p>
             </div>
           </Panel>
 
           <Panel
             title="Ask PayFlow AI"
-            description="Describe the outcome you want. AI suggests the steps; you stay in control."
-            action={<StatusPill tone="ai">AI</StatusPill>}
+            description="Describe the outcome you want. AI suggests the steps; you stay in control. The workflow remains human-created."
+            action={<StatusPill tone="ai">AI assist</StatusPill>}
           >
             <Field label="Your prompt">
               <TextArea
@@ -449,17 +387,17 @@ export function PayFlowWorkflowNewPage() {
         <div className="space-y-4">
           <Panel
             title="Build the steps"
-            description="Use ↑ ↓ to reorder. A condition splits the flow into a YES and a NO path."
+            description="Reorder with ↑ ↓. A condition splits the flow into a YES (paid) and NO (continue) path. Timing uses days after a reference event."
             action={
               <div className="flex items-end gap-2">
                 <SelectInput
                   value={addKind}
                   options={ADDABLE_KINDS}
-                  onChange={(v) => setAddKind(v as StepKind)}
+                  onChange={(v) => setAddKind(v as DraftStepKind)}
                 />
                 <Btn
                   onClick={() => {
-                    setSteps((prev) => [...prev, makeStep(addKind)]);
+                    setSteps((prev) => [...prev, makeDraftStep(addKind)]);
                     setError("");
                   }}
                 >
@@ -483,7 +421,7 @@ export function PayFlowWorkflowNewPage() {
                       <span className="text-[11px] font-bold text-muted-foreground">{i + 1}</span>
                       <StatusPill>{step.kind}</StatusPill>
                       <span className="truncate text-[12.5px] font-medium text-foreground">
-                        {step.title}
+                        {draftStepTitle(step)}
                       </span>
                       <div className="ml-auto flex items-center gap-1">
                         <Btn disabled={i === 0} onClick={() => moveStep(step.id, -1)}>
@@ -516,26 +454,32 @@ export function PayFlowWorkflowNewPage() {
                         </Field>
                         <Field label="Message purpose">
                           <SelectInput
-                            value={step.purpose || PURPOSES[0]}
-                            options={PURPOSES}
+                            value={step.purpose || MESSAGE_PURPOSES[0]!}
+                            options={MESSAGE_PURPOSES}
                             onChange={(v) => patchStep(step.id, { purpose: v })}
                           />
                         </Field>
-                        <Field label="Timing">
+                        <Field label="Days after previous">
                           <TextInput
-                            value={step.timing || ""}
-                            onChange={(v) => patchStep(step.id, { timing: v })}
+                            value={String(step.amount)}
+                            onChange={(v) =>
+                              patchStep(step.id, {
+                                amount: Math.max(0, Number(v.replace(/\D/g, "")) || 0),
+                              })
+                            }
                           />
                         </Field>
                       </div>
                     )}
                     {step.kind === "Wait" && (
                       <div className="mt-2">
-                        <Field label="Wait for">
+                        <Field label="Wait (days after previous action)">
                           <TextInput
-                            value={step.timing || ""}
+                            value={String(step.amount)}
                             onChange={(v) =>
-                              patchStep(step.id, { timing: v, title: `Wait ${v || ""}`.trim() })
+                              patchStep(step.id, {
+                                amount: Math.max(0, Number(v.replace(/\D/g, "")) || 0),
+                              })
                             }
                           />
                         </Field>
@@ -553,9 +497,19 @@ export function PayFlowWorkflowNewPage() {
             )}
           </Panel>
 
+          {previewStrategy && (
+            <Panel title="Flow preview" description="How the workflow will look in the builder.">
+              <StrategyCanvas
+                strategy={previewStrategy}
+                selectedId={null}
+                onSelect={() => undefined}
+              />
+            </Panel>
+          )}
+
           <Panel
             title="Create"
-            description="After you create the workflow you can edit any step and approve it."
+            description="Saved as Draft. Submit for review, then approve, then activate — AI Proposed and Draft workflows cannot become Active."
             action={
               <Btn variant="primary" disabled={busy} onClick={() => void createWorkflow()}>
                 {busy ? "Creating…" : "Create workflow"}
@@ -570,7 +524,7 @@ export function PayFlowWorkflowNewPage() {
             {!error && (
               <p className="text-[12.5px] text-muted-foreground">
                 {steps.length
-                  ? `${steps.length} step${steps.length === 1 ? "" : "s"} ready.`
+                  ? `${steps.length} step${steps.length === 1 ? "" : "s"} ready (+ Trigger).`
                   : "Add or suggest steps to continue."}
               </p>
             )}

@@ -38,8 +38,8 @@ import { NoAccessPage, ProductLauncherPage } from "./pages/ProductLauncherPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { PayFlowHumanReview } from "./pages/payflow/HumanReview";
 import { PayFlowWorkflowsPage } from "./pages/payflow/WorkflowsPage";
-// Human Review / Workflows / Communications UI parked for redesign:
-// see src/_design_backup/payflow-ai-ops/
+import { PayFlowWorkflowNewPage } from "./pages/payflow/WorkflowNewPage";
+import { PayFlowWorkflowDetailPage } from "./pages/payflow/WorkflowDetailPage";
 
 function HomeRedirect() {
   const { loading, user, nextStep, products } = useAuth();
@@ -93,9 +93,10 @@ export default function App() {
         <Route path="integrations/:integrationId" element={<PayFlowIntegrationDetailPage />} />
         <Route path="users" element={<PayFlowUsersPage />} />
         <Route path="users/:userId" element={<PayFlowUserDetailPage />} />
-        <Route path="/payflow/review" element={<PayFlowHumanReview />} />
-        <Route path="/payflow/workflows" element={<PayFlowWorkflowsPage />} />
-        
+        <Route path="review" element={<PayFlowHumanReview />} />
+        <Route path="workflows" element={<PayFlowWorkflowsPage />} />
+        <Route path="workflows/new" element={<PayFlowWorkflowNewPage />} />
+        <Route path="workflows/:strategyId" element={<PayFlowWorkflowDetailPage />} />
       </Route>
 
       <Route path="/insightiq" element={<InsightIqPlaceholderPage />} />

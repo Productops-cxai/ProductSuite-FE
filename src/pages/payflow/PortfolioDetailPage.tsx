@@ -57,6 +57,7 @@ export function PayFlowPortfolioDetailPage() {
   const navigate = useNavigate();
   const { isOperationsAdmin, hasPermission } = usePayFlowAccess();
   const canEdit = isOperationsAdmin || hasPermission("edit_client");
+  const canCreateWorkflow = hasPermission("create_edit_workflows");
   const cid = Number(clientId);
   const pid = Number(portfolioId);
 
@@ -263,12 +264,65 @@ export function PayFlowPortfolioDetailPage() {
 
         <Panel
           title="Strategies / Workflows"
-          description="Workflow UI is temporarily parked for redesign. Backend data is unchanged."
+          description="Collection strategies scoped to this portfolio."
+          action={
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                to={`/payflow/workflows?client=${encodeURIComponent(detail.client_name)}&portfolio=${encodeURIComponent(detail.name)}`}
+                className="text-[12.5px] font-semibold text-primary hover:underline"
+              >
+                All strategies
+              </Link>
+              {canCreateWorkflow ? (
+                <Link
+                  to={`/payflow/workflows/new?clientId=${detail.client_id}&portfolioId=${detail.id}`}
+                >
+                  <Btn variant="primary">Create workflow</Btn>
+                </Link>
+              ) : null}
+            </div>
+          }
         >
-          <EmptyState
-            title="Workflow screens unavailable"
-            description="This area will return after the Strategies / Workflows frontend redesign."
-          />
+          {(detail.strategies || []).length === 0 ? (
+            <EmptyState
+              title="No strategies for this portfolio"
+              description="Create a workflow or wait for PayFlow AI to propose one."
+            />
+          ) : (
+            <ul className="space-y-2">
+              {(detail.strategies || []).map((s) => (
+                <li key={s.id}>
+                  <Link
+                    to={`/payflow/workflows/${s.id}`}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/80 bg-card px-4 py-3 transition-colors hover:border-primary/40"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-[13px] font-semibold text-foreground">{s.name}</p>
+                      <p className="mt-0.5 text-[11.5px] text-muted-foreground">
+                        {s.origin || "—"} · v{s.version ?? 1}
+                      </p>
+                    </div>
+                    <StatusPill
+                      tone={
+                        s.status === "Active"
+                          ? "success"
+                          : s.status === "AI Proposed" || s.status === "Under Review"
+                            ? s.status === "AI Proposed"
+                              ? "ai"
+                              : "warning"
+                            : s.status === "Approved"
+                              ? "info"
+                              : "neutral"
+                      }
+                      dot
+                    >
+                      {s.status}
+                    </StatusPill>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
         </Panel>
       </div>
 

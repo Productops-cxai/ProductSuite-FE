@@ -146,7 +146,8 @@ export const PAYFLOW_ROUTE_PERMISSIONS: Array<{ prefix: string; anyOf: string[] 
     prefix: "/payflow/imports",
     anyOf: ["view_customer_accounts", "view_collection_cases", "import_clients", "import_accounts"],
   },
-  // /payflow/review, /workflows, /comms — FE parked in src/_design_backup/payflow-ai-ops
+  { prefix: "/payflow/workflows", anyOf: ["view_workflows"] },
+  { prefix: "/payflow/review", anyOf: ["view_human_reviews"] },
   { prefix: "/payflow/rules", anyOf: ["view_rules"] },
 ];
 

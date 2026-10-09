@@ -27,6 +27,7 @@ import {
 import {
   ClientAccountsTab,
   ClientRulesTab,
+  ClientWorkflowsTab,
 } from "../../components/payflow/client-detail-tabs";
 import { PortfolioSection } from "../../components/payflow/portfolio-section";
 import {
@@ -55,11 +56,11 @@ import {
 import { cn } from "../../lib/utils";
 import type { PayflowClientDetail, PayflowUser } from "../../types";
 
-// Workflows / Communications / Human Reviews tabs parked — see src/_design_backup/payflow-ai-ops
 const MAIN_TABS = [
   "Overview",
   "Sub-Clients / Portfolios",
   "Accounts",
+  "Workflows",
   "Rules",
   "Configuration",
 ] as const;
@@ -513,6 +514,10 @@ export function PayFlowClientDetailPage() {
 
       {tab === "Accounts" && (
         <ClientAccountsTab clientId={detail.id} clientName={detail.name} />
+      )}
+
+      {tab === "Workflows" && (
+        <ClientWorkflowsTab clientId={detail.id} clientName={detail.name} />
       )}
 
       {tab === "Rules" && (

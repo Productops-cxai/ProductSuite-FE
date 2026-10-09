@@ -859,21 +859,47 @@ export interface PayflowRulesListResponse {
   logics: string[];
 }
 
+export interface PayflowStrategyStepConfig {
+  channel?: string | null;
+  purpose?: string | null;
+  reference_event?: string | null;
+  amount?: number | null;
+  unit?: string | null;
+  direction?: string | null;
+  attribute?: string | null;
+  operator?: string | null;
+  value?: string | null;
+  action?: string | null;
+  outcome?: string | null;
+  note?: string | null;
+  template_id?: string | null;
+}
+
 export interface PayflowStrategyStep {
   id?: string | null;
   kind: string;
   title: string;
+  origin?: string | null;
+  disabled?: boolean;
+  config?: PayflowStrategyStepConfig | null;
+  next?: string | null;
+  yes?: string | null;
+  no?: string | null;
   channel?: string | null;
   purpose?: string | null;
   timing?: string | null;
   detail?: string | null;
-  disabled?: boolean;
 }
 
 export interface PayflowStrategyVersion {
   version: number;
   date: string;
   note: string;
+  status?: string | null;
+  origin?: string | null;
+  approved_by?: string | null;
+  approval_date?: string | null;
+  changes?: string[];
 }
 
 export interface PayflowStrategyStats {
@@ -881,11 +907,34 @@ export interface PayflowStrategyStats {
   branches: number;
   emails: number;
   sms: number;
+  payment_actions?: number;
+  case_actions?: number;
 }
 
 export interface PayflowStrategyContextItem {
   label: string;
   value: string;
+}
+
+export interface PayflowStrategyCatalog {
+  channels?: string[];
+  message_purposes?: string[];
+  reference_events?: string[];
+  message_templates?: {
+    id: string;
+    name: string;
+    channel: string;
+    purpose: string;
+    subject?: string | null;
+    body?: string | null;
+  }[];
+  age_bands?: string[];
+  postal_regions?: string[];
+  balance_bands?: string[];
+  delinquency_bands?: string[];
+  languages?: string[];
+  tenures?: string[];
+  excluded_targeting_attributes?: string[];
 }
 
 export interface PayflowStrategy {
@@ -899,17 +948,24 @@ export interface PayflowStrategy {
   portfolio_name?: string | null;
   status: string;
   origin: string;
+  source?: string | null;
   version: number;
   summary?: string | null;
   coverage?: string | null;
+  cases_covered?: number | null;
   segment: Record<string, string>;
+  entry_node_id?: string | null;
   steps: PayflowStrategyStep[];
   stats: PayflowStrategyStats;
   ai_context: PayflowStrategyContextItem[];
+  ai_proposal_snapshot?: Record<string, unknown> | null;
   versions: PayflowStrategyVersion[];
   approved_by?: string | null;
   approval_date?: string | null;
+  reviewed_by?: string | null;
   created_by?: string | null;
+  human_modified?: boolean;
+  awaiting_review?: boolean;
   last_updated_label?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
@@ -918,8 +974,12 @@ export interface PayflowStrategy {
 export interface PayflowStrategiesSummary {
   total: number;
   ai_proposed: number;
-  active: number;
+  draft?: number;
   under_review: number;
+  approved?: number;
+  active: number;
+  inactive?: number;
+  awaiting_review?: number;
 }
 
 export interface PayflowStrategiesListResponse {
@@ -927,6 +987,9 @@ export interface PayflowStrategiesListResponse {
   summary: PayflowStrategiesSummary;
   statuses: string[];
   step_kinds: string[];
+  origins?: string[];
+  sources?: string[];
+  catalog?: PayflowStrategyCatalog;
 }
 
 export interface PayflowCommEvent {

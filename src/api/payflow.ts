@@ -614,23 +614,49 @@ export function getPayflowWorkflow(strategyId: number) {
   return apiRequest<PayflowStrategy>(`/payflow/workflows/${strategyId}`);
 }
 
+export type PayflowWorkflowStepPayload = {
+  id?: string;
+  kind: string;
+  title: string;
+  origin?: string;
+  disabled?: boolean;
+  config?: {
+    channel?: string | null;
+    purpose?: string | null;
+    reference_event?: string | null;
+    amount?: number | null;
+    unit?: string | null;
+    direction?: string | null;
+    attribute?: string | null;
+    operator?: string | null;
+    value?: string | null;
+    action?: string | null;
+    outcome?: string | null;
+    note?: string | null;
+    template_id?: string | null;
+  };
+  next?: string | null;
+  yes?: string | null;
+  no?: string | null;
+  channel?: string | null;
+  purpose?: string | null;
+  timing?: string | null;
+  detail?: string | null;
+};
+
 export async function createPayflowWorkflow(payload: {
   name: string;
   client_id: number;
-  portfolio_id?: number | null;
+  portfolio_id: number;
   summary?: string;
   coverage?: string;
+  cases_covered?: number;
   segment?: Record<string, string>;
-  steps: {
-    id?: string;
-    kind: string;
-    title: string;
-    channel?: string;
-    purpose?: string;
-    timing?: string;
-    detail?: string;
-  }[];
+  steps: PayflowWorkflowStepPayload[];
+  entry_node_id?: string;
   status?: string;
+  source?: string;
+  ai_context?: { label: string; value: string }[];
 }) {
   return apiRequest<PayflowStrategy>("/payflow/workflows", { method: "POST", body: payload });
 }
@@ -641,17 +667,10 @@ export async function updatePayflowWorkflow(
     name?: string;
     summary?: string;
     coverage?: string;
+    cases_covered?: number;
     segment?: Record<string, string>;
-    steps?: {
-      id?: string;
-      kind: string;
-      title: string;
-      channel?: string;
-      purpose?: string;
-      timing?: string;
-      detail?: string;
-      disabled?: boolean;
-    }[];
+    steps?: PayflowWorkflowStepPayload[];
+    entry_node_id?: string;
   },
 ) {
   return apiRequest<PayflowStrategy>(`/payflow/workflows/${strategyId}/update`, {
@@ -666,6 +685,18 @@ export async function savePayflowWorkflowDraft(strategyId: number) {
   });
 }
 
+export async function beginPayflowWorkflowReview(strategyId: number) {
+  return apiRequest<PayflowStrategy>(`/payflow/workflows/${strategyId}/begin-review`, {
+    method: "POST",
+  });
+}
+
+export async function submitPayflowWorkflowReview(strategyId: number) {
+  return apiRequest<PayflowStrategy>(`/payflow/workflows/${strategyId}/submit-review`, {
+    method: "POST",
+  });
+}
+
 export async function approvePayflowWorkflow(strategyId: number) {
   return apiRequest<PayflowStrategy>(`/payflow/workflows/${strategyId}/approve`, {
     method: "POST",
@@ -676,6 +707,18 @@ export async function rejectPayflowWorkflow(strategyId: number, payload?: { note
   return apiRequest<PayflowStrategy>(`/payflow/workflows/${strategyId}/reject`, {
     method: "POST",
     body: payload || {},
+  });
+}
+
+export async function activatePayflowWorkflow(strategyId: number) {
+  return apiRequest<PayflowStrategy>(`/payflow/workflows/${strategyId}/activate`, {
+    method: "POST",
+  });
+}
+
+export async function deactivatePayflowWorkflow(strategyId: number) {
+  return apiRequest<PayflowStrategy>(`/payflow/workflows/${strategyId}/deactivate`, {
+    method: "POST",
   });
 }
 
