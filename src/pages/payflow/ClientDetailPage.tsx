@@ -20,6 +20,7 @@ import {
   draftFromDetail,
   draftToUpdatePayload,
   emptyDraft,
+  postalCodeConfigIssues,
   type ClientDraft,
   type ClientDraftConfig,
 } from "../../components/payflow/client-config-sections";
@@ -151,6 +152,11 @@ export function PayFlowClientDetailPage() {
       setError("Branding & channels can only be updated while the client is in Draft status");
       return;
     }
+    const postalError = postalCodeConfigIssues(draft)[0];
+    if (postalError) {
+      setError(postalError);
+      return;
+    }
     setBusy(true);
     setError("");
     setInfo("");
@@ -182,6 +188,11 @@ export function PayFlowClientDetailPage() {
 
   async function activate() {
     if (!detail || readOnly) return;
+    const postalError = postalCodeConfigIssues(draft)[0];
+    if (postalError) {
+      setError(postalError);
+      return;
+    }
     setBusy(true);
     setError("");
     try {

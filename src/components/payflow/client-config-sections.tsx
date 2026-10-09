@@ -100,6 +100,20 @@ export interface SectionProps {
   }) => void;
 }
 
+/** Canadian postal code: A1A 1A1 */
+export const CLIENT_POSTAL_CODE_PATTERN = /^[A-Z]\d[A-Z] \d[A-Z]\d$/;
+
+export function isValidClientPostalCode(value: string): boolean {
+  const cleaned = value.trim().toUpperCase();
+  if (!cleaned) return true;
+  return CLIENT_POSTAL_CODE_PATTERN.test(cleaned);
+}
+
+export function postalCodeConfigIssues(draft: ClientDraft): string[] {
+  if (isValidClientPostalCode(draft.config.postalCode)) return [];
+  return ["Postal code must match format A1A 1A1"];
+}
+
 export function connectionTone(state: ConnectionLabel): Tone {
   switch (state) {
     case "Connected":
@@ -261,7 +275,7 @@ export function draftToUpdatePayload(draft: ClientDraft) {
     city: draft.config.city.trim() || undefined,
     province_state: draft.config.provinceState.trim() || undefined,
     country: draft.config.country.trim() || undefined,
-    postal_code: draft.config.postalCode.trim() || undefined,
+    postal_code: draft.config.postalCode.trim().toUpperCase() || undefined,
     correspondence_language: draft.config.correspondenceLanguage.trim() || undefined,
     currency_code: draft.config.currencyCode.trim() || undefined,
     integration_ref: draft.config.crmClientNumber.trim() || undefined,
@@ -581,12 +595,33 @@ export function ProfileSection({ draft, patch, patchConfig, readOnly }: SectionP
               onChange={(city) => patchConfig({ city })}
             />
           </Field>
-          <Field label="Postal code">
+          <Field
+            label="Postal code"
+            hint={
+              draft.config.postalCode.trim() &&
+              !isValidClientPostalCode(draft.config.postalCode)
+                ? undefined
+                : "Format: A1A 1A1"
+            }
+          >
             <TextInput
               value={draft.config.postalCode}
-              onChange={(v) => patchConfig({ postalCode: v })}
+              onChange={(v) => patchConfig({ postalCode: v.toUpperCase() })}
+              placeholder="A1A 1A1"
               disabled={readOnly}
+              className={
+                draft.config.postalCode.trim() &&
+                !isValidClientPostalCode(draft.config.postalCode)
+                  ? "border-destructive focus:border-destructive focus:ring-destructive/15"
+                  : undefined
+              }
             />
+            {draft.config.postalCode.trim() &&
+            !isValidClientPostalCode(draft.config.postalCode) ? (
+              <span className="mt-1 block text-[11px] text-destructive">
+                Use format A1A 1A1 (letter-number-letter space number-letter-number)
+              </span>
+            ) : null}
           </Field>
           <Field label="Language">
             <SearchableSelect

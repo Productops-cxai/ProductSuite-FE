@@ -20,6 +20,7 @@ import {
   draftFromDetail,
   draftToUpdatePayload,
   emptyDraft,
+  postalCodeConfigIssues,
   type ClientDraft,
   type ClientDraftConfig,
 } from "../../components/payflow/client-config-sections";
@@ -86,9 +87,11 @@ export function PayFlowClientNewPage() {
   }, [draft.supervisorUserIds, supervisors]);
 
   const brandingIssues = brandingConfigIssues(draft);
+  const postalIssues = postalCodeConfigIssues(draft);
   const issues: string[] = [];
   if (!draft.name.trim()) issues.push("Client name is required");
   if (!draft.config.code.trim()) issues.push("Client code is required");
+  issues.push(...postalIssues);
   issues.push(...brandingIssues);
   if (draft.supervisorUserIds.length === 0) issues.push("Assign at least one supervisor");
 
@@ -96,6 +99,10 @@ export function PayFlowClientNewPage() {
     const payload = draftToUpdatePayload(draft);
     if (!payload.name || !payload.code) {
       throw new ApiError(400, "Client name and code are required before saving");
+    }
+    const postalError = postalCodeConfigIssues(draft)[0];
+    if (postalError) {
+      throw new ApiError(400, postalError);
     }
     if (clientId == null) {
       const created = await createPayflowClient({
