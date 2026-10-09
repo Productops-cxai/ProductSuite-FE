@@ -36,6 +36,8 @@ import { PayFlowUserDetailPage } from "./pages/payflow/UserDetailPage";
 import { PayFlowUsersPage } from "./pages/payflow/UsersPage";
 import { NoAccessPage, ProductLauncherPage } from "./pages/ProductLauncherPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
+import { PayFlowHumanReview } from "./pages/payflow/HumanReview";
+import { PayFlowWorkflowsPage } from "./pages/payflow/WorkflowsPage";
 // Human Review / Workflows / Communications UI parked for redesign:
 // see src/_design_backup/payflow-ai-ops/
 
@@ -91,6 +93,9 @@ export default function App() {
         <Route path="integrations/:integrationId" element={<PayFlowIntegrationDetailPage />} />
         <Route path="users" element={<PayFlowUsersPage />} />
         <Route path="users/:userId" element={<PayFlowUserDetailPage />} />
+        <Route path="/payflow/review" element={<PayFlowHumanReview />} />
+        <Route path="/payflow/workflows" element={<PayFlowWorkflowsPage />} />
+        
       </Route>
 
       <Route path="/insightiq" element={<InsightIqPlaceholderPage />} />
