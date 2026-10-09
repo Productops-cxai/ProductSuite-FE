@@ -14,6 +14,7 @@ import {
   type Tone,
 } from "./lovable/payflow-ui";
 import { resolveAvatarUrl } from "../ui/UserAvatar";
+import { LogoCropModal } from "./LogoCropModal";
 import { removePayflowClientLogo, uploadPayflowClientLogo } from "../../api/payflow";
 import { ApiError } from "../../api/client";
 import {
@@ -790,12 +791,46 @@ export function BrandingSection({
   // Third Party previews never show the client logo — PayFlow operator identity only.
   const previewLogoSrc = thirdParty ? null : clientLogoSrc;
   const fileRef = useRef<HTMLInputElement>(null);
+  const cropObjectUrlRef = useRef<string | null>(null);
   const [logoBusy, setLogoBusy] = useState(false);
   const [logoError, setLogoError] = useState("");
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [cropOpen, setCropOpen] = useState(false);
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
+  const [cropFileName, setCropFileName] = useState("logo.png");
   const previewSender = thirdParty
     ? c.senderName.trim() || "PayFlow Collections"
     : c.senderName.trim() || brand;
+
+  function clearCropObjectUrl() {
+    if (cropObjectUrlRef.current) {
+      URL.revokeObjectURL(cropObjectUrlRef.current);
+      cropObjectUrlRef.current = null;
+    }
+  }
+
+  function closeCrop() {
+    if (logoBusy) return;
+    setCropOpen(false);
+    setCropSrc(null);
+    clearCropObjectUrl();
+    if (fileRef.current) fileRef.current.value = "";
+  }
+
+  function openCrop(src: string, fileName: string, revokeOnClose = false) {
+    if (revokeOnClose) {
+      clearCropObjectUrl();
+      cropObjectUrlRef.current = src;
+    }
+    setCropFileName(fileName);
+    setCropSrc(src);
+    setCropOpen(true);
+    setLogoError("");
+  }
+
+  useEffect(() => {
+    return () => clearCropObjectUrl();
+  }, []);
 
   useEffect(() => {
     if (!previewOpen) return;
@@ -806,23 +841,46 @@ export function BrandingSection({
     return () => window.removeEventListener("keydown", onKey);
   }, [previewOpen]);
 
-  async function onLogoSelected(file: File | null) {
+  function onLogoSelected(file: File | null) {
     if (!file || readOnly || thirdParty) return;
     if (clientId == null) {
       setLogoError("Save earlier steps first so this client exists, then upload a logo.");
       return;
     }
+    const objectUrl = URL.createObjectURL(file);
+    openCrop(objectUrl, file.name || "logo.png", true);
+  }
+
+  async function onAdjustLogo() {
+    if (!clientLogoSrc || readOnly || thirdParty || clientId == null || logoBusy || cropOpen) return;
+    setLogoError("");
+    try {
+      const res = await fetch(clientLogoSrc, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load logo for adjusting");
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      openCrop(objectUrl, "logo.png", true);
+    } catch (err) {
+      setLogoError(err instanceof Error ? err.message : "Failed to load logo for adjusting");
+    }
+  }
+
+  async function onCropApply(file: File) {
+    if (clientId == null || readOnly || thirdParty) return;
     setLogoBusy(true);
     setLogoError("");
     try {
       const updated = await uploadPayflowClientLogo(clientId, file);
       patchConfig({ logoUrl: updated.logo_url || null });
       onClientUpdated?.(updated);
+      setCropOpen(false);
+      setCropSrc(null);
+      clearCropObjectUrl();
+      if (fileRef.current) fileRef.current.value = "";
     } catch (err) {
       setLogoError(err instanceof ApiError ? err.detail : "Failed to upload logo");
     } finally {
       setLogoBusy(false);
-      if (fileRef.current) fileRef.current.value = "";
     }
   }
 
@@ -844,6 +902,14 @@ export function BrandingSection({
 
   return (
     <div className="grid gap-5 lg:grid-cols-2">
+      <LogoCropModal
+        open={cropOpen}
+        imageSrc={cropSrc}
+        fileName={cropFileName}
+        busy={logoBusy}
+        onClose={closeCrop}
+        onApply={onCropApply}
+      />
       {previewOpen && clientLogoSrc && !thirdParty ? (
         <div
           className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/80 p-5 backdrop-blur-sm"
@@ -909,7 +975,7 @@ export function BrandingSection({
               className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-md border border-border bg-surface text-[13px] font-semibold text-foreground transition hover:ring-2 hover:ring-primary/40 disabled:cursor-default disabled:hover:ring-0"
             >
               {clientLogoSrc ? (
-                <img src={clientLogoSrc} alt="" className="size-full object-cover" />
+                <img src={clientLogoSrc} alt="" className="size-full object-contain p-0.5" />
               ) : (
                 previewInitials
               )}
@@ -917,7 +983,8 @@ export function BrandingSection({
             <div className="min-w-0 flex-1">
               <p className="text-[13px] font-medium text-foreground">Client Logo</p>
               <p className="text-[11px] text-muted-foreground">
-                JPG, PNG, WEBP or GIF · up to 2 MB. Used on customer-facing communications.
+                JPG, PNG, WEBP or GIF · up to 2 MB. Adjust framing after selecting — landscape
+                logos stay full width. Used on customer-facing communications.
               </p>
               {!readOnly ? (
                 <div className="mt-2 flex flex-wrap items-center gap-3">
@@ -926,7 +993,7 @@ export function BrandingSection({
                     type="file"
                     accept="image/jpeg,image/png,image/webp,image/gif"
                     className="hidden"
-                    onChange={(e) => void onLogoSelected(e.target.files?.[0] || null)}
+                    onChange={(e) => onLogoSelected(e.target.files?.[0] || null)}
                   />
                   <button
                     type="button"
@@ -938,6 +1005,14 @@ export function BrandingSection({
                   </button>
                   {c.logoUrl ? (
                     <>
+                      <button
+                        type="button"
+                        className="text-[12px] font-medium text-muted-foreground hover:text-foreground disabled:opacity-50"
+                        disabled={logoBusy || !clientLogoSrc || clientId == null}
+                        onClick={() => void onAdjustLogo()}
+                      >
+                        Adjust
+                      </button>
                       <button
                         type="button"
                         className="text-[12px] font-medium text-muted-foreground hover:text-foreground disabled:opacity-50"
@@ -1044,7 +1119,7 @@ export function BrandingSection({
           <div className="flex items-center gap-2 border-b border-border pb-2.5">
             <div className="grid size-7 place-items-center overflow-hidden rounded bg-surface text-[11px] font-semibold">
               {previewLogoSrc ? (
-                <img src={previewLogoSrc} alt="" className="size-full object-cover" />
+                <img src={previewLogoSrc} alt="" className="size-full object-contain p-px" />
               ) : (
                 previewInitials
               )}
