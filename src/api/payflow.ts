@@ -84,11 +84,11 @@ export async function updatePayflowUser(
   userId: string,
   payload: {
     full_name?: string;
-    email?: string;
     role_code?: string;
     confirm_role_change?: boolean;
   },
 ) {
+  // Email is immutable after create — never send it on update.
   const user = await apiRequest<PayflowUser>(`/payflow/users/${userId}/update`, {
     method: "POST",
     body: payload,

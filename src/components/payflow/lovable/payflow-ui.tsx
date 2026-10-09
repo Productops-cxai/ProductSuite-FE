@@ -703,6 +703,7 @@ export function SearchableSelect({
   placeholder = "Search…",
   disabled,
   emptyLabel = "No matches",
+  allowCustom = false,
   className,
 }: {
   value: string;
@@ -711,6 +712,8 @@ export function SearchableSelect({
   placeholder?: string;
   disabled?: boolean;
   emptyLabel?: string;
+  /** Allow typing a value not in the list (CRM messy address data). */
+  allowCustom?: boolean;
   className?: string;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -718,6 +721,13 @@ export function SearchableSelect({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [menuStyle, setMenuStyle] = useState<CSSProperties>({});
+
+  const mergedOptions = useMemo(() => {
+    const v = (value || "").trim();
+    if (!v) return options;
+    if (options.some((o) => o.toLowerCase() === v.toLowerCase())) return options;
+    return [v, ...options];
+  }, [options, value]);
 
   useEffect(() => {
     if (!open) setQuery("");
@@ -771,12 +781,25 @@ export function SearchableSelect({
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return options;
-    return options.filter((o) => o.toLowerCase().includes(q));
-  }, [options, query]);
+    if (!q) return mergedOptions;
+    return mergedOptions.filter((o) => o.toLowerCase().includes(q));
+  }, [mergedOptions, query]);
+
+  const customQuery = query.trim();
+  const showCustom =
+    allowCustom &&
+    customQuery.length > 0 &&
+    !mergedOptions.some((o) => o.toLowerCase() === customQuery.toLowerCase());
+
+  const commit = (opt: string) => {
+    onChange(opt);
+    setOpen(false);
+  };
+
+  const canOpen = !disabled && (allowCustom || mergedOptions.length > 0);
 
   const menu =
-    open && !disabled ? (
+    open && canOpen ? (
       <div
         ref={menuRef}
         style={menuStyle}
@@ -787,12 +810,29 @@ export function SearchableSelect({
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && showCustom) {
+                e.preventDefault();
+                commit(customQuery);
+              }
+            }}
             placeholder={placeholder}
             className="h-8 w-full rounded-md border border-border bg-surface px-2.5 text-[13px] outline-none focus:border-primary"
           />
         </div>
         <ul className="min-h-0 flex-1 overflow-y-auto py-1">
-          {filtered.length === 0 ? (
+          {showCustom ? (
+            <li>
+              <button
+                type="button"
+                className="flex w-full px-3 py-2 text-left text-[13px] font-medium text-primary hover:bg-accent"
+                onClick={() => commit(customQuery)}
+              >
+                Use “{customQuery}”
+              </button>
+            </li>
+          ) : null}
+          {filtered.length === 0 && !showCustom ? (
             <li className="px-3 py-2 text-[12px] text-muted-foreground">{emptyLabel}</li>
           ) : (
             filtered.map((opt) => (
@@ -803,10 +843,7 @@ export function SearchableSelect({
                     "flex w-full px-3 py-2 text-left text-[13px] hover:bg-accent",
                     opt === value && "bg-accent/60 font-medium text-primary",
                   )}
-                  onClick={() => {
-                    onChange(opt);
-                    setOpen(false);
-                  }}
+                  onClick={() => commit(opt)}
                 >
                   {opt}
                 </button>
@@ -821,7 +858,7 @@ export function SearchableSelect({
     <div ref={rootRef} className={cn("relative", className)}>
       <button
         type="button"
-        disabled={disabled || options.length === 0}
+        disabled={!canOpen}
         onClick={() => setOpen((v) => !v)}
         className={cn(
           controlClass,
@@ -829,7 +866,9 @@ export function SearchableSelect({
           !value && "text-muted-foreground",
         )}
       >
-        <span className="truncate">{value || (options.length ? placeholder : emptyLabel)}</span>
+        <span className="truncate">
+          {value || (mergedOptions.length || allowCustom ? placeholder : emptyLabel)}
+        </span>
         <span className="shrink-0 text-[10px] text-muted-foreground">{open ? "▴" : "▾"}</span>
       </button>
       {menu ? createPortal(menu, document.body) : null}

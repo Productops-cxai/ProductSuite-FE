@@ -45,22 +45,22 @@ export function setupDisplayLabel(label: string): string {
   return label;
 }
 
-/** Lovable banner / grid chips (excludes AI, portfolios, activation). */
+/** Banner / clients-grid chips (excludes AI & activation; includes Portfolios). */
 const BANNER_CHIP_KEYS = new Set([
   "profile",
+  "portfolios",
   "data_source",
   "data_mapping",
   "branding",
   "supervisors",
 ]);
 
-/** Required setup steps still incomplete. Portfolios / activation / AI do not count. */
+/** Setup steps still incomplete — used by clients list + detail header chips. */
 export function incompleteSetupSections(
   onboarding?: PayflowOnboardingProgress | null,
   setupIncomplete?: string[] | null,
 ): string[] {
-  if (Array.isArray(setupIncomplete) && setupIncomplete.length >= 0) {
-    // Prefer API chip list when present (includes Data Mapping after BE update).
+  if (Array.isArray(setupIncomplete) && setupIncomplete.length > 0) {
     return setupIncomplete.map(setupDisplayLabel);
   }
   if (!onboarding?.steps?.length) return [];

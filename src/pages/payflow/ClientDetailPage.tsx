@@ -9,6 +9,7 @@ import {
   getPayflowClientMappingCatalog,
   listPayflowUsers,
   updatePayflowClient,
+  type UpdatePayflowClientPayload,
 } from "../../api/payflow";
 import {
   AiGovernanceSection,
@@ -155,14 +156,19 @@ export function PayFlowClientDetailPage() {
     setError("");
     setInfo("");
     try {
-      const payload = draftToUpdatePayload(draft);
+      const full = draftToUpdatePayload(draft);
       // Branding is Draft-only — omit so other config sections can still save after activation.
+      let payload: UpdatePayflowClientPayload = full;
       if (detail.status !== "draft") {
-        delete payload.brand_name;
-        delete payload.sender_name;
-        delete payload.email_from;
-        delete payload.sms_sender_id;
-        delete payload.channels;
+        const {
+          brand_name: _brand,
+          sender_name: _sender,
+          email_from: _email,
+          sms_sender_id: _sms,
+          channels: _channels,
+          ...rest
+        } = full;
+        payload = rest;
       }
       const updated = await updatePayflowClient(detail.id, payload);
       setDetail(updated);
@@ -373,10 +379,10 @@ export function PayFlowClientDetailPage() {
         </p>
       )}
 
-      {isClientSettingUp(statusLabel)
-        ? (() => {
+      {(() => {
             const missing = missingSetupChips(detail);
             if (missing.length === 0) return null;
+            const drafting = isClientSettingUp(statusLabel);
             return (
               <div className="mb-4 rounded-lg border border-warning/40 bg-warning/8 px-4 py-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -389,8 +395,9 @@ export function PayFlowClientDetailPage() {
                       {missing.length > 1 ? "s" : ""} left
                     </p>
                     <p className="mt-0.5 text-[12px] text-muted-foreground">
-                      Complete the remaining configuration to activate this Client. It stays in
-                      Draft until an Operations Admin activates it.
+                      {drafting
+                        ? "Complete the remaining configuration to activate this Client. It stays in Draft until an Operations Admin activates it."
+                        : "Some onboarding steps are still open — for example Sub-Clients / Portfolios."}
                     </p>
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {missing.map((m) => (
@@ -409,7 +416,11 @@ export function PayFlowClientDetailPage() {
                     <Btn
                       variant="primary"
                       className="shrink-0"
-                      onClick={() => changeTab("Configuration")}
+                      onClick={() =>
+                        missing.some((m) => /portfolio|sub-client/i.test(m))
+                          ? goSetupTarget("portfolios")
+                          : changeTab("Configuration")
+                      }
                     >
                       Complete Setup
                     </Btn>
@@ -417,8 +428,7 @@ export function PayFlowClientDetailPage() {
                 </div>
               </div>
             );
-          })()
-        : null}
+          })()}
 
       <TabBar tabs={MAIN_TABS} active={tab} onChange={changeTab} />
 
@@ -510,8 +520,12 @@ export function PayFlowClientDetailPage() {
               />
               <OverviewCard
                 title="Sub-Clients / Portfolios"
-                tone={(detail.portfolio_count || 0) > 0 ? "success" : "neutral"}
-                status={`${detail.portfolio_count || 0} total`}
+                tone={(detail.portfolio_count || 0) > 0 ? "success" : "warning"}
+                status={
+                  (detail.portfolio_count || 0) > 0
+                    ? `${detail.portfolio_count} total`
+                    : "Pending"
+                }
                 lines={[
                   `${(detail.portfolios || []).filter((p) => (p.status || "").toLowerCase() === "active").length} active`,
                   `${(detail.portfolios || []).filter((p) => (p.status || "").toLowerCase() !== "active").length} onboarding / other`,
@@ -549,27 +563,6 @@ export function PayFlowClientDetailPage() {
                   }`,
                 ]}
                 onClick={() => goSetupTarget("Data Source")}
-              />
-              <OverviewCard
-                title="Data Mapping"
-                tone={
-                  !detail.mapping_summary ||
-                  (detail.mapping_summary.unmapped === 0 &&
-                    detail.mapping_summary.attention === 0 &&
-                    detail.mapping_summary.mapped > 0)
-                    ? "success"
-                    : "warning"
-                }
-                status={
-                  detail.mapping_summary
-                    ? `${detail.mapping_summary.mapped}/${detail.mapping_summary.total} mapped`
-                    : "System mapped"
-                }
-                lines={[
-                  `${detail.mapping_summary?.attention ?? 0} need attention`,
-                  `${detail.mapping_summary?.unmapped ?? 0} unmapped`,
-                ]}
-                onClick={() => goSetupTarget("mapping")}
               />
               <OverviewCard
                 title="Branding & Communication"

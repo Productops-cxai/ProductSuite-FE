@@ -340,12 +340,21 @@ export function ProfileSection({ draft, patch, patchConfig, readOnly }: SectionP
     setGeoError("");
     fetchStates(country)
       .then((states) => {
-        if (!cancelled) setProvinces(states);
+        if (!cancelled) {
+          setProvinces(states);
+          if (!states.length) {
+            setGeoError(
+              "Province list unavailable for this country — you can still type a province / state.",
+            );
+          }
+        }
       })
       .catch(() => {
         if (!cancelled) {
           setProvinces([]);
-          setGeoError("Could not load provinces / states for this country.");
+          setGeoError(
+            "Could not load provinces / states — type the value manually, or retry after Save.",
+          );
         }
       })
       .finally(() => {
@@ -365,15 +374,26 @@ export function ProfileSection({ draft, patch, patchConfig, readOnly }: SectionP
     }
     let cancelled = false;
     setLoadingCities(true);
-    setGeoError("");
+    // Soft: don't block edit when CRM stored a city name in province, etc.
     fetchCities(country, province)
       .then((list) => {
-        if (!cancelled) setCities(list);
+        if (!cancelled) {
+          setCities(list);
+          if (!list.length) {
+            setGeoError(
+              "City list unavailable for this province — pick a real province (e.g. Ontario) or type the city.",
+            );
+          } else {
+            setGeoError("");
+          }
+        }
       })
       .catch(() => {
         if (!cancelled) {
           setCities([]);
-          setGeoError("Could not load cities for this province / state.");
+          setGeoError(
+            "Could not load cities — type the city manually, or choose a valid province / state first.",
+          );
         }
       })
       .finally(() => {
@@ -477,10 +497,14 @@ export function ProfileSection({ draft, patch, patchConfig, readOnly }: SectionP
         <p className="mb-3 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">
           Address
         </p>
+        <p className="mb-3 text-[11px] leading-relaxed text-muted-foreground">
+          Country drives province, city, language, and currency. You can always type a custom
+          province or city if the list is incomplete or CRM data is messy — Save keeps your edits.
+        </p>
         {geoError ? (
-          <p className="mb-3 text-[12px] text-destructive">{geoError}</p>
+          <p className="mb-3 text-[12px] text-warning">{geoError}</p>
         ) : null}
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid items-start gap-4 sm:grid-cols-2">
           <Field label="Address line 1">
             <TextInput
               value={draft.config.addressLine1}
@@ -495,16 +519,14 @@ export function ProfileSection({ draft, patch, patchConfig, readOnly }: SectionP
               disabled={readOnly}
             />
           </Field>
-          <Field
-            label="Country"
-            hint="Live country list. Province, city, language, and currency load from free public geo APIs."
-          >
+          <Field label="Country">
             <SearchableSelect
               value={draft.config.country}
               options={countries}
               placeholder={loadingCountries ? "Loading countries…" : "Search countries…"}
               emptyLabel={loadingCountries ? "Loading…" : "No countries found"}
               disabled={readOnly || loadingCountries}
+              allowCustom
               onChange={(country) => {
                 const meta = getCountryMeta(country);
                 patchConfig({
@@ -526,10 +548,11 @@ export function ProfileSection({ draft, patch, patchConfig, readOnly }: SectionP
                   ? "Select country first"
                   : loadingProvinces
                     ? "Loading provinces…"
-                    : "Search province / state…"
+                    : "Search or type province / state…"
               }
-              emptyLabel={loadingProvinces ? "Loading…" : "No provinces for this country"}
-              disabled={readOnly || !draft.config.country || loadingProvinces || provinces.length === 0}
+              emptyLabel={loadingProvinces ? "Loading…" : "Type a province / state"}
+              disabled={readOnly || !draft.config.country}
+              allowCustom
               onChange={(provinceState) => {
                 patchConfig({
                   provinceState,
@@ -549,16 +572,11 @@ export function ProfileSection({ draft, patch, patchConfig, readOnly }: SectionP
                     ? "Select province / state first"
                     : loadingCities
                       ? "Loading cities…"
-                      : "Search cities…"
+                      : "Search or type city…"
               }
-              emptyLabel={loadingCities ? "Loading…" : "No cities available"}
-              disabled={
-                readOnly ||
-                !draft.config.country ||
-                !draft.config.provinceState ||
-                loadingCities ||
-                cities.length === 0
-              }
+              emptyLabel={loadingCities ? "Loading…" : "Type a city"}
+              disabled={readOnly || !draft.config.country || !draft.config.provinceState}
+              allowCustom
               onChange={(city) => patchConfig({ city })}
             />
           </Field>
@@ -574,8 +592,9 @@ export function ProfileSection({ draft, patch, patchConfig, readOnly }: SectionP
               value={draft.config.correspondenceLanguage}
               options={languages}
               placeholder={draft.config.country ? "Search language…" : "Select country first"}
-              emptyLabel="No languages listed"
-              disabled={readOnly || !draft.config.country || languages.length === 0}
+              emptyLabel="Type a language"
+              disabled={readOnly || !draft.config.country}
+              allowCustom
               onChange={(correspondenceLanguage) => patchConfig({ correspondenceLanguage })}
             />
           </Field>
@@ -584,8 +603,9 @@ export function ProfileSection({ draft, patch, patchConfig, readOnly }: SectionP
               value={draft.config.currencyCode}
               options={currencies}
               placeholder={draft.config.country ? "Search currency…" : "Select country first"}
-              emptyLabel="No currencies listed"
-              disabled={readOnly || !draft.config.country || currencies.length === 0}
+              emptyLabel="Type a currency code"
+              disabled={readOnly || !draft.config.country}
+              allowCustom
               onChange={(currencyCode) => patchConfig({ currencyCode })}
             />
           </Field>
@@ -735,21 +755,20 @@ export function brandingConfigIssues(draft: ClientDraft): string[] {
   if (!c.channels.email && !c.channels.sms) {
     issues.push("At least one communication channel must be enabled");
   }
+  // Lovable: brandName + senderName required for all client types (no name fallback).
+  if (!c.brandName.trim()) {
+    issues.push("Display / brand name is required (set in Branding & Channels)");
+  }
+  if (!c.senderName.trim()) {
+    issues.push("Sender name is required (set in Branding & Channels)");
+  }
   if (c.clientType === "First Party") {
-    if (!c.brandName.trim()) {
-      issues.push("Display / brand name is required for First Party clients");
-    }
-    if (!c.senderName.trim()) {
-      issues.push("Sender name is required for First Party clients");
-    }
     if (c.channels.email && !c.emailFrom.trim()) {
       issues.push("Email from address is required when Email is enabled");
     }
     if (c.channels.sms && !c.smsSenderId.trim()) {
       issues.push("SMS sender ID is required when SMS is enabled");
     }
-  } else if (!(c.brandName.trim() || draft.name.trim())) {
-    issues.push("Client display / reference name is required for Third Party clients");
   }
   return issues;
 }

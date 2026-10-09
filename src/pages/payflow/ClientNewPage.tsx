@@ -26,23 +26,32 @@ import {
 import { Btn, PageHeader, Panel, StatusPill, type Tone } from "../../components/payflow/lovable/payflow-ui";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { cn } from "../../lib/utils";
-import type { PayflowUser } from "../../types";
+import type { PayflowClientMappingSummary, PayflowUser } from "../../types";
 
+/** System catalog is healthy when required fields are mapped and nothing is flagged. */
+function systemMappingOk(summary: PayflowClientMappingSummary | null): boolean {
+  if (!summary) return true;
+  return (summary.required_missing?.length ?? 0) === 0 && summary.attention === 0;
+}
+
+/** Matches Lovable Add Client (`account-payflow-ai/clients.new`). Sub-Clients/Portfolios stay on the client detail tab. */
 const steps = [
   "Client Profile",
   "Data Source",
+  "Data Mapping",
   "Branding & Channels",
   "AI & Governance",
-  "Supervisors",
+  "Assigned Users",
   "Review & Activate",
 ] as const;
 
 const stepDescriptions = [
   "Basic client information.",
-  "Daily file intake for this client (CRM mapping is system-wide).",
+  "Select the single primary operational data source.",
+  "Confirm system CRM → PayFlow field mapping used for this client’s file intake.",
   "How customer-facing communications represent this client.",
   "How PayFlow operates collection activity for this client.",
-  "Who supervises this client.",
+  "Who supervises this client, and what they can access.",
   "Confirm configuration before activation.",
 ];
 
@@ -55,6 +64,7 @@ export function PayFlowClientNewPage() {
   const [clientId, setClientId] = useState<number | null>(null);
   const [supervisors, setSupervisors] = useState<PayflowUser[]>([]);
   const [governanceRules, setGovernanceRules] = useState<string[]>([]);
+  const [mappingSummary, setMappingSummary] = useState<PayflowClientMappingSummary | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [activatedName, setActivatedName] = useState<string | null>(null);
@@ -69,6 +79,20 @@ export function PayFlowClientNewPage() {
           (users.users || []).filter((u) => u.role_scope === "client_scoped"),
         );
         setGovernanceRules(catalog.governance_rules || []);
+        // System catalog drives mapping — same source Configuration uses.
+        const fields = catalog.fields || [];
+        const total = fields.length;
+        const mapped = fields.filter((f) => Boolean((f.payflow_field || "").trim())).length;
+        const requiredMissing = fields
+          .filter((f) => f.required && !(f.payflow_field || "").trim())
+          .map((f) => f.source_field);
+        setMappingSummary({
+          mapped,
+          attention: requiredMissing.length,
+          unmapped: Math.max(0, total - mapped),
+          total,
+          required_missing: requiredMissing,
+        });
       })
       .catch(() => {
         /* non-blocking for initial render */
@@ -85,6 +109,8 @@ export function PayFlowClientNewPage() {
   }, [draft.supervisorUserIds, supervisors]);
 
   const brandingIssues = brandingConfigIssues(draft);
+  const mappingOk = systemMappingOk(mappingSummary);
+  // Activation blockers match BE (mapping is system-wide — shown on step, not a client blocker).
   const issues: string[] = [];
   if (!draft.name.trim()) issues.push("Client name is required");
   if (!draft.config.code.trim()) issues.push("Client code is required");
@@ -108,10 +134,12 @@ export function PayFlowClientNewPage() {
       setClientId(created.id);
       const updated = await updatePayflowClient(created.id, payload);
       setDraft(draftFromDetail(updated));
+      if (updated.mapping_summary) setMappingSummary(updated.mapping_summary);
       return created.id;
     }
     const updated = await updatePayflowClient(clientId, payload);
     setDraft(draftFromDetail(updated));
+    if (updated.mapping_summary) setMappingSummary(updated.mapping_summary);
     return clientId;
   }
 
@@ -136,6 +164,7 @@ export function PayFlowClientNewPage() {
       const detail = await getPayflowClient(id);
       setClientId(id);
       setDraft(draftFromDetail(detail));
+      if (detail.mapping_summary) setMappingSummary(detail.mapping_summary);
       setStep((s) => Math.min(steps.length - 1, s + 1));
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Failed to save step");
@@ -180,19 +209,24 @@ export function PayFlowClientNewPage() {
             { label: activatedName },
           ]}
           title={`${activatedName} is Ready for Operations`}
-          description="Configuration saved. Customer accounts will appear once the first data sync completes."
+          description="Configuration saved. Customer accounts will appear once the first data sync completes. Add Sub-Clients / Portfolios from the client detail page when needed."
         />
         <Panel title="Activation summary">
           <div className="flex flex-wrap gap-2">
             <StatusPill tone="success">Active</StatusPill>
             <StatusPill tone="info">{draft.aiMode}</StatusPill>
-            <StatusPill>CRM data source</StatusPill>
+            <StatusPill>Daily file data source</StatusPill>
             <StatusPill>Supervisors: {supervisorNames.join(", ") || "None"}</StatusPill>
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
             {clientId != null && (
+              <Link to={`/payflow/clients/${clientId}?tab=Sub-Clients%20%2F%20Portfolios`}>
+                <Btn variant="primary">Add Sub-Clients / Portfolios</Btn>
+              </Link>
+            )}
+            {clientId != null && (
               <Link to={`/payflow/clients/${clientId}`}>
-                <Btn variant="primary">View Client</Btn>
+                <Btn>View Client</Btn>
               </Link>
             )}
             <Link to="/payflow/clients">
@@ -247,7 +281,11 @@ export function PayFlowClientNewPage() {
             const state = i === step ? "current" : i < step ? "done" : "todo";
             return (
               <li key={label} className="flex items-center gap-2">
-                <button type="button" onClick={() => setStep(i)} className="flex items-center gap-2 text-left">
+                <button
+                  type="button"
+                  onClick={() => setStep(i)}
+                  className="flex items-center gap-2 text-left"
+                >
                   <span
                     className={cn(
                       "grid size-6 shrink-0 place-items-center rounded-full border text-[11px] font-semibold",
@@ -280,10 +318,13 @@ export function PayFlowClientNewPage() {
       >
         {step === 0 && <ProfileSection {...sectionProps} />}
         {step === 1 && <DataSourceSection {...sectionProps} />}
-        {step === 2 && <BrandingSection {...sectionProps} />}
-        {step === 3 && <AiGovernanceSection {...sectionProps} />}
-        {step === 4 && <SupervisorSection {...sectionProps} />}
-        {step === 5 && (
+        {step === 2 && (
+          <SystemMappingStep summary={mappingSummary} mappingOk={mappingOk} />
+        )}
+        {step === 3 && <BrandingSection {...sectionProps} />}
+        {step === 4 && <AiGovernanceSection {...sectionProps} />}
+        {step === 5 && <SupervisorSection {...sectionProps} />}
+        {step === 6 && (
           <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <ReviewBlock
@@ -299,6 +340,18 @@ export function PayFlowClientNewPage() {
                 title="Data Source"
                 rows={["Daily file", "Ready for file intake"]}
                 tone={connectionTone("Connected")}
+              />
+              <ReviewBlock
+                title="Data Mapping"
+                rows={[
+                  mappingSummary
+                    ? `${mappingSummary.mapped}/${mappingSummary.total} mapped`
+                    : "System CRM mapping",
+                  mappingSummary
+                    ? `${mappingSummary.attention} need attention · ${mappingSummary.unmapped} unmapped`
+                    : "Shared system catalog",
+                ]}
+                tone={mappingOk ? "success" : "warning"}
               />
               <ReviewBlock
                 title="Branding & Channels"
@@ -330,7 +383,7 @@ export function PayFlowClientNewPage() {
                 }
               />
               <ReviewBlock
-                title="Supervisors"
+                title="Assigned Users"
                 rows={supervisorNames.length ? supervisorNames : ["None assigned"]}
               />
             </div>
@@ -384,6 +437,64 @@ export function PayFlowClientNewPage() {
         </div>
       </div>
     </>
+  );
+}
+
+function SystemMappingStep({
+  summary,
+  mappingOk,
+}: {
+  summary: PayflowClientMappingSummary | null;
+  mappingOk: boolean;
+}) {
+  return (
+    <div className="space-y-3 text-[13px]">
+      <div className="flex flex-wrap items-center gap-2">
+        <StatusPill tone={mappingOk ? "success" : "warning"} dot>
+          {mappingOk ? "System mapping ready" : "Needs attention"}
+        </StatusPill>
+        {summary ? (
+          <>
+            <StatusPill tone="info">{summary.mapped} Mapped</StatusPill>
+            <StatusPill tone="warning">{summary.attention} Need Attention</StatusPill>
+            <StatusPill tone={summary.unmapped ? "danger" : "neutral"}>
+              {summary.unmapped} Unmapped
+            </StatusPill>
+          </>
+        ) : null}
+      </div>
+      <p className="text-muted-foreground">
+        CRM → PayFlow field mapping is managed once in System CRM Mapping and applies to every
+        client. Daily file intake for this client uses that shared catalog — there is nothing
+        extra to map per client here.
+      </p>
+      <ul className="grid gap-1.5 sm:grid-cols-2">
+        <li className="rounded-md border border-border px-3 py-2">
+          Mapped: <span className="font-semibold">{summary?.mapped ?? "—"}</span>
+        </li>
+        <li className="rounded-md border border-border px-3 py-2">
+          Need attention: <span className="font-semibold">{summary?.attention ?? 0}</span>
+        </li>
+        <li className="rounded-md border border-border px-3 py-2">
+          Unmapped: <span className="font-semibold">{summary?.unmapped ?? 0}</span>
+        </li>
+        <li className="rounded-md border border-border px-3 py-2">
+          Total: <span className="font-semibold">{summary?.total ?? "—"}</span>
+        </li>
+      </ul>
+      {(summary?.required_missing || []).length > 0 ? (
+        <p className="text-[12px] text-warning">
+          Required missing: {summary!.required_missing!.slice(0, 6).join(", ")}
+          {(summary!.required_missing!.length || 0) > 6 ? "…" : ""}
+        </p>
+      ) : null}
+      <Link
+        to="/payflow/system-mapping"
+        className="inline-block text-[12.5px] font-semibold text-primary hover:underline"
+      >
+        View system-wide CRM mapping →
+      </Link>
+    </div>
   );
 }
 

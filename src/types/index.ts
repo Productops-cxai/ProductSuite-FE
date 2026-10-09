@@ -314,6 +314,9 @@ export interface PayflowClient {
   setup_incomplete?: string[];
   setup_steps_remaining?: number;
   onboarding?: PayflowOnboardingProgress;
+  /** How the client was first created: add_client | file_upload */
+  added_through?: string | null;
+  added_through_label?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
 }

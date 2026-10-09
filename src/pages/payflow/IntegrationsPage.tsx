@@ -27,6 +27,8 @@ function availableTone(available?: string): Tone {
       return "warning";
     case "No":
       return "danger";
+    case "Optional":
+      return "neutral";
     default:
       return "neutral";
   }
@@ -101,7 +103,7 @@ export function PayFlowIntegrationsPage() {
 
       <Panel
         title="CRM inbound → PayFlow"
-        description="Shared across every client. After this mapping, daily account/reminder files are uploaded per client."
+        description="Shared across every client. After this mapping, daily account/reminder files are uploaded per client. “Optional” = not in the current CRM feed; add that column to the daily file only if available."
         action={
           <FilterSelect label="Group" value={group} options={groups} onChange={setGroup} />
         }
@@ -115,19 +117,28 @@ export function PayFlowIntegrationsPage() {
           />
         ) : (
           <DataTable
-            minWidth={920}
+            minWidth={880}
             head={["Group", "CRM / source field", "PayFlow field", "Required", "Available", "Sample"]}
           >
             {filtered.map((f) => (
               <Tr key={`${f.group}-${f.source_field}-${f.payflow_field}`}>
-                <Td className="text-muted-foreground">{f.group}</Td>
-                <Td>
-                  <span className="font-medium text-foreground">{f.source_field}</span>
-                  {f.meaning ? (
-                    <p className="mt-0.5 text-[11px] text-muted-foreground">{f.meaning}</p>
-                  ) : null}
+                <Td className="align-top text-muted-foreground">
+                  <div className="w-[8.5rem] whitespace-normal">{f.group}</div>
                 </Td>
-                <Td className="font-medium text-foreground">{f.payflow_field || "—"}</Td>
+                <Td className="align-top">
+                  {/* Inner wrap: Td defaults to whitespace-nowrap (no twMerge). */}
+                  <div className="max-w-[22rem] whitespace-normal">
+                    <span className="font-medium text-foreground">{f.source_field}</span>
+                    {f.meaning ? (
+                      <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                        {f.meaning}
+                      </p>
+                    ) : null}
+                  </div>
+                </Td>
+                <Td className="align-top font-medium text-foreground">
+                  <div className="w-[10.5rem] whitespace-normal">{f.payflow_field || "—"}</div>
+                </Td>
                 <Td>
                   <StatusPill tone={f.required ? "warning" : "neutral"}>
                     {f.required ? "Required" : "Optional"}
@@ -138,7 +149,11 @@ export function PayFlowIntegrationsPage() {
                     {f.available || "—"}
                   </StatusPill>
                 </Td>
-                <Td className="tabular text-muted-foreground">{f.sample_value || "—"}</Td>
+                <Td className="tabular text-muted-foreground">
+                  <div className="max-w-[9rem] truncate" title={f.sample_value || undefined}>
+                    {f.sample_value || "—"}
+                  </div>
+                </Td>
               </Tr>
             ))}
           </DataTable>
