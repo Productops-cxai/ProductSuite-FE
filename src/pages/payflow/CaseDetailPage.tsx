@@ -105,6 +105,8 @@ export function PayFlowCaseDetailPage() {
     { label: "Customer segment", value: account.customer_segment || "—" },
     { label: "Date of birth", value: account.date_of_birth || "—" },
     { label: "Date listed", value: account.date_listed || "—" },
+    { label: "Date incurred", value: account.date_incurred || "—" },
+    { label: "Delinquency date", value: account.delinquency_date || "—" },
     { label: "Language", value: account.language || "—" },
     {
       label: "Address",
@@ -123,6 +125,18 @@ export function PayFlowCaseDetailPage() {
     { label: "Original Balance", value: formatCurrency(account.original_balance) },
     { label: "Outstanding Balance", value: formatCurrency(account.outstanding_balance) },
     { label: "Amount Recovered", value: formatCurrency(account.recovered_balance) },
+    {
+      label: "Paid amount (to date)",
+      value: account.paid_amount != null ? formatCurrency(account.paid_amount) : "—",
+    },
+    {
+      label: "Settlement rate",
+      value: account.settlement_rate != null ? `${account.settlement_rate}%` : "—",
+    },
+    {
+      label: "Commission rate",
+      value: account.commission_rate != null ? `${account.commission_rate}%` : "—",
+    },
     { label: "Currency", value: account.currency_code || "—" },
     { label: "Days past due", value: account.days_past_due == null ? "—" : String(account.days_past_due) },
     { label: "Due date", value: account.due_date || "—" },

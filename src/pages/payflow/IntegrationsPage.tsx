@@ -34,11 +34,65 @@ function availableTone(available?: string): Tone {
   }
 }
 
+function MappingFieldsTable({
+  fields,
+  emptyTitle,
+  emptyDescription,
+}: {
+  fields: PayflowMappingCatalogField[];
+  emptyTitle: string;
+  emptyDescription: string;
+}) {
+  if (fields.length === 0) {
+    return <EmptyState title={emptyTitle} description={emptyDescription} />;
+  }
+  return (
+    <DataTable
+      minWidth={880}
+      head={["Group", "CRM / source field", "PayFlow field", "Required", "Available", "Sample"]}
+    >
+      {fields.map((f) => (
+        <Tr key={`${f.feed || "map"}-${f.group}-${f.source_field}-${f.payflow_field}`}>
+          <Td className="align-top text-muted-foreground">
+            <div className="w-[8.5rem] whitespace-normal">{f.group}</div>
+          </Td>
+          <Td className="align-top">
+            <div className="max-w-[22rem] whitespace-normal">
+              <span className="font-medium text-foreground">{f.source_field}</span>
+              {f.meaning ? (
+                <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{f.meaning}</p>
+              ) : null}
+            </div>
+          </Td>
+          <Td className="align-top font-medium text-foreground">
+            <div className="w-[10.5rem] whitespace-normal">{f.payflow_field || "—"}</div>
+          </Td>
+          <Td>
+            <StatusPill tone={f.required ? "warning" : "neutral"}>
+              {f.required ? "Required" : "Optional"}
+            </StatusPill>
+          </Td>
+          <Td>
+            <StatusPill tone={availableTone(f.available)}>{f.available || "—"}</StatusPill>
+          </Td>
+          <Td className="tabular text-muted-foreground">
+            <div className="max-w-[9rem] truncate" title={f.sample_value || undefined}>
+              {f.sample_value || "—"}
+            </div>
+          </Td>
+        </Tr>
+      ))}
+    </DataTable>
+  );
+}
+
 export function PayFlowIntegrationsPage() {
-  const [fields, setFields] = useState<PayflowMappingCatalogField[]>([]);
+  const [accountFields, setAccountFields] = useState<PayflowMappingCatalogField[]>([]);
+  const [clientFields, setClientFields] = useState<PayflowMappingCatalogField[]>([]);
   const [outbound, setOutbound] = useState<PayflowMappingOutboundField[]>([]);
   const [version, setVersion] = useState<string>("");
-  const [group, setGroup] = useState("All groups");
+  const [accountGroup, setAccountGroup] = useState("All groups");
+  const [clientGroup, setClientGroup] = useState("All groups");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -49,7 +103,14 @@ export function PayFlowIntegrationsPage() {
     getPayflowClientMappingCatalog()
       .then((res) => {
         if (cancelled) return;
-        setFields(res.fields || []);
+        const accounts = res.account_fields?.length
+          ? res.account_fields
+          : (res.fields || []).filter((f) => (f.feed || "daily_accounts") !== "client_hierarchy");
+        const clients = res.client_fields?.length
+          ? res.client_fields
+          : (res.fields || []).filter((f) => f.feed === "client_hierarchy");
+        setAccountFields(accounts);
+        setClientFields(clients);
         setOutbound(res.outbound_fields || []);
         setVersion(res.catalog_version || "");
       })
@@ -66,30 +127,41 @@ export function PayFlowIntegrationsPage() {
     };
   }, []);
 
-  const groups = useMemo(() => {
-    const set = new Set(fields.map((f) => f.group).filter(Boolean));
+  const accountGroups = useMemo(() => {
+    const set = new Set(accountFields.map((f) => f.group).filter(Boolean));
     return ["All groups", ...Array.from(set)];
-  }, [fields]);
+  }, [accountFields]);
 
-  const filtered = useMemo(() => {
-    if (group === "All groups") return fields;
-    return fields.filter((f) => f.group === group);
-  }, [fields, group]);
+  const clientGroups = useMemo(() => {
+    const set = new Set(clientFields.map((f) => f.group).filter(Boolean));
+    return ["All groups", ...Array.from(set)];
+  }, [clientFields]);
 
-  const mappedCount = fields.filter(
+  const filteredAccounts = useMemo(() => {
+    if (accountGroup === "All groups") return accountFields;
+    return accountFields.filter((f) => f.group === accountGroup);
+  }, [accountFields, accountGroup]);
+
+  const filteredClients = useMemo(() => {
+    if (clientGroup === "All groups") return clientFields;
+    return clientFields.filter((f) => f.group === clientGroup);
+  }, [clientFields, clientGroup]);
+
+  const totalFields = accountFields.length + clientFields.length;
+  const mappedCount = [...accountFields, ...clientFields].filter(
     (f) => f.payflow_field && f.payflow_field !== "— Not mapped —",
   ).length;
-  const requiredCount = fields.filter((f) => f.required).length;
+  const requiredCount = [...accountFields, ...clientFields].filter((f) => f.required).length;
 
   return (
     <>
       <PageHeader
         title="System Mapping"
-        description="One global CRM → PayFlow field mapping for all clients. Client onboarding uses daily file upload; this catalog shows how CRM source fields map into PayFlow."
+        description="One global CRM → PayFlow field mapping for all clients. Client hierarchy and daily account files are listed separately so source columns stay clear."
       />
 
       <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard label="Inbound fields" value={String(fields.length)} />
+        <KpiCard label="Inbound fields" value={String(totalFields)} />
         <KpiCard label="Mapped targets" value={String(mappedCount)} />
         <KpiCard label="Required fields" value={String(requiredCount)} />
         <KpiCard label="Catalog version" value={version || "—"} />
@@ -101,64 +173,51 @@ export function PayFlowIntegrationsPage() {
         </p>
       ) : null}
 
-      <Panel
-        title="CRM inbound → PayFlow"
-        description="Shared across every client. After this mapping, daily account/reminder files are uploaded per client. “Optional” = not in the current CRM feed; add that column to the daily file only if available."
-        action={
-          <FilterSelect label="Group" value={group} options={groups} onChange={setGroup} />
-        }
-      >
-        {loading ? (
-          <p className="text-sm text-muted-foreground">Loading system mapping…</p>
-        ) : filtered.length === 0 ? (
-          <EmptyState
-            title="No mapping fields"
-            description="The CRM field catalog is empty or filtered out."
-          />
-        ) : (
-          <DataTable
-            minWidth={880}
-            head={["Group", "CRM / source field", "PayFlow field", "Required", "Available", "Sample"]}
+      {loading ? (
+        <p className="text-sm text-muted-foreground">Loading system mapping…</p>
+      ) : (
+        <>
+          <Panel
+            title="Client file → PayFlow"
+            description="Columns from the CRM clients / hierarchy upload (masters and sub-clients). Used when onboarding or refreshing the Client → Sub-Client tree."
+            action={
+              <FilterSelect
+                label="Group"
+                value={clientGroup}
+                options={clientGroups}
+                onChange={setClientGroup}
+              />
+            }
           >
-            {filtered.map((f) => (
-              <Tr key={`${f.group}-${f.source_field}-${f.payflow_field}`}>
-                <Td className="align-top text-muted-foreground">
-                  <div className="w-[8.5rem] whitespace-normal">{f.group}</div>
-                </Td>
-                <Td className="align-top">
-                  {/* Inner wrap: Td defaults to whitespace-nowrap (no twMerge). */}
-                  <div className="max-w-[22rem] whitespace-normal">
-                    <span className="font-medium text-foreground">{f.source_field}</span>
-                    {f.meaning ? (
-                      <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
-                        {f.meaning}
-                      </p>
-                    ) : null}
-                  </div>
-                </Td>
-                <Td className="align-top font-medium text-foreground">
-                  <div className="w-[10.5rem] whitespace-normal">{f.payflow_field || "—"}</div>
-                </Td>
-                <Td>
-                  <StatusPill tone={f.required ? "warning" : "neutral"}>
-                    {f.required ? "Required" : "Optional"}
-                  </StatusPill>
-                </Td>
-                <Td>
-                  <StatusPill tone={availableTone(f.available)}>
-                    {f.available || "—"}
-                  </StatusPill>
-                </Td>
-                <Td className="tabular text-muted-foreground">
-                  <div className="max-w-[9rem] truncate" title={f.sample_value || undefined}>
-                    {f.sample_value || "—"}
-                  </div>
-                </Td>
-              </Tr>
-            ))}
-          </DataTable>
-        )}
-      </Panel>
+            <MappingFieldsTable
+              fields={filteredClients}
+              emptyTitle="No client-file mappings"
+              emptyDescription="No client hierarchy fields in the catalog."
+            />
+          </Panel>
+
+          <div className="mt-5">
+            <Panel
+              title="Accounts file → PayFlow"
+              description="Columns from the daily CRM accounts / debtor file. After this mapping, account files are uploaded per client. “Optional” = not always present; add that column only when available."
+              action={
+                <FilterSelect
+                  label="Group"
+                  value={accountGroup}
+                  options={accountGroups}
+                  onChange={setAccountGroup}
+                />
+              }
+            >
+              <MappingFieldsTable
+                fields={filteredAccounts}
+                emptyTitle="No account-file mappings"
+                emptyDescription="No daily account fields in the catalog."
+              />
+            </Panel>
+          </div>
+        </>
+      )}
 
       {outbound.length > 0 ? (
         <div className="mt-5">

@@ -441,6 +441,8 @@ export interface PayflowMappingCatalogField {
   sample_value: string;
   group: string;
   available?: string;
+  /** Which ingest file: daily_accounts | client_hierarchy */
+  feed?: string;
 }
 
 export interface PayflowMappingOutboundField {
@@ -454,7 +456,10 @@ export interface PayflowMappingOutboundField {
 }
 
 export interface PayflowMappingCatalogResponse {
+  /** Back-compat: daily account file mappings */
   fields: PayflowMappingCatalogField[];
+  account_fields?: PayflowMappingCatalogField[];
+  client_fields?: PayflowMappingCatalogField[];
   outbound_fields?: PayflowMappingOutboundField[];
   payflow_fields: string[];
   governance_rules: string[];
@@ -597,6 +602,11 @@ export interface PayflowAccount {
   client_reference_number?: string | null;
   product_code?: string | null;
   date_listed?: string | null;
+  date_incurred?: string | null;
+  delinquency_date?: string | null;
+  paid_amount?: number | null;
+  settlement_rate?: number | null;
+  commission_rate?: number | null;
   last_email_sent_date?: string | null;
   last_sms_sent_date?: string | null;
   last_contact_date?: string | null;
