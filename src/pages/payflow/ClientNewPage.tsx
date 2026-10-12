@@ -29,6 +29,7 @@ import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { cn } from "../../lib/utils";
 import type { PayflowUser } from "../../types";
 
+
 /** Add Client wizard — Data Mapping omitted (fixed under System Mapping). */
 const steps = [
   "Client Profile",
@@ -89,8 +90,6 @@ export function PayFlowClientNewPage() {
   const brandingIssues = brandingConfigIssues(draft);
   const postalIssues = postalCodeConfigIssues(draft);
   const issues: string[] = [];
-  if (!draft.name.trim()) issues.push("Client name is required");
-  if (!draft.config.code.trim()) issues.push("Client code is required");
   issues.push(...postalIssues);
   issues.push(...brandingIssues);
   if (draft.supervisorUserIds.length === 0) issues.push("Assign at least one supervisor");
@@ -100,6 +99,47 @@ export function PayFlowClientNewPage() {
     if (!payload.name || !payload.code) {
       throw new ApiError(400, "Client name and code are required before saving");
     }
+    
+  if (!payload.name.trim()) {
+    throw new ApiError(400,("Client Name is required"));
+  }
+
+  if (!payload.code.trim()) {
+    throw new ApiError(400,("Client Code / Reference is required"));
+  }
+
+  if (!payload.client_type?.trim()) {
+    throw new ApiError(400,("Client Type is required"));
+  }
+
+  if (!payload.contact_name?.trim()) {
+    throw new ApiError(400,("Primary Contact Name is required"));
+  }
+
+  if (!payload.contact_email?.trim()) {
+    throw new ApiError(400,("Primary Contact Email is required"));
+  } else if (
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.contact_email.trim())
+  ) {
+    throw new ApiError(400,("Enter a valid Primary Contact Email"));
+  }
+
+  if (!payload.contact_phone?.trim()) {
+    throw new ApiError(400,("Primary Contact Phone is required"));
+  }
+
+  if (!payload.country?.trim()) {
+    throw new ApiError(400,("Country is required"));
+  }
+
+  if (!payload.correspondence_language?.trim()) {
+    throw new ApiError(400,("Language is required"));
+  }
+
+  if (!payload.currency_code?.trim()) {
+    throw new ApiError(400,("Currency is required"));
+  }
+
     const postalError = postalCodeConfigIssues(draft)[0];
     if (postalError) {
       throw new ApiError(400, postalError);
