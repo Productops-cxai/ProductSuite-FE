@@ -422,7 +422,7 @@ export function ProfileSection({ draft, patch, patchConfig, readOnly }: SectionP
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Client Name">
+        <Field label="Client Name *">
           <TextInput
             value={draft.name}
             onChange={(v) => patch({ name: v })}
@@ -430,7 +430,7 @@ export function ProfileSection({ draft, patch, patchConfig, readOnly }: SectionP
             disabled={readOnly}
           />
         </Field>
-        <Field label="Client Code / Reference">
+        <Field label="Client Code / Reference *">
           <TextInput
             value={draft.config.code}
             onChange={(v) => patchConfig({ code: v })}
@@ -446,7 +446,7 @@ export function ProfileSection({ draft, patch, patchConfig, readOnly }: SectionP
             disabled={readOnly}
           />
         </Field>
-        <Field label="Client Type">
+        <Field label="Client Type *">
           <SelectInput
             value={draft.config.clientType}
             options={["First Party", "Third Party"]}
@@ -477,7 +477,7 @@ export function ProfileSection({ draft, patch, patchConfig, readOnly }: SectionP
           Primary contact
         </p>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Contact Name">
+          <Field label="Contact Name *">
             <TextInput
               value={draft.config.contactName}
               onChange={(v) => patchConfig({ contactName: v })}
@@ -491,14 +491,14 @@ export function ProfileSection({ draft, patch, patchConfig, readOnly }: SectionP
               disabled={readOnly}
             />
           </Field>
-          <Field label="Email">
+          <Field label="Email *">
             <TextInput
               value={draft.config.contactEmail}
               onChange={(v) => patchConfig({ contactEmail: v })}
               disabled={readOnly}
             />
           </Field>
-          <Field label="Phone">
+          <Field label="Phone *">
             <TextInput
               value={draft.config.contactPhone}
               onChange={(v) => patchConfig({ contactPhone: v })}
@@ -534,7 +534,7 @@ export function ProfileSection({ draft, patch, patchConfig, readOnly }: SectionP
               disabled={readOnly}
             />
           </Field>
-          <Field label="Country">
+          <Field label="Country *">
             <SearchableSelect
               value={draft.config.country}
               options={countries}
@@ -623,7 +623,7 @@ export function ProfileSection({ draft, patch, patchConfig, readOnly }: SectionP
               </span>
             ) : null}
           </Field>
-          <Field label="Language">
+          <Field label="Language *">
             <SearchableSelect
               value={draft.config.correspondenceLanguage}
               options={languages}
@@ -634,7 +634,7 @@ export function ProfileSection({ draft, patch, patchConfig, readOnly }: SectionP
               onChange={(correspondenceLanguage) => patchConfig({ correspondenceLanguage })}
             />
           </Field>
-          <Field label="Currency">
+          <Field label="Currency *">
             <SearchableSelect
               value={draft.config.currencyCode}
               options={currencies}
