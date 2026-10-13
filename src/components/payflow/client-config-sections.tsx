@@ -500,10 +500,13 @@ export function ProfileSection({ draft, patch, patchConfig, readOnly }: SectionP
           </Field>
           <Field label="Phone *">
             <TextInput
-              value={draft.config.contactPhone}
-              onChange={(v) => patchConfig({ contactPhone: v })}
+              value={draft.config.contactPhone+"+1"}
+              onChange={(v) => patchConfig({ contactPhone: v.replace(/\D/g, "").slice(0, 15)})}
               disabled={readOnly}
             />
+            <div className="text-[11px] text-muted-foreground">
+              Enter your phone number with country code (maximum 15 digits)
+            </div>
           </Field>
         </div>
       </div>
