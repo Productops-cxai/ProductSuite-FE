@@ -237,9 +237,9 @@ export function PayFlowRuleNewPage() {
                           options={fieldMeta.options}
                         />
                       ) : (
-                        <TextInput type="number"
+                        <TextInput 
                           value={c.value}
-                          onChange={(v) => updateCondition(index, { value: v })}
+                          onChange={(v) => updateCondition(index, { value: v.replace(/\D/g, "") })}
                           placeholder="Value"
                         />
                       )}
