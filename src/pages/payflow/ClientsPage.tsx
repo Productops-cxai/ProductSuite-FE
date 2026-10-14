@@ -1,12 +1,7 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
-import {
-  downloadPayflowClientsBulkTemplate,
-  listPayflowClients,
-  listPayflowUsers,
-  uploadPayflowClientsBulk,
-} from "../../api/payflow";
+import { deletePayflowClient, listPayflowClients } from "../../api/payflow";
 import {
   Btn,
   DataTable,
@@ -19,18 +14,35 @@ import {
   Tr,
   type Tone,
 } from "../../components/payflow/lovable/payflow-ui";
+import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
-import type { PayflowBulkUploadResult, PayflowClient, PayflowUser } from "../../types";
+import { incompleteSetupSections, isClientSettingUp } from "../../lib/client-setup";
+import { invalidateCache } from "../../lib/dedupeAsync";
+import type { PayflowClient } from "../../types";
 
 function clientStatusTone(status: string): Tone {
   const s = (status || "").toLowerCase();
   if (s === "active") return "success";
   if (s === "draft") return "neutral";
-  if (s === "onboarding") return "info";
   return "warning";
 }
 
-function formatUpdatedAt(value?: string | null): string {
+function formatDate(value?: string | null): string {
+  if (!value) return "—";
+  try {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return value;
+    return d.toLocaleDateString(undefined, {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  } catch {
+    return value;
+  }
+}
+
+function formatDateTime(value?: string | null): string {
   if (!value) return "—";
   try {
     const d = new Date(value);
@@ -47,11 +59,20 @@ function formatUpdatedAt(value?: string | null): string {
   }
 }
 
+function phase1StatusLabel(status?: string | null, statusLabel?: string | null): string {
+  const raw = (statusLabel || status || "").toLowerCase();
+  if (raw === "active") return "Active";
+  return "Draft";
+}
+
 export function PayFlowClientsPage() {
-  const { isOperationsAdmin } = usePayFlowAccess();
+  const { hasPermission } = usePayFlowAccess();
+  const canCreate = hasPermission("create_client");
+  const canEdit = hasPermission("edit_client");
+  const canDelete = hasPermission("delete_client");
+  const canImport = hasPermission("import_clients");
   const [searchParams] = useSearchParams();
   const [clients, setClients] = useState<PayflowClient[]>([]);
-  const [supervisors, setSupervisors] = useState<PayflowUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
@@ -60,51 +81,19 @@ export function PayFlowClientsPage() {
     if (!raw) return "All Statuses";
     if (raw.toLowerCase() === "active") return "Active";
     if (raw.toLowerCase() === "draft") return "Draft";
-    return raw;
+    return "All Statuses";
   });
-  const [aiMode, setAiMode] = useState("All AI Modes");
-  const [supervisor, setSupervisor] = useState("All Supervisors");
-  const [bulkOpen, setBulkOpen] = useState(false);
-  const [bulkBusy, setBulkBusy] = useState(false);
-  const [bulkResult, setBulkResult] = useState<PayflowBulkUploadResult | null>(null);
-  const [bulkError, setBulkError] = useState("");
+  const [addedThrough, setAddedThrough] = useState("All Sources");
+  const [pendingDelete, setPendingDelete] = useState<PayflowClient | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = async () => {
     setLoading(true);
     setError("");
     try {
+      invalidateCache("payflow:clients");
       const clientRes = await listPayflowClients({});
       setClients(clientRes.clients || []);
-      if (isOperationsAdmin) {
-        try {
-          const userRes = await listPayflowUsers({ role_code: "supervisor" });
-          setSupervisors(userRes.users || []);
-        } catch {
-          setSupervisors([]);
-        }
-      } else {
-        // Supervisor filter options from assigned client supervisor names.
-        const names = new Set<string>();
-        for (const c of clientRes.clients || []) {
-          for (const s of c.supervisors || []) {
-            if (s.full_name) names.add(s.full_name);
-          }
-        }
-        setSupervisors(
-          [...names].map((full_name) => ({
-            id: full_name,
-            full_name,
-            email: "",
-            role_code: "supervisor",
-            role_name: "Supervisor",
-            role_scope: "client_scoped",
-            status: "active",
-            status_label: "Active",
-            assigned_clients: [],
-            permission_profile: "",
-          })),
-        );
-      }
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Failed to load clients");
     } finally {
@@ -114,59 +103,42 @@ export function PayFlowClientsPage() {
 
   useEffect(() => {
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOperationsAdmin]);
-
-  const supervisorOptions = useMemo(
-    () => ["All Supervisors", ...supervisors.map((s) => s.full_name)],
-    [supervisors],
-  );
+  }, []);
 
   const rows = useMemo(() => {
     return clients.filter((c) => {
       const q = search.trim().toLowerCase();
       if (
         q &&
-        !`${c.name} ${c.code} ${c.industry || c.category || ""}`.toLowerCase().includes(q)
+        !`${c.name} ${c.code} ${c.client_type_label || ""} ${c.business_domain_label || ""}`
+          .toLowerCase()
+          .includes(q)
       ) {
         return false;
       }
       if (status !== "All Statuses") {
-        const label = c.status_label || c.status;
-        if (label.toLowerCase() !== status.toLowerCase()) return false;
+        if (phase1StatusLabel(c.status, c.status_label) !== status) return false;
       }
-      if (aiMode !== "All AI Modes") {
-        const label = c.ai_mode_label || c.ai_mode || "";
-        if (label !== aiMode) return false;
-      }
-      if (supervisor !== "All Supervisors") {
-        const names = (c.supervisors || []).map((s) => s.full_name || s.short_name || "");
-        if (!names.includes(supervisor)) return false;
+      if (addedThrough !== "All Sources") {
+        const label = c.added_through_label || "Add Client";
+        if (label !== addedThrough) return false;
       }
       return true;
     });
-  }, [clients, search, status, aiMode, supervisor]);
+  }, [clients, search, status, addedThrough]);
 
-  async function onBulkFile(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const form = e.currentTarget;
-    const input = form.elements.namedItem("file") as HTMLInputElement | null;
-    const file = input?.files?.[0];
-    if (!file) {
-      setBulkError("Choose an Excel file first");
-      return;
-    }
-    setBulkBusy(true);
-    setBulkError("");
-    setBulkResult(null);
+  async function onDelete() {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    setError("");
     try {
-      const result = await uploadPayflowClientsBulk(file);
-      setBulkResult(result);
+      await deletePayflowClient(pendingDelete.id);
+      setPendingDelete(null);
       await load();
     } catch (err) {
-      setBulkError(err instanceof ApiError ? err.detail : "Bulk upload failed");
+      setError(err instanceof ApiError ? err.detail : "Failed to delete client");
     } finally {
-      setBulkBusy(false);
+      setDeleting(false);
     }
   }
 
@@ -176,12 +148,23 @@ export function PayFlowClientsPage() {
         title="Clients"
         description="Manage organizations and their collection operations."
         actions={
-          isOperationsAdmin ? (
+          canCreate || canImport ? (
             <div className="flex flex-wrap gap-2">
-              <Btn onClick={() => setBulkOpen(true)}>Bulk upload</Btn>
-              <Link to="/payflow/clients/new">
-                <Btn variant="primary">+ Add Client</Btn>
-              </Link>
+              {canImport ? (
+                <Link to="/payflow/imports?type=client">
+                  <Btn variant="ghost">Import History</Btn>
+                </Link>
+              ) : null}
+              {canImport ? (
+                <Link to="/payflow/clients/import">
+                  <Btn>Import from File</Btn>
+                </Link>
+              ) : null}
+              {canCreate ? (
+                <Link to="/payflow/clients/new">
+                  <Btn variant="primary">+ Add Client</Btn>
+                </Link>
+              ) : null}
             </div>
           ) : undefined
         }
@@ -207,32 +190,24 @@ export function PayFlowClientsPage() {
           options={["All Statuses", "Draft", "Active"]}
         />
         <FilterSelect
-          label="AI Mode"
-          value={aiMode}
-          onChange={setAiMode}
-          options={["All AI Modes", "Autopilot", "Supervised AI"]}
-        />
-        <FilterSelect
-          label="Supervisor"
-          value={supervisor}
-          onChange={setSupervisor}
-          options={supervisorOptions}
+          label="Added through"
+          value={addedThrough}
+          onChange={setAddedThrough}
+          options={["All Sources", "Add Client", "File Upload"]}
         />
       </div>
 
       <DataTable
         minWidth={1180}
         head={[
-          "Client",
-          "Last File Received",
-          "File Assigned",
-          "Accounts In File",
-          "Active Cases",
-          "Outstanding",
-          "Recovered",
-          "AI Mode",
-          "Supervisor",
+          "Client Name",
+          "Client Code / Reference",
+          "Client Type",
+          "Business Use Case",
           "Status",
+          "Created Date",
+          "Last Updated Date",
+          "Added through",
           "",
         ]}
       >
@@ -242,51 +217,82 @@ export function PayFlowClientsPage() {
           </tr>
         ) : (
           rows.map((c) => {
-            const statusLabel = c.status_label || c.status;
-            const aiLabel = c.ai_mode_label || "—";
-            const supervisorNames =
-              (c.supervisors || [])
-                .map((s) => s.short_name || s.full_name.split(" ")[0] || s.full_name)
-                .filter(Boolean)
-                .join(", ") || "—";
+            const statusLabel = phase1StatusLabel(c.status, c.status_label);
+            const settingUp = isClientSettingUp(c.status_label || c.status);
+            const remainingSteps = incompleteSetupSections(c.onboarding, c.setup_incomplete);
+            const remaining = Math.max(
+              typeof c.setup_steps_remaining === "number" ? c.setup_steps_remaining : 0,
+              remainingSteps.length,
+            );
+            const showSetupHint = settingUp || remaining > 0;
+            const addedLabel = c.added_through_label || "Add Client";
+
             return (
               <Tr key={c.id}>
                 <Td>
                   <Link to={`/payflow/clients/${c.id}`} className="hover:underline">
-                    <PrimaryCell
-                      title={c.name}
-                      subtitle={`${c.industry || c.category || c.business_domain_label || "Collections"} · ${c.code}`}
-                    />
+                    <PrimaryCell title={c.name} subtitle={c.industry || c.category || undefined} />
                   </Link>
+                  {showSetupHint ? (
+                    <div className="mt-2 flex flex-col items-start gap-1.5">
+                      {remaining > 0 ? (
+                        <StatusPill tone="warning">
+                          ⚠ {remaining} step{remaining > 1 ? "s" : ""} left
+                          {remainingSteps.length === 1 ? ` · ${remainingSteps[0]}` : ""}
+                        </StatusPill>
+                      ) : null}
+                      {canEdit ? (
+                        <Link
+                          to={
+                            remainingSteps.some((s) => /portfolio/i.test(s))
+                              ? `/payflow/clients/${c.id}?tab=${encodeURIComponent("Sub-Clients / Portfolios")}`
+                              : `/payflow/clients/${c.id}?tab=Configuration`
+                          }
+                          className="text-[12.5px] font-semibold text-primary hover:underline"
+                        >
+                          {remaining > 0
+                            ? "Complete setup →"
+                            : settingUp
+                              ? "Edit draft"
+                              : "View setup →"}
+                        </Link>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </Td>
+                <Td className="tabular text-muted-foreground">{c.code || "—"}</Td>
+                <Td className="text-muted-foreground">
+                  {c.client_type_label || c.client_type || "—"}
                 </Td>
                 <Td className="text-muted-foreground">
-                  <PrimaryCell title={formatUpdatedAt(c.updated_at)} subtitle="Last updated" />
+                  {c.business_domain_label || c.business_domain || "Collections"}
                 </Td>
-                <Td className="text-muted-foreground">—</Td>
-                <Td className="tabular">
-                  <PrimaryCell title="—" subtitle="—" />
-                </Td>
-                <Td className="tabular">0</Td>
-                <Td className="tabular font-medium">—</Td>
-                <Td className="tabular font-medium text-success">—</Td>
-                <Td>
-                  <StatusPill tone={aiLabel === "Autopilot" ? "ai" : "neutral"}>
-                    {aiLabel}
-                  </StatusPill>
-                </Td>
-                <Td className="text-muted-foreground">{supervisorNames}</Td>
                 <Td>
                   <StatusPill tone={clientStatusTone(statusLabel)}>{statusLabel}</StatusPill>
                 </Td>
+                <Td className="text-muted-foreground">{formatDate(c.created_at)}</Td>
+                <Td className="text-muted-foreground">{formatDateTime(c.updated_at)}</Td>
                 <Td>
-                  {isOperationsAdmin && statusLabel.toLowerCase() === "draft" ? (
-                    <Link
-                      to={`/payflow/clients/${c.id}?tab=Configuration`}
-                      className="text-[12.5px] font-semibold text-primary hover:underline"
-                    >
-                      Edit draft
-                    </Link>
-                  ) : null}
+                  <StatusPill tone={addedLabel === "File Upload" ? "info" : "neutral"}>
+                    {addedLabel}
+                  </StatusPill>
+                </Td>
+                <Td>
+                  <div className="flex flex-col items-end gap-1">
+                    {canDelete ? (
+                      <button
+                        type="button"
+                        className="text-[12.5px] font-semibold text-destructive hover:underline"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setPendingDelete(c);
+                        }}
+                      >
+                        Delete
+                      </button>
+                    ) : null}
+                  </div>
                 </Td>
               </Tr>
             );
@@ -299,80 +305,14 @@ export function PayFlowClientsPage() {
         )}
       </DataTable>
 
-      {bulkOpen && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
-          <div className="panel w-full max-w-lg p-5">
-            <div className="mb-3 flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-[15px] font-semibold text-foreground">Bulk upload clients</h2>
-                <p className="mt-1 text-[12px] text-muted-foreground">
-                  Download the template, fill rows, then upload. Successful rows are created as
-                  Draft clients.
-                </p>
-              </div>
-              <Btn variant="ghost" onClick={() => setBulkOpen(false)}>
-                Close
-              </Btn>
-            </div>
-            <div className="mb-3">
-              <Btn
-                onClick={() => {
-                  void downloadPayflowClientsBulkTemplate().catch((err) =>
-                    setBulkError(err instanceof ApiError ? err.detail : "Template download failed"),
-                  );
-                }}
-              >
-                Download template
-              </Btn>
-            </div>
-            <form id="bulk-upload-form" onSubmit={onBulkFile} className="space-y-3">
-              <input
-                name="file"
-                type="file"
-                accept=".xlsx,.xlsm"
-                className="block w-full text-[13px] text-foreground"
-              />
-              {bulkError && (
-                <p className="text-[12px] text-destructive">{bulkError}</p>
-              )}
-              {bulkResult && (
-                <div className="rounded-md border border-border bg-surface px-3 py-2 text-[12px]">
-                  <p className="font-medium text-foreground">
-                    Created {bulkResult.created_count} · Errors {bulkResult.error_count}
-                  </p>
-                  {bulkResult.errors.slice(0, 5).map((e) => (
-                    <p key={`${e.row}-${e.message}`} className="text-muted-foreground">
-                      Row {e.row}: {e.message}
-                    </p>
-                  ))}
-                </div>
-              )}
-              <div className="flex justify-end gap-2">
-                <Btn
-                  variant="ghost"
-                  onClick={() => {
-                    setBulkOpen(false);
-                    setBulkResult(null);
-                    setBulkError("");
-                  }}
-                >
-                  Cancel
-                </Btn>
-                <Btn
-                  variant="primary"
-                  disabled={bulkBusy}
-                  onClick={() => {
-                    const form = document.getElementById("bulk-upload-form") as HTMLFormElement | null;
-                    form?.requestSubmit();
-                  }}
-                >
-                  {bulkBusy ? "Uploading…" : "Upload"}
-                </Btn>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <ConfirmDelete
+        open={Boolean(pendingDelete)}
+        title={pendingDelete ? `Delete ${pendingDelete.name}?` : "Delete client?"}
+        description="This deletes the client and related portfolios, accounts, cases, rules, workflows, reviews, communications, and supervisor assignments. The full record is saved in Deletion Logs."
+        busy={deleting}
+        onClose={() => setPendingDelete(null)}
+        onConfirm={() => void onDelete()}
+      />
     </>
   );
 }

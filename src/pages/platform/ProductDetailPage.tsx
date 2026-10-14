@@ -1,10 +1,11 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
-import { getProduct, listProductAccess, saveProduct } from "../../api/platform";
+import { getProduct, listProductAccess, saveProduct, deleteProduct } from "../../api/platform";
 import { PageHeader } from "../../components/payflow-ui";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
+import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { ui } from "../../lib/ui";
 import { titleCaseStatus } from "../../lib/utils";
 import type { Product, ProductAccessItem } from "../../types";
@@ -20,6 +21,8 @@ export function ProductDetailPage() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [form, setForm] = useState({
     name: "",
     code: "",
@@ -99,6 +102,20 @@ export function ProductDetailPage() {
     }
   }
 
+  async function onDelete() {
+    if (!product) return;
+    setDeleting(true);
+    setError("");
+    try {
+      await deleteProduct(product.id);
+      navigate("/platform/products");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail : "Failed to delete product");
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className={ui.page}>
@@ -134,7 +151,12 @@ export function ProductDetailPage() {
               Cancel
             </Button>
           ) : (
-            <Button onClick={() => setEditing(true)}>Edit product</Button>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => setEditing(true)}>Edit product</Button>
+              <Button variant="danger" onClick={() => setConfirmDelete(true)}>
+                Delete
+              </Button>
+            </div>
           )
         }
       />
@@ -261,6 +283,15 @@ export function ProductDetailPage() {
           )}
         </section>
       </div>
+
+      <ConfirmDelete
+        open={confirmDelete}
+        title={`Delete ${product.name}?`}
+        description="This removes the product and all organization entitlements and person assignments. The action is logged."
+        busy={deleting}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={() => void onDelete()}
+      />
     </div>
   );
 }

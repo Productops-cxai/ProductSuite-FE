@@ -6,7 +6,8 @@
   --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Space Grotesk", "DM Sans", ui-sans-serif, sans-serif;
 
-  /* Lovable light tokens (platform pages stay bright; sidebar is separate) */
+  /* Lovable light tokens (platform pages stay bright; sidebar is separate).
+     Primary matches account-payflow-ai brand blue: oklch(0.55 0.212 264). */
   --color-bg: #f4f6fb;
   --color-surface: #ffffff;
   --color-surface-muted: #f5f7fb;
@@ -14,9 +15,9 @@
   --color-border: #e4e8f0;
   --color-border-strong: #cfd6e4;
   --color-sidebar: #121a2b;
-  --color-primary: #3b82f6;
-  --color-primary-hover: #2563eb;
-  --color-primary-foreground: #ffffff;
+  --color-primary: oklch(0.55 0.212 264);
+  --color-primary-hover: oklch(0.5 0.212 264);
+  --color-primary-foreground: oklch(0.99 0.002 265);
   --color-fg: #0f172a;
   --color-fg-muted: #64748b;
   --color-destructive: #dc2626;
@@ -24,7 +25,7 @@
   --color-success: #059669;
   --color-success-foreground: #ffffff;
   --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04);
-  --shadow-brand: 0 6px 18px -10px rgba(59, 130, 246, 0.45);
+  --shadow-brand: 0 6px 18px -10px oklch(0.55 0.21 264 / 45%);
 
   /* Lovable-token aliases: ported Clients UI uses these class names verbatim
      (text-foreground, bg-card, text-muted-foreground, bg-secondary, ...).
@@ -39,14 +40,14 @@
   --color-muted-foreground: var(--color-fg-muted);
   --color-secondary: var(--color-surface-muted);
   --color-secondary-foreground: var(--color-fg);
-  --color-accent: rgba(59, 130, 246, 0.08);
-  --color-accent-foreground: var(--color-primary-hover);
+  --color-accent: oklch(0.955 0.028 264);
+  --color-accent-foreground: oklch(0.42 0.17 264);
   --color-input: var(--color-border);
   --color-ring: var(--color-primary);
   --color-warning: #f59e0b;
   --color-warning-foreground: #78350f;
-  --color-info: #3b82f6;
-  --color-info-foreground: #ffffff;
+  --color-info: oklch(0.55 0.16 258);
+  --color-info-foreground: oklch(0.99 0.002 265);
   --color-ai: #0891b2;
   --color-ai-foreground: #ffffff;
   --shadow-subtle: var(--shadow-card);
@@ -63,15 +64,15 @@ html.dark {
   --color-sidebar: #0a101c;
   --color-fg: #f1f5f9;
   --color-fg-muted: #94a3b8;
-  --color-primary: #60a5fa;
-  --color-primary-hover: #3b82f6;
-  --color-primary-foreground: #0b1220;
+  --color-primary: oklch(0.68 0.16 264);
+  --color-primary-hover: oklch(0.62 0.16 264);
+  --color-primary-foreground: oklch(0.17 0.03 264);
   --color-destructive: #f87171;
   --color-destructive-foreground: #0b1220;
   --color-success: #34d399;
   --color-success-foreground: #0b1220;
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35);
-  --shadow-brand: 0 6px 18px -10px rgba(96, 165, 250, 0.35);
+  --shadow-brand: 0 6px 18px -10px oklch(0.68 0.16 264 / 35%);
   color-scheme: dark;
 
   /* Lovable-token aliases (dark) — see light block above for context. */
@@ -84,14 +85,14 @@ html.dark {
   --color-muted-foreground: var(--color-fg-muted);
   --color-secondary: var(--color-surface-muted);
   --color-secondary-foreground: var(--color-fg);
-  --color-accent: rgba(96, 165, 250, 0.14);
-  --color-accent-foreground: var(--color-primary);
+  --color-accent: oklch(0.3 0.06 264);
+  --color-accent-foreground: oklch(0.92 0.035 264);
   --color-input: var(--color-border);
   --color-ring: var(--color-primary);
   --color-warning: #fbbf24;
   --color-warning-foreground: #fef3c7;
-  --color-info: #60a5fa;
-  --color-info-foreground: #0b1220;
+  --color-info: oklch(0.7 0.13 258);
+  --color-info-foreground: oklch(0.17 0.03 264);
   --color-ai: #22d3ee;
   --color-ai-foreground: #0b1220;
   --shadow-subtle: var(--shadow-card);

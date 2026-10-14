@@ -1,9 +1,10 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import {
   getPayflowClientPortfolio,
   updatePayflowClientPortfolio,
+  deletePayflowClientPortfolio,
 } from "../../api/payflow";
 import {
   Btn,
@@ -18,6 +19,7 @@ import {
   type Tone,
 } from "../../components/payflow/lovable/payflow-ui";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
+import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import type { PayflowPortfolioDetail } from "../../types";
 
 const STATUS_OPTIONS = ["Onboarding", "Active", "Paused"] as const;
@@ -42,21 +44,6 @@ function portfolioStatusTone(status: string): Tone {
   return "neutral";
 }
 
-function strategyStatusTone(status: string): Tone {
-  switch (status) {
-    case "AI Proposed":
-      return "ai";
-    case "Under Review":
-      return "warning";
-    case "Approved":
-      return "info";
-    case "Active":
-      return "success";
-    default:
-      return "neutral";
-  }
-}
-
 function labelFromStatus(status: string) {
   const s = status.toLowerCase();
   if (s === "onboarding") return "Onboarding";
@@ -67,7 +54,10 @@ function labelFromStatus(status: string) {
 
 export function PayFlowPortfolioDetailPage() {
   const { clientId, portfolioId } = useParams();
-  const { isOperationsAdmin } = usePayFlowAccess();
+  const navigate = useNavigate();
+  const { isOperationsAdmin, hasPermission } = usePayFlowAccess();
+  const canEdit = isOperationsAdmin || hasPermission("edit_client");
+  const canCreateWorkflow = hasPermission("create_edit_workflows");
   const cid = Number(clientId);
   const pid = Number(portfolioId);
 
@@ -76,6 +66,7 @@ export function PayFlowPortfolioDetailPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [status, setStatus] = useState("Onboarding");
@@ -104,9 +95,9 @@ export function PayFlowPortfolioDetailPage() {
     void load();
   }, [cid, pid]);
 
-  async function save(e: FormEvent) {
-    e.preventDefault();
-    if (!detail || !isOperationsAdmin) return;
+  async function save(e?: FormEvent) {
+    e?.preventDefault();
+    if (!detail || !canEdit) return;
     setBusy(true);
     setError("");
     setInfo("");
@@ -128,12 +119,29 @@ export function PayFlowPortfolioDetailPage() {
             }
           : prev,
       );
+      setName(updated.name);
+      setCode(updated.code);
+      setStatus(labelFromStatus(updated.status));
+      setDescription(updated.description || "");
       setInfo("Changes saved.");
-      await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Failed to save portfolio");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function onDelete() {
+    if (!detail || !canEdit) return;
+    setBusy(true);
+    setError("");
+    try {
+      await deletePayflowClientPortfolio(cid, pid);
+      navigate(`/payflow/clients/${cid}?tab=${encodeURIComponent("Sub-Clients / Portfolios")}`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail : "Failed to delete portfolio");
+      setBusy(false);
+      setConfirmDelete(false);
     }
   }
 
@@ -177,6 +185,11 @@ export function PayFlowPortfolioDetailPage() {
               {detail.status_label || labelFromStatus(detail.status)}
             </StatusPill>
             <StatusPill>{detail.code}</StatusPill>
+            {canEdit ? (
+              <Btn variant="danger" onClick={() => setConfirmDelete(true)}>
+                Delete
+              </Btn>
+            ) : null}
           </div>
         }
       />
@@ -213,14 +226,14 @@ export function PayFlowPortfolioDetailPage() {
               <TextInput
                 value={name}
                 onChange={setName}
-                disabled={!isOperationsAdmin}
+                disabled={!canEdit}
               />
             </Field>
             <Field label="Portfolio Code / Reference">
               <TextInput
                 value={code}
                 onChange={setCode}
-                disabled={!isOperationsAdmin}
+                disabled={!canEdit}
               />
             </Field>
             <Field label="Status">
@@ -228,7 +241,7 @@ export function PayFlowPortfolioDetailPage() {
                 value={status}
                 options={[...STATUS_OPTIONS]}
                 onChange={setStatus}
-                disabled={!isOperationsAdmin}
+                disabled={!canEdit}
               />
             </Field>
             <Field label="Description">
@@ -236,12 +249,12 @@ export function PayFlowPortfolioDetailPage() {
                 value={description}
                 onChange={setDescription}
                 placeholder="Optional notes"
-                disabled={!isOperationsAdmin}
+                disabled={!canEdit}
               />
             </Field>
-            {isOperationsAdmin ? (
+            {canEdit ? (
               <div className="sm:col-span-2">
-                <Btn variant="primary" disabled={busy}>
+                <Btn variant="primary" disabled={busy} onClick={() => void save()}>
                   {busy ? "Saving…" : "Save changes"}
                 </Btn>
               </div>
@@ -250,22 +263,34 @@ export function PayFlowPortfolioDetailPage() {
         </Panel>
 
         <Panel
-          title="Strategies / Workflows for this portfolio"
-          description="Portfolios may run different strategies from their parent client."
+          title="Strategies / Workflows"
+          description="Collection strategies scoped to this portfolio."
           action={
-            <Link to="/payflow/workflows">
-              <Btn>All strategies</Btn>
-            </Link>
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                to={`/payflow/workflows?client=${encodeURIComponent(detail.client_name)}&portfolio=${encodeURIComponent(detail.name)}`}
+                className="text-[12.5px] font-semibold text-primary hover:underline"
+              >
+                All strategies
+              </Link>
+              {canCreateWorkflow ? (
+                <Link
+                  to={`/payflow/workflows/new?clientId=${detail.client_id}&portfolioId=${detail.id}`}
+                >
+                  <Btn variant="primary">Create workflow</Btn>
+                </Link>
+              ) : null}
+            </div>
           }
         >
           {(detail.strategies || []).length === 0 ? (
             <EmptyState
-              title="No strategy applied yet"
-              description="PayFlow proposes a strategy once enough portfolio, payment and engagement context is available."
+              title="No strategies for this portfolio"
+              description="Create a workflow or wait for PayFlow AI to propose one."
             />
           ) : (
             <ul className="space-y-2">
-              {detail.strategies.map((s) => (
+              {(detail.strategies || []).map((s) => (
                 <li key={s.id}>
                   <Link
                     to={`/payflow/workflows/${s.id}`}
@@ -274,13 +299,23 @@ export function PayFlowPortfolioDetailPage() {
                     <div className="min-w-0">
                       <p className="text-[13px] font-semibold text-foreground">{s.name}</p>
                       <p className="mt-0.5 text-[11.5px] text-muted-foreground">
-                        {s.origin || "Strategy"} · v{s.version ?? 1}
-                        {s.updated_at
-                          ? ` · updated ${new Date(s.updated_at).toLocaleDateString()}`
-                          : ""}
+                        {s.origin || "—"} · v{s.version ?? 1}
                       </p>
                     </div>
-                    <StatusPill tone={strategyStatusTone(s.status)} dot>
+                    <StatusPill
+                      tone={
+                        s.status === "Active"
+                          ? "success"
+                          : s.status === "AI Proposed" || s.status === "Under Review"
+                            ? s.status === "AI Proposed"
+                              ? "ai"
+                              : "warning"
+                            : s.status === "Approved"
+                              ? "info"
+                              : "neutral"
+                      }
+                      dot
+                    >
                       {s.status}
                     </StatusPill>
                   </Link>
@@ -290,6 +325,15 @@ export function PayFlowPortfolioDetailPage() {
           )}
         </Panel>
       </div>
+
+      <ConfirmDelete
+        open={confirmDelete}
+        title={`Delete ${detail.name}?`}
+        description="This deletes the portfolio and its accounts, cases, reviews, communications, and workflows. The action is logged."
+        busy={busy}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={() => void onDelete()}
+      />
     </>
   );
 }

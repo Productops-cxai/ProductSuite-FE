@@ -1,32 +1,31 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import {
   activatePayflowClient,
   createPayflowClientPortfolio,
+  deletePayflowClient,
   getPayflowClient,
   getPayflowClientMappingCatalog,
-  listPayflowPermissions,
   listPayflowUsers,
   updatePayflowClient,
+  type UpdatePayflowClientPayload,
 } from "../../api/payflow";
 import {
   AiGovernanceSection,
   BrandingSection,
   DataSourceSection,
-  MappingSection,
   ProfileSection,
   SupervisorSection,
   draftFromDetail,
   draftToUpdatePayload,
   emptyDraft,
+  postalCodeConfigIssues,
   type ClientDraft,
   type ClientDraftConfig,
 } from "../../components/payflow/client-config-sections";
 import {
   ClientAccountsTab,
-  ClientCommunicationsTab,
-  ClientReviewsTab,
   ClientRulesTab,
   ClientWorkflowsTab,
 } from "../../components/payflow/client-detail-tabs";
@@ -37,22 +36,32 @@ import {
   PageHeader,
   Panel,
   PrimaryCell,
+  SectionHeading,
   StatusPill,
   TabBar,
   type Tone,
 } from "../../components/payflow/lovable/payflow-ui";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
+import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
+import {
+  buildActivationChecks,
+  buildOnboardingStages,
+  configSectionHint,
+  isClientSettingUp,
+  missingSetupChips,
+  setupTargetForLabel,
+  type OnboardingStage,
+  type SetupCheck,
+} from "../../lib/client-setup";
 import { cn } from "../../lib/utils";
-import type { PayflowClientDetail, PayflowPermissionGroup, PayflowUser } from "../../types";
+import type { PayflowClientDetail, PayflowUser } from "../../types";
 
 const MAIN_TABS = [
   "Overview",
   "Sub-Clients / Portfolios",
   "Accounts",
   "Workflows",
-  "Communications",
   "Rules",
-  "Human Reviews",
   "Configuration",
 ] as const;
 
@@ -61,10 +70,9 @@ type MainTab = (typeof MAIN_TABS)[number];
 const CONFIG_SECTIONS = [
   "General",
   "Data Source",
-  "Data Mapping",
   "Branding & Channels",
   "AI & Governance",
-  "Supervisors",
+  "Assigned Users",
 ] as const;
 
 type ConfigSection = (typeof CONFIG_SECTIONS)[number];
@@ -77,17 +85,13 @@ function statusTone(status: string): Tone {
   return "warning";
 }
 
-function stepTone(status: string): Tone {
-  if (status === "complete") return "success";
-  if (status === "blocked") return "danger";
-  if (status === "incomplete") return "warning";
-  return "neutral";
-}
-
 export function PayFlowClientDetailPage() {
   const { clientId } = useParams();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { isOperationsAdmin } = usePayFlowAccess();
+  const { hasPermission } = usePayFlowAccess();
+  const canEdit = hasPermission("edit_client");
+  const canDelete = hasPermission("delete_client");
   const id = Number(clientId);
 
   const initialTab = (searchParams.get("tab") as MainTab) || "Overview";
@@ -98,13 +102,12 @@ export function PayFlowClientDetailPage() {
   const [detail, setDetail] = useState<PayflowClientDetail | null>(null);
   const [draft, setDraft] = useState<ClientDraft>(emptyDraft());
   const [supervisors, setSupervisors] = useState<PayflowUser[]>([]);
-  const [permissionGroups, setPermissionGroups] = useState<PayflowPermissionGroup[]>([]);
-  const [payflowFields, setPayflowFields] = useState<string[]>(["— Not mapped —"]);
   const [governanceRules, setGovernanceRules] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const load = async () => {
     if (!Number.isFinite(id)) {
@@ -115,17 +118,16 @@ export function PayFlowClientDetailPage() {
     setLoading(true);
     setError("");
     try {
-      const [client, users, catalog, perms] = await Promise.all([
+      const [client, users, catalog] = await Promise.all([
         getPayflowClient(id),
-        listPayflowUsers({ role_code: "supervisor" }),
+        listPayflowUsers(),
         getPayflowClientMappingCatalog(),
-        listPayflowPermissions().catch(() => ({ groups: [] as PayflowPermissionGroup[] })),
       ]);
       setDetail(client);
       setDraft(draftFromDetail(client));
-      setSupervisors(users.users || []);
-      setPermissionGroups(perms.groups || []);
-      setPayflowFields(catalog.payflow_fields || ["— Not mapped —"]);
+      setSupervisors(
+        (users.users || []).filter((u) => u.role_scope === "client_scoped"),
+      );
       setGovernanceRules(catalog.governance_rules || []);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Failed to load client");
@@ -142,15 +144,39 @@ export function PayFlowClientDetailPage() {
   const patchConfig = (p: Partial<ClientDraftConfig>) =>
     setDraft((d) => ({ ...d, config: { ...d.config, ...p } }));
 
-  const readOnly = !isOperationsAdmin;
+  const readOnly = !canEdit;
+  const brandingReadOnly = readOnly || detail?.status !== "draft";
 
   async function saveConfig() {
     if (!detail || readOnly) return;
+    if (configSection === "Branding & Channels" && detail.status !== "draft") {
+      setError("Branding & channels can only be updated while the client is in Draft status");
+      return;
+    }
+    const postalError = postalCodeConfigIssues(draft)[0];
+    if (postalError) {
+      setError(postalError);
+      return;
+    }
     setBusy(true);
     setError("");
     setInfo("");
     try {
-      const updated = await updatePayflowClient(detail.id, draftToUpdatePayload(draft));
+      const full = draftToUpdatePayload(draft);
+      // Branding is Draft-only — omit so other config sections can still save after activation.
+      let payload: UpdatePayflowClientPayload = full;
+      if (detail.status !== "draft") {
+        const {
+          brand_name: _brand,
+          sender_name: _sender,
+          email_from: _email,
+          sms_sender_id: _sms,
+          channels: _channels,
+          ...rest
+        } = full;
+        payload = rest;
+      }
+      const updated = await updatePayflowClient(detail.id, payload);
       setDetail(updated);
       setDraft(draftFromDetail(updated));
       setInfo("Changes saved.");
@@ -163,6 +189,11 @@ export function PayFlowClientDetailPage() {
 
   async function activate() {
     if (!detail || readOnly) return;
+    const postalError = postalCodeConfigIssues(draft)[0];
+    if (postalError) {
+      setError(postalError);
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -195,9 +226,46 @@ export function PayFlowClientDetailPage() {
     }
   }
 
+  async function deleteClient() {
+    if (!detail || readOnly) return;
+    setBusy(true);
+    setError("");
+    try {
+      await deletePayflowClient(detail.id);
+      navigate("/payflow/clients");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail : "Failed to delete client");
+      setBusy(false);
+      setConfirmDelete(false);
+    }
+  }
+
   const changeTab = (next: MainTab) => {
     setTab(next);
     setSearchParams(next === "Overview" ? {} : { tab: next });
+  };
+
+  const goSetupTarget = (target: OnboardingStage["target"]) => {
+    if (target === "portfolios") {
+      changeTab("Sub-Clients / Portfolios");
+      return;
+    }
+    if (target === "activation") {
+      changeTab("Configuration");
+      requestAnimationFrame(() => {
+        document.getElementById("activation-readiness")?.scrollIntoView({ behavior: "smooth" });
+      });
+      return;
+    }
+    if (target === "Supervisors") {
+      changeTab("Configuration");
+      setConfigSection("Assigned Users");
+      return;
+    }
+    if (target && CONFIG_SECTIONS.includes(target as ConfigSection)) {
+      changeTab("Configuration");
+      setConfigSection(target as ConfigSection);
+    }
   };
 
   const supervisorLabel = useMemo(
@@ -208,6 +276,25 @@ export function PayFlowClientDetailPage() {
         .join(", ") || "None assigned",
     [detail],
   );
+
+  const activationChecks = useMemo(
+    () => (detail ? buildActivationChecks(detail) : []),
+    [detail],
+  );
+  const onboardingStages = useMemo(
+    () => (detail ? buildOnboardingStages(detail) : []),
+    [detail],
+  );
+  const checksDone = activationChecks.filter((c) => c.done).length;
+  const checksPct = activationChecks.length
+    ? Math.round((checksDone / activationChecks.length) * 100)
+    : 0;
+  const requiredBlockers = activationChecks.filter((c) => c.required && !c.done);
+  const canActivate =
+    Boolean(detail) &&
+    isClientSettingUp(detail?.status_label || detail?.status) &&
+    (detail?.activation_blockers.length ?? 0) === 0 &&
+    requiredBlockers.length === 0;
 
   if (loading) {
     return <p className="text-[13px] text-muted-foreground">Loading client…</p>;
@@ -230,8 +317,6 @@ export function PayFlowClientDetailPage() {
     patch,
     patchConfig,
     supervisorUsers: supervisors,
-    permissionGroups,
-    payflowFields,
     governanceRules,
     readOnly,
     clientId: detail.id,
@@ -254,19 +339,59 @@ export function PayFlowClientDetailPage() {
         title={detail.name}
         description={`${detail.business_domain_label || detail.industry || "Collections"} · ${detail.code} · ${detail.client_type_label || "—"}`}
         actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <Link to="/payflow/clients" className="text-[12.5px] font-medium text-primary hover:underline">
+          <>
+            <Link
+              to="/payflow/clients"
+              className="text-[12.5px] font-semibold text-primary hover:underline"
+            >
               ← Back to Clients
             </Link>
+            {canEdit && isClientSettingUp(statusLabel) ? (
+              <>
+                <Btn variant="primary" onClick={() => changeTab("Configuration")}>
+                  Edit configuration
+                </Btn>
+                <span className="flex items-center gap-1.5">
+                  <Btn
+                    variant="primary"
+                    disabled={!canActivate || busy}
+                    onClick={() => void activate()}
+                  >
+                    Activate Client
+                  </Btn>
+                  {!canActivate ? (
+                    <span className="text-[11px] text-muted-foreground">
+                      Complete all required setup first
+                    </span>
+                  ) : null}
+                </span>
+              </>
+            ) : null}
             <StatusPill tone={statusTone(statusLabel)}>{statusLabel}</StatusPill>
-            {detail.ai_mode_label && (
+            {detail.ai_mode_label ? (
               <StatusPill tone={detail.ai_mode_label === "Autopilot" ? "ai" : "neutral"}>
                 {detail.ai_mode_label}
               </StatusPill>
-            )}
-            {detail.data_source_type === "crm" && <StatusPill tone="success">CRM</StatusPill>}
-            <span className="text-[12px] text-muted-foreground">Supervisors: {supervisorLabel}</span>
-          </div>
+            ) : null}
+            <StatusPill
+              tone={
+                (detail.data_source_type || "").toLowerCase() === "file" ||
+                (detail.connection_status || "").toLowerCase() === "connected"
+                  ? "info"
+                  : "warning"
+              }
+            >
+              {(detail.data_source_type || "").toLowerCase() === "file"
+                ? "Daily file"
+                : (detail.data_source_type || "").toUpperCase() || "No data source"}
+            </StatusPill>
+            <StatusPill>Supervisor: {supervisorLabel}</StatusPill>
+            {canDelete ? (
+              <Btn variant="danger" onClick={() => setConfirmDelete(true)}>
+                Delete
+              </Btn>
+            ) : null}
+          </>
         }
       />
 
@@ -280,6 +405,57 @@ export function PayFlowClientDetailPage() {
           {info}
         </p>
       )}
+
+      {(() => {
+            const missing = missingSetupChips(detail);
+            if (missing.length === 0) return null;
+            const drafting = isClientSettingUp(statusLabel);
+            return (
+              <div className="mb-4 rounded-lg border border-warning/40 bg-warning/8 px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-semibold text-foreground">
+                      <span className="mr-1.5 inline-block" aria-hidden>
+                        ⚠
+                      </span>
+                      Client setup incomplete — {missing.length} step
+                      {missing.length > 1 ? "s" : ""} left
+                    </p>
+                    <p className="mt-0.5 text-[12px] text-muted-foreground">
+                      {drafting
+                        ? "Complete the remaining configuration to activate this Client. It stays in Draft until an Operations Admin activates it."
+                        : "Some onboarding steps are still open — for example Sub-Clients / Portfolios."}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {missing.map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => goSetupTarget(setupTargetForLabel(m))}
+                          className="cursor-pointer"
+                        >
+                          <StatusPill tone="warning">{m}</StatusPill>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {canEdit ? (
+                    <Btn
+                      variant="primary"
+                      className="shrink-0"
+                      onClick={() =>
+                        missing.some((m) => /portfolio|sub-client/i.test(m))
+                          ? goSetupTarget("portfolios")
+                          : changeTab("Configuration")
+                      }
+                    >
+                      Complete Setup
+                    </Btn>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })()}
 
       <TabBar tabs={MAIN_TABS} active={tab} onChange={changeTab} />
 
@@ -299,12 +475,11 @@ export function PayFlowClientDetailPage() {
               <PrimaryCell title="—" subtitle="Change Since Previous File" />
             </div>
           </Panel>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <KpiCard label="Customer Accounts" value="0" />
             <KpiCard label="Active Cases" value="0" />
             <KpiCard label="Outstanding" value="—" />
             <KpiCard label="Recovered" value="—" />
-            <KpiCard label="Human Reviews" value="0" />
           </div>
           <div className="grid gap-4 lg:grid-cols-2">
             <Panel title="Collection Summary">
@@ -315,8 +490,10 @@ export function PayFlowClientDetailPage() {
                 <li className="flex justify-between"><span className="text-muted-foreground">Recovery rate</span><span>—</span></li>
               </ul>
             </Panel>
-            <Panel title="Communication Performance" description="Last 30 days, this client only.">
-              <p className="text-[13px] text-muted-foreground">No communication activity yet.</p>
+            <Panel title="File intake">
+              <p className="text-[13px] text-muted-foreground">
+                Performance panels for communications and human review will return after redesign.
+              </p>
             </Panel>
           </div>
         </div>
@@ -327,10 +504,11 @@ export function PayFlowClientDetailPage() {
           clientId={detail.id}
           clientName={detail.name}
           portfolios={detail.portfolios || []}
-          canEdit={isOperationsAdmin}
+          canEdit={canEdit}
           busy={busy}
           onAdd={addPortfolio}
           onError={setError}
+          onDeleted={() => void load()}
         />
       )}
 
@@ -342,140 +520,176 @@ export function PayFlowClientDetailPage() {
         <ClientWorkflowsTab clientId={detail.id} clientName={detail.name} />
       )}
 
-      {tab === "Communications" && (
-        <ClientCommunicationsTab clientId={detail.id} clientName={detail.name} />
-      )}
-
       {tab === "Rules" && (
         <ClientRulesTab clientId={detail.id} clientName={detail.name} />
       )}
 
-      {tab === "Human Reviews" && (
-        <ClientReviewsTab clientId={detail.id} clientName={detail.name} />
-      )}
-
       {tab === "Configuration" && (
         <div className="space-y-5">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <Panel title="CLIENT">
-              <p className="text-[13px] font-medium">{detail.name}</p>
-              <p className="text-[12px] text-muted-foreground">{detail.code}</p>
-              <p className="text-[12px] text-muted-foreground">
-                {detail.business_domain_label || "Collections"} · {detail.ai_mode_label || "—"}
-              </p>
-              <StatusPill>{detail.client_type_label || "—"}</StatusPill>
-            </Panel>
-            <Panel title="SUB-CLIENTS / PORTFOLIOS">
-              <p className="text-[13px]">{detail.portfolio_count} total</p>
-              <button
-                type="button"
-                className="mt-2 text-[12.5px] font-semibold text-primary"
-                onClick={() => changeTab("Sub-Clients / Portfolios")}
-              >
-                Manage portfolios
-              </button>
-            </Panel>
-            <Panel title="DATA SOURCE">
-              <p className="text-[13px]">{detail.data_source_type === "crm" ? "CRM" : "Not selected"}</p>
-              <StatusPill tone={detail.connection_status === "connected" ? "success" : "neutral"}>
-                {detail.connection_status_label || "Not Connected"}
+          <Panel
+            title="Client configuration overview"
+            description="Single source of truth for how this client is set up. Account and case activity lives in the Accounts tab."
+            action={
+              <StatusPill tone={requiredBlockers.length === 0 ? "success" : "warning"} dot>
+                {requiredBlockers.length === 0
+                  ? "Ready for activation"
+                  : `${requiredBlockers.length} blocker${requiredBlockers.length > 1 ? "s" : ""}`}
               </StatusPill>
-            </Panel>
-            <Panel title="DATA MAPPING">
-              <p className="text-[13px]">
-                {detail.mapping_summary.mapped}/{detail.mapping_summary.total} mapped
-              </p>
-              <p className="text-[12px] text-muted-foreground">
-                {detail.mapping_summary.attention} need attention · {detail.mapping_summary.unmapped}{" "}
-                unmapped
-              </p>
-            </Panel>
-            <Panel title="BRANDING & COMMUNICATION">
-              <p className="text-[13px]">{detail.email_from || "—"}</p>
-              <p className="text-[12px] text-muted-foreground">
-                {[detail.channels.email && "Email", detail.channels.sms && "SMS"]
-                  .filter(Boolean)
-                  .join(", ") || "No channels"}
-              </p>
-            </Panel>
-            <Panel title="ONBOARDING PROGRESS">
-              <p className="text-[22px] font-bold text-foreground">{detail.onboarding.percent}%</p>
-              <p className="text-[12px] text-muted-foreground">
-                {detail.onboarding.completed_required} of {detail.onboarding.total_required} required
-                steps complete
-              </p>
-            </Panel>
-          </div>
-
-          <Panel title="Onboarding progress">
-            <div className="flex flex-wrap gap-2">
-              {detail.onboarding.steps.map((s, i) => (
-                <div
-                  key={s.key}
-                  className="min-w-[140px] flex-1 rounded-lg border border-border bg-surface px-3 py-2"
-                >
-                  <p className="text-[11px] text-muted-foreground">
-                    Step {i + 1}: {s.label}
+            }
+          >
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <OverviewCard
+                title="Client"
+                tone="neutral"
+                status={detail.client_type_label || "—"}
+                lines={[
+                  detail.name,
+                  `${detail.industry || detail.category || "Collections"} · ${detail.code || "No code"}`,
+                  `${detail.business_domain_label || "Collections"} · ${detail.ai_mode_label || "—"}`,
+                ]}
+                onClick={() => goSetupTarget("General")}
+              />
+              <OverviewCard
+                title="Sub-Clients / Portfolios"
+                tone={(detail.portfolio_count || 0) > 0 ? "success" : "warning"}
+                status={
+                  (detail.portfolio_count || 0) > 0
+                    ? `${detail.portfolio_count} total`
+                    : "Pending"
+                }
+                lines={[
+                  `${(detail.portfolios || []).filter((p) => (p.status || "").toLowerCase() === "active").length} active`,
+                  `${(detail.portfolios || []).filter((p) => (p.status || "").toLowerCase() !== "active").length} onboarding / other`,
+                ]}
+                onClick={() => goSetupTarget("portfolios")}
+                cta="Manage portfolios"
+              />
+              <OverviewCard
+                title="Data Source"
+                tone={
+                  (detail.data_source_type || "").toLowerCase() === "file" ||
+                  (detail.connection_status || "").toLowerCase() === "connected"
+                    ? "success"
+                    : "warning"
+                }
+                status={
+                  (detail.data_source_type || "").toLowerCase() === "file"
+                    ? "Ready for file intake"
+                    : detail.connection_status_label || "Not Connected"
+                }
+                lines={[
+                  (detail.data_source_type || "").toLowerCase() === "file"
+                    ? "Daily file"
+                    : detail.data_source_type?.toUpperCase() || "No source selected",
+                  `Last file: ${
+                    detail.updated_at
+                      ? new Date(detail.updated_at).toLocaleString(undefined, {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : "—"
+                  }`,
+                ]}
+                onClick={() => goSetupTarget("Data Source")}
+              />
+              <OverviewCard
+                title="Branding & Communication"
+                tone={
+                  detail.onboarding.steps.find((s) => s.key === "branding")?.status === "complete"
+                    ? "success"
+                    : "warning"
+                }
+                status={
+                  detail.client_type_label === "Third Party" ? "PayFlow branded" : "Client branded"
+                }
+                lines={[
+                  `${detail.sender_name || "No sender"} · ${detail.email_from || "—"}`,
+                  `Channels: ${
+                    [detail.channels.email && "Email", detail.channels.sms && "SMS"]
+                      .filter(Boolean)
+                      .join(", ") || "None"
+                  } · WhatsApp coming later`,
+                ]}
+                onClick={() => goSetupTarget("Branding & Channels")}
+              />
+              <div className="rounded-lg border border-border bg-surface p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Onboarding progress
                   </p>
-                  <StatusPill tone={stepTone(s.status)}>{s.status}</StatusPill>
+                  <span className="tabular text-[13px] font-semibold">{checksPct}%</span>
                 </div>
-              ))}
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-secondary">
+                  <div
+                    className="h-full bg-primary transition-all"
+                    style={{ width: `${checksPct}%` }}
+                  />
+                </div>
+                <p className="mt-2 text-[12px] text-muted-foreground">
+                  {checksDone} of {activationChecks.length} steps complete
+                </p>
+              </div>
+            </div>
+
+            <OnboardingStepper stages={onboardingStages} onGo={goSetupTarget} />
+
+            <div className="mt-4" id="activation-readiness">
+              <SectionHeading title="Activation readiness" />
+              <ul className="mt-2 grid gap-1.5 sm:grid-cols-2">
+                {activationChecks.map((x) => (
+                  <ActivationCheckRow key={x.label} check={x} />
+                ))}
+              </ul>
             </div>
           </Panel>
 
-          <Panel title="Activation readiness">
-            <ul className="grid gap-2 sm:grid-cols-2 text-[13px]">
-              {(detail.activation_blockers.length
-                ? detail.activation_blockers
-                : ["All required activation conditions are satisfied"]
-              ).map((b) => (
-                <li key={b} className="flex items-start gap-2">
-                  <span
-                    className={cn(
-                      "mt-1 size-2 rounded-full",
-                      detail.activation_blockers.length ? "bg-warning" : "bg-success",
-                    )}
-                  />
-                  <span className="text-muted-foreground">{b}</span>
-                </li>
-              ))}
-            </ul>
-            {isOperationsAdmin && detail.status === "draft" && (
-              <div className="mt-3">
-                <Btn
-                  variant="primary"
-                  disabled={busy || detail.activation_blockers.length > 0}
-                  onClick={() => void activate()}
-                >
-                  Activate Client
-                </Btn>
-              </div>
-            )}
-          </Panel>
-
-          <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+          <div className="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
             <div className="panel overflow-hidden p-2">
-              {CONFIG_SECTIONS.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => setConfigSection(s)}
-                  className={cn(
-                    "block w-full rounded-md px-3 py-2 text-left text-[13px]",
-                    configSection === s
-                      ? "bg-accent font-semibold text-primary"
-                      : "text-muted-foreground hover:bg-surface",
-                  )}
-                >
-                  {s}
-                </button>
-              ))}
+              {CONFIG_SECTIONS.map((s) => {
+                const hint = configSectionHint(s, detail);
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setConfigSection(s)}
+                    className={cn(
+                      "flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-[13px]",
+                      configSection === s
+                        ? "bg-accent font-semibold text-primary"
+                        : "text-muted-foreground hover:bg-surface",
+                    )}
+                  >
+                    <span className="min-w-0 truncate">{s}</span>
+                    {hint ? (
+                      <span
+                        className={cn(
+                          "shrink-0 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide",
+                          hint === "Done" ? "text-success" : "text-warning",
+                        )}
+                      >
+                        {hint}
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
             </div>
             <Panel
               title={configSection}
-              description={isOperationsAdmin ? "Changes save when you click Save." : "Read-only"}
+              description={
+                configSection === "Branding & Channels"
+                  ? brandingReadOnly
+                    ? "Branding is read-only after activation (Draft only)."
+                    : "Changes save when you click Save."
+                  : canEdit
+                    ? "Changes save when you click Save."
+                    : "Read-only"
+              }
               action={
-                isOperationsAdmin ? (
+                canEdit && !(configSection === "Branding & Channels" && brandingReadOnly) ? (
                   <Btn variant="primary" disabled={busy} onClick={() => void saveConfig()}>
                     {busy ? "Saving…" : "Save"}
                   </Btn>
@@ -484,14 +698,150 @@ export function PayFlowClientDetailPage() {
             >
               {configSection === "General" && <ProfileSection {...sectionProps} />}
               {configSection === "Data Source" && <DataSourceSection {...sectionProps} />}
-              {configSection === "Data Mapping" && <MappingSection {...sectionProps} />}
-              {configSection === "Branding & Channels" && <BrandingSection {...sectionProps} />}
+              {configSection === "Branding & Channels" && (
+                <BrandingSection {...sectionProps} readOnly={brandingReadOnly} />
+              )}
               {configSection === "AI & Governance" && <AiGovernanceSection {...sectionProps} />}
-              {configSection === "Supervisors" && <SupervisorSection {...sectionProps} />}
+              {configSection === "Assigned Users" && <SupervisorSection {...sectionProps} />}
             </Panel>
           </div>
         </div>
       )}
+
+      <ConfirmDelete
+        open={confirmDelete}
+        title={`Delete ${detail.name}?`}
+        description="This deletes the client and related portfolios, accounts, cases, rules, workflows, reviews, communications, and supervisor assignments. The full record is saved in Deletion Logs."
+        busy={busy}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={() => void deleteClient()}
+      />
     </>
+  );
+}
+
+function OverviewCard({
+  title,
+  tone,
+  status,
+  lines,
+  onClick,
+  cta = "Configure",
+}: {
+  title: string;
+  tone: Tone;
+  status: string;
+  lines: string[];
+  onClick?: () => void;
+  cta?: string;
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-surface p-4">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">
+          {title}
+        </p>
+        <StatusPill tone={tone} dot>
+          {status}
+        </StatusPill>
+      </div>
+      <ul className="mt-2 space-y-0.5 text-[12.5px] text-foreground">
+        {lines.map((l) => (
+          <li key={l}>{l}</li>
+        ))}
+      </ul>
+      {onClick ? (
+        <button
+          type="button"
+          onClick={onClick}
+          className="mt-2 text-[12px] font-semibold text-primary hover:underline"
+        >
+          {cta}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function ActivationCheckRow({ check }: { check: SetupCheck }) {
+  return (
+    <li className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2 text-[12.5px]">
+      <span className="flex items-center gap-2">
+        <span
+          className={cn(
+            "inline-block h-2 w-2 rounded-full",
+            check.done ? "bg-success" : check.required ? "bg-warning" : "bg-muted-foreground",
+          )}
+        />
+        {check.label}
+        {!check.required ? (
+          <span className="text-[11px] text-muted-foreground">(informational)</span>
+        ) : null}
+      </span>
+      <span className="text-muted-foreground">{check.detail}</span>
+    </li>
+  );
+}
+
+function OnboardingStepper({
+  stages,
+  onGo,
+}: {
+  stages: OnboardingStage[];
+  onGo: (target: OnboardingStage["target"]) => void;
+}) {
+  return (
+    <div className="mt-4">
+      <SectionHeading title="Onboarding progress" />
+      <ol className="mt-2 grid gap-2 sm:grid-cols-3 xl:grid-cols-6">
+        {stages.map((st, i) => {
+          const state = st.done ? "Completed" : st.blocked ? "Blocked" : "Pending";
+          const tone: Tone = st.done ? "success" : st.blocked ? "danger" : "warning";
+          const clickable = !st.done && !!st.target;
+          return (
+            <li key={st.key}>
+              <button
+                type="button"
+                disabled={!st.target}
+                onClick={() => st.target && onGo(st.target)}
+                title={clickable ? `Go to ${st.label}` : undefined}
+                className={cn(
+                  "flex h-full w-full flex-col gap-1.5 rounded-lg border p-3 text-left transition-colors",
+                  st.done
+                    ? "border-success/40 bg-success/5"
+                    : st.blocked
+                      ? "border-destructive/40 bg-destructive/5"
+                      : "border-border bg-surface",
+                  st.target && "hover:border-primary",
+                )}
+              >
+                <span className="flex items-center gap-2 text-[11px] font-semibold text-muted-foreground">
+                  <span
+                    className={cn(
+                      "grid h-5 w-5 place-items-center rounded-full text-[10px] font-bold",
+                      st.done
+                        ? "bg-success text-success-foreground"
+                        : st.blocked
+                          ? "bg-destructive text-destructive-foreground"
+                          : "bg-secondary text-foreground",
+                    )}
+                  >
+                    {st.done ? "✓" : st.blocked ? "!" : i + 1}
+                  </span>
+                  Step {i + 1}
+                </span>
+                <span className="text-[12.5px] font-semibold text-foreground">{st.label}</span>
+                <StatusPill tone={tone} dot>
+                  {state}
+                </StatusPill>
+                {clickable ? (
+                  <span className="text-[11px] font-semibold text-primary">Complete step →</span>
+                ) : null}
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
   );
 }

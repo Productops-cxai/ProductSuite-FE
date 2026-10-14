@@ -6,59 +6,57 @@ import {
   createPayflowClient,
   getPayflowClient,
   getPayflowClientMappingCatalog,
-  listPayflowPermissions,
   listPayflowUsers,
   updatePayflowClient,
 } from "../../api/payflow";
 import {
   AiGovernanceSection,
   BrandingSection,
+  brandingConfigIssues,
   DataSourceSection,
-  MappingSection,
   ProfileSection,
   SupervisorSection,
   connectionTone,
   draftFromDetail,
   draftToUpdatePayload,
   emptyDraft,
-  mappingSummary,
+  postalCodeConfigIssues,
   type ClientDraft,
   type ClientDraftConfig,
 } from "../../components/payflow/client-config-sections";
 import { Btn, PageHeader, Panel, StatusPill, type Tone } from "../../components/payflow/lovable/payflow-ui";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { cn } from "../../lib/utils";
-import type { PayflowPermissionGroup, PayflowUser } from "../../types";
+import type { PayflowUser } from "../../types";
 
+
+/** Add Client wizard — Data Mapping omitted (fixed under System Mapping). */
 const steps = [
   "Client Profile",
   "Data Source",
-  "Data Mapping",
   "Branding & Channels",
   "AI & Governance",
-  "Supervisors",
+  "Assigned Users",
   "Review & Activate",
 ] as const;
 
 const stepDescriptions = [
   "Basic client information.",
   "Select the single primary operational data source.",
-  "Map incoming client fields to PayFlow customer account fields.",
   "How customer-facing communications represent this client.",
   "How PayFlow operates collection activity for this client.",
-  "Who supervises this client.",
+  "Who supervises this client, and what they can access.",
   "Confirm configuration before activation.",
 ];
 
 export function PayFlowClientNewPage() {
-  const { isOperationsAdmin } = usePayFlowAccess();
+  const { hasPermission } = usePayFlowAccess();
+  const canCreate = hasPermission("create_client");
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<ClientDraft>(emptyDraft());
   const [clientId, setClientId] = useState<number | null>(null);
   const [supervisors, setSupervisors] = useState<PayflowUser[]>([]);
-  const [permissionGroups, setPermissionGroups] = useState<PayflowPermissionGroup[]>([]);
-  const [payflowFields, setPayflowFields] = useState<string[]>(["— Not mapped —"]);
   const [governanceRules, setGovernanceRules] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -66,15 +64,14 @@ export function PayFlowClientNewPage() {
 
   useEffect(() => {
     void Promise.all([
-      listPayflowUsers({ role_code: "supervisor" }),
+      listPayflowUsers(),
       getPayflowClientMappingCatalog(),
-      listPayflowPermissions(),
     ])
-      .then(([users, catalog, perms]) => {
-        setSupervisors(users.users || []);
-        setPayflowFields(catalog.payflow_fields || ["— Not mapped —"]);
+      .then(([users, catalog]) => {
+        setSupervisors(
+          (users.users || []).filter((u) => u.role_scope === "client_scoped"),
+        );
         setGovernanceRules(catalog.governance_rules || []);
-        setPermissionGroups(perms.groups || []);
       })
       .catch(() => {
         /* non-blocking for initial render */
@@ -85,32 +82,70 @@ export function PayFlowClientNewPage() {
   const patchConfig = (p: Partial<ClientDraftConfig>) =>
     setDraft((d) => ({ ...d, config: { ...d.config, ...p } }));
 
-  const summary = mappingSummary(draft.config);
-  const requiredUnmapped = draft.config.mappings.filter(
-    (m) => m.isRequired && (m.status === "Unmapped" || m.status === "Needs Attention"),
-  ).length;
   const supervisorNames = useMemo(() => {
     const map = new Map(supervisors.map((u) => [String(u.id), u.full_name]));
     return draft.supervisorUserIds.map((id) => map.get(id) || id);
   }, [draft.supervisorUserIds, supervisors]);
 
+  const brandingIssues = brandingConfigIssues(draft);
+  const postalIssues = postalCodeConfigIssues(draft);
   const issues: string[] = [];
-  if (!draft.name.trim()) issues.push("Client name is required");
-  if (!draft.config.code.trim()) issues.push("Client code is required");
-  if (!draft.config.dataSource) issues.push("A primary data source has not been selected");
-  else if (draft.config.connection !== "Connected")
-    issues.push("CRM connection is not established");
-  if (requiredUnmapped > 0)
-    issues.push(`${requiredUnmapped} required field mapping(s) are incomplete`);
-  if (summary.attention > 0) issues.push(`${summary.attention} field mapping(s) need attention`);
-  if (!draft.config.channels.email && !draft.config.channels.sms)
-    issues.push("At least one communication channel must be enabled");
+  issues.push(...postalIssues);
+  issues.push(...brandingIssues);
   if (draft.supervisorUserIds.length === 0) issues.push("Assign at least one supervisor");
 
   async function ensureDraftSaved(): Promise<number> {
     const payload = draftToUpdatePayload(draft);
+    if(!payload.name || !payload.code || !payload.client_type || !payload.contact_name || !payload.contact_email || !payload.contact_phone || !payload.correspondence_language || !payload.country || !payload.currency_code ) {
+      throw new ApiError(400, "Please enter all the mandatory fields before proceeding");
+    }
     if (!payload.name || !payload.code) {
       throw new ApiError(400, "Client name and code are required before saving");
+    }
+    
+  if (!payload.name.trim()) {
+    throw new ApiError(400,("Client Name is required"));
+  }
+
+  if (!payload.code.trim()) {
+    throw new ApiError(400,("Client Code / Reference is required"));
+  }
+
+  if (!payload.client_type?.trim()) {
+    throw new ApiError(400,("Client Type is required"));
+  }
+
+  if (!payload.contact_name?.trim()) {
+    throw new ApiError(400,("Primary Contact Name is required"));
+  }
+
+  if (!payload.contact_email?.trim()) {
+    throw new ApiError(400,("Primary Contact Email is required"));
+  } else if (
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.contact_email.trim())
+  ) {
+    throw new ApiError(400,("Enter a valid Primary Contact Email"));
+  }
+
+  if (!payload.contact_phone?.trim()) {
+    throw new ApiError(400,("Primary Contact Phone is required"));
+  }
+
+  if (!payload.country?.trim()) {
+    throw new ApiError(400,("Country is required"));
+  }
+
+  if (!payload.correspondence_language?.trim()) {
+    throw new ApiError(400,("Language is required"));
+  }
+
+  if (!payload.currency_code?.trim()) {
+    throw new ApiError(400,("Currency is required"));
+  }
+
+    const postalError = postalCodeConfigIssues(draft)[0];
+    if (postalError) {
+      throw new ApiError(400, postalError);
     }
     if (clientId == null) {
       const created = await createPayflowClient({
@@ -174,11 +209,11 @@ export function PayFlowClientNewPage() {
     }
   }
 
-  if (!isOperationsAdmin) {
+  if (!canCreate) {
     return (
       <Panel title="Client onboarding is restricted">
         <p className="text-sm text-muted-foreground">
-          Only Operations Admin can create and configure clients.
+          You need the Add Client permission to create clients.
         </p>
         <Link to="/payflow/clients" className="mt-3 inline-block text-[13px] font-medium text-primary">
           Back to clients
@@ -196,19 +231,24 @@ export function PayFlowClientNewPage() {
             { label: activatedName },
           ]}
           title={`${activatedName} is Ready for Operations`}
-          description="Configuration saved. Customer accounts will appear once the first data sync completes."
+          description="Configuration saved. Customer accounts will appear once the first data sync completes. Add Sub-Clients / Portfolios from the client detail page when needed."
         />
         <Panel title="Activation summary">
           <div className="flex flex-wrap gap-2">
             <StatusPill tone="success">Active</StatusPill>
             <StatusPill tone="info">{draft.aiMode}</StatusPill>
-            <StatusPill>CRM data source</StatusPill>
+            <StatusPill>Daily file data source</StatusPill>
             <StatusPill>Supervisors: {supervisorNames.join(", ") || "None"}</StatusPill>
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
             {clientId != null && (
+              <Link to={`/payflow/clients/${clientId}?tab=Sub-Clients%20%2F%20Portfolios`}>
+                <Btn variant="primary">Add Sub-Clients / Portfolios</Btn>
+              </Link>
+            )}
+            {clientId != null && (
               <Link to={`/payflow/clients/${clientId}`}>
-                <Btn variant="primary">View Client</Btn>
+                <Btn>View Client</Btn>
               </Link>
             )}
             <Link to="/payflow/clients">
@@ -225,8 +265,6 @@ export function PayFlowClientNewPage() {
     patch,
     patchConfig,
     supervisorUsers: supervisors,
-    permissionGroups,
-    payflowFields,
     governanceRules,
     clientId,
     onClientUpdated: (updated: { logo_url?: string | null }) => {
@@ -265,7 +303,11 @@ export function PayFlowClientNewPage() {
             const state = i === step ? "current" : i < step ? "done" : "todo";
             return (
               <li key={label} className="flex items-center gap-2">
-                <button type="button" onClick={() => setStep(i)} className="flex items-center gap-2 text-left">
+                <button
+                  type="button"
+                  onClick={() => setStep(i)}
+                  className="flex items-center gap-2 text-left"
+                >
                   <span
                     className={cn(
                       "grid size-6 shrink-0 place-items-center rounded-full border text-[11px] font-semibold",
@@ -298,11 +340,10 @@ export function PayFlowClientNewPage() {
       >
         {step === 0 && <ProfileSection {...sectionProps} />}
         {step === 1 && <DataSourceSection {...sectionProps} />}
-        {step === 2 && <MappingSection {...sectionProps} />}
-        {step === 3 && <BrandingSection {...sectionProps} />}
-        {step === 4 && <AiGovernanceSection {...sectionProps} />}
-        {step === 5 && <SupervisorSection {...sectionProps} />}
-        {step === 6 && (
+        {step === 2 && <BrandingSection {...sectionProps} />}
+        {step === 3 && <AiGovernanceSection {...sectionProps} />}
+        {step === 4 && <SupervisorSection {...sectionProps} />}
+        {step === 5 && (
           <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <ReviewBlock
@@ -316,24 +357,23 @@ export function PayFlowClientNewPage() {
               />
               <ReviewBlock
                 title="Data Source"
-                rows={[draft.config.dataSource ?? "Not selected", draft.config.connection]}
-                tone={connectionTone(draft.config.connection)}
+                rows={["Daily file", "Ready for file intake"]}
+                tone={connectionTone("Connected")}
               />
               <ReviewBlock
-                title="Data Mapping"
+                title="Branding & Channels"
                 rows={[
-                  `${summary.mapped} Mapped`,
-                  `${summary.attention} Needs Attention`,
-                  `${summary.unmapped} Unmapped`,
-                ]}
-              />
-              <ReviewBlock
-                title="Channels"
-                rows={[
+                  draft.config.clientType === "Third Party"
+                    ? "PayFlow operator branding"
+                    : `Brand: ${draft.config.brandName || "—"}`,
+                  `Sender: ${draft.config.senderName || "—"}`,
                   `Email: ${draft.config.channels.email ? "Enabled" : "Disabled"}`,
                   `SMS: ${draft.config.channels.sms ? "Enabled" : "Disabled"}`,
-                  "WhatsApp: Coming Later",
+                  brandingIssues.length
+                    ? `Incomplete: ${brandingIssues.length} item(s)`
+                    : "Branding complete",
                 ]}
+                tone={brandingIssues.length ? "warning" : "success"}
               />
               <ReviewBlock title="AI Mode" rows={[draft.aiMode]} />
               <ReviewBlock
@@ -350,7 +390,7 @@ export function PayFlowClientNewPage() {
                 }
               />
               <ReviewBlock
-                title="Supervisors"
+                title="Assigned Users"
                 rows={supervisorNames.length ? supervisorNames : ["None assigned"]}
               />
             </div>

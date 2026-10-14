@@ -9,11 +9,14 @@ import {
   resendInvite,
   saveOrganization,
   savePerson,
+  deletePerson,
 } from "../../api/platform";
 import { PageHeader } from "../../components/payflow-ui";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
+import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { Icon } from "../../components/ui/Icon";
+import { Modal } from "../../components/ui/Modal";
 import { useAuth } from "../../context/AuthContext";
 import { ui } from "../../lib/ui";
 import { orgDisplayName } from "../../lib/utils";
@@ -34,6 +37,9 @@ export function PeoplePage() {
   const [busyKey, setBusyKey] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<Person | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [managingPerson, setManagingPerson] = useState<Person | null>(null);
   const [newOrgName, setNewOrgName] = useState("");
   const [form, setForm] = useState({
     full_name: "",
@@ -100,6 +106,12 @@ export function PeoplePage() {
         p.organization_name.toLowerCase().includes(q),
     );
   }, [people, search]);
+
+  useEffect(() => {
+    if (!managingPerson) return;
+    const next = people.find((p) => p.id === managingPerson.id);
+    if (next && next !== managingPerson) setManagingPerson(next);
+  }, [people, managingPerson]);
 
   async function onSearchSubmit(e: FormEvent) {
     e.preventDefault();
@@ -203,6 +215,27 @@ export function PeoplePage() {
       setError(err instanceof ApiError ? err.detail : "Remove failed");
     } finally {
       setBusyKey("");
+    }
+  }
+
+  async function onDeletePerson() {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    setError("");
+    setInfo("");
+    try {
+      await deletePerson(pendingDelete.id);
+      setPendingDelete(null);
+      setManagingPerson(null);
+      setInfo(`${pendingDelete.full_name} deleted.`);
+      await loadPeople({
+        search: search.trim() || undefined,
+        organization_id: orgFilter ? Number(orgFilter) : undefined,
+      });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail : "Failed to delete person");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -399,7 +432,6 @@ export function PeoplePage() {
             </thead>
             <tbody>
               {visible.map((person) => {
-                const assignedIds = new Set(person.assigned_products.map((p) => p.id));
                 return (
                   <tr key={person.id}>
                     <td className={ui.td}>
@@ -428,37 +460,9 @@ export function PeoplePage() {
                       </div>
                     </td>
                     <td className={`${ui.td} text-right`}>
-                      <div className={ui.cellActions}>
-                        {person.status !== "active" ? (
-                          <Button
-                            variant="secondary"
-                            disabled={busyKey === `invite-${person.id}`}
-                            onClick={() => void onResend(person)}
-                          >
-                            Resend invite
-                          </Button>
-                        ) : null}
-                        {products.map((p) => {
-                          const assigned = assignedIds.has(p.id);
-                          return (
-                            <Button
-                              key={p.id}
-                              variant={assigned ? "danger" : "secondary"}
-                              disabled={
-                                busyKey ===
-                                (assigned ? `${person.id}-r-${p.id}` : `${person.id}-a-${p.id}`)
-                              }
-                              onClick={() =>
-                                void (assigned
-                                  ? onRemove(person.id, p.id)
-                                  : onAssign(person.id, p.id))
-                              }
-                            >
-                              {assigned ? `Remove ${p.name}` : `Assign ${p.name}`}
-                            </Button>
-                          );
-                        })}
-                      </div>
+                      <Button variant="secondary" size="sm" onClick={() => setManagingPerson(person)}>
+                        Manage
+                      </Button>
                     </td>
                   </tr>
                 );
@@ -467,6 +471,108 @@ export function PeoplePage() {
           </table>
         )}
       </div>
+
+      <Modal
+        open={Boolean(managingPerson)}
+        title={managingPerson ? managingPerson.full_name : "Manage person"}
+        description={
+          managingPerson
+            ? `${managingPerson.email} · Assign products they may open, or remove this person.`
+            : undefined
+        }
+        wide
+        onClose={() => setManagingPerson(null)}
+        footer={
+          managingPerson ? (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2.5">
+              {managingPerson.role !== "platform_super_admin" && managingPerson.id !== user?.id ? (
+                <Button
+                  variant="danger"
+                  onClick={() => setPendingDelete(managingPerson)}
+                >
+                  Delete person
+                </Button>
+              ) : (
+                <span />
+              )}
+              <Button variant="secondary" onClick={() => setManagingPerson(null)}>
+                Done
+              </Button>
+            </div>
+          ) : undefined
+        }
+      >
+        {managingPerson ? (
+          <div className="space-y-4">
+            {managingPerson.status !== "active" ? (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+                <p className="text-[13px] text-amber-800">This person has not activated yet.</p>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={busyKey === `invite-${managingPerson.id}`}
+                  onClick={() => void onResend(managingPerson)}
+                >
+                  {busyKey === `invite-${managingPerson.id}` ? "Sending…" : "Resend invite"}
+                </Button>
+              </div>
+            ) : null}
+
+            <div>
+              <h4 className="mb-2 text-[12px] font-bold uppercase tracking-wide text-slate-500">
+                Product access
+              </h4>
+              <ul className="grid gap-2">
+                {products.map((p) => {
+                  const assigned = managingPerson.assigned_products.some((ap) => ap.id === p.id);
+                  const busy =
+                    busyKey ===
+                    (assigned ? `${managingPerson.id}-r-${p.id}` : `${managingPerson.id}-a-${p.id}`);
+                  return (
+                    <li
+                      key={p.id}
+                      className="flex items-center justify-between gap-3 rounded-[10px] border border-slate-200 bg-slate-50/80 px-3.5 py-3"
+                    >
+                      <div>
+                        <strong className="block text-[13px] font-semibold text-slate-900">{p.name}</strong>
+                        <span className="block font-mono text-[11px] tracking-wide text-slate-500">
+                          {p.code}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge tone={assigned ? "success" : "danger"}>
+                          {assigned ? "Assigned" : "Not assigned"}
+                        </Badge>
+                        <Button
+                          variant={assigned ? "danger" : "secondary"}
+                          size="sm"
+                          disabled={busy}
+                          onClick={() =>
+                            void (assigned
+                              ? onRemove(managingPerson.id, p.id)
+                              : onAssign(managingPerson.id, p.id))
+                          }
+                        >
+                          {busy ? "Working…" : assigned ? "Remove" : "Assign"}
+                        </Button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+
+      <ConfirmDelete
+        open={Boolean(pendingDelete)}
+        title={pendingDelete ? `Delete ${pendingDelete.full_name}?` : "Delete person?"}
+        description="This permanently deletes the person, product assignments, PayFlow membership, and sessions. Email history is kept. The action is logged."
+        busy={deleting}
+        onClose={() => setPendingDelete(null)}
+        onConfirm={() => void onDeletePerson()}
+      />
     </div>
   );
 }

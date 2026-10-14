@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import {
   listPayflowClients,
@@ -12,7 +12,12 @@ import { Icon } from "../../components/ui/Icon";
 import { UserAvatar } from "../../components/ui/UserAvatar";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useAuth } from "../../context/AuthContext";
-import { PayFlowAccessProvider, usePayFlowAccess } from "../../context/PayFlowAccessContext";
+import {
+  PayFlowAccessProvider,
+  permissionsForPath,
+  RequirePayflowPermission,
+  usePayFlowAccess,
+} from "../../context/PayFlowAccessContext";
 import type { MenuSection, PayflowNotification } from "../../types";
 import { normalizeMenuRoute } from "../../lib/utils";
 
@@ -137,16 +142,7 @@ function NotificationBell() {
             )}
           </div>
           <div className="flex items-center justify-between gap-2 border-t border-slate-100 px-3 py-2 dark:border-slate-800">
-            <button
-              type="button"
-              className="text-[12px] font-medium text-primary hover:underline"
-              onClick={() => {
-                setOpen(false);
-                navigate("/payflow/review");
-              }}
-            >
-              View all human reviews
-            </button>
+            <span className="text-[11px] text-slate-400">Notifications</span>
             {unread > 0 && (
               <button
                 type="button"
@@ -319,13 +315,21 @@ function SidebarNav({
                       <div
                         className={
                           collapsed
-                            ? "mx-auto flex size-10 cursor-default items-center justify-center rounded-lg text-[#9aa6bc]/70"
-                            : "flex cursor-default items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium text-[#9aa6bc]/80"
+                            ? "mx-auto flex size-10 cursor-not-allowed items-center justify-center rounded-lg text-[#9aa6bc]/55"
+                            : "flex cursor-not-allowed items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium text-[#9aa6bc]/70"
                         }
-                        title={item.label}
+                        title={`${item.label} (disabled)`}
+                        aria-disabled="true"
                       >
-                        <Icon name={item.icon || "overview"} className="size-[17px] shrink-0" />
-                        {!collapsed ? <span>{item.label}</span> : null}
+                        <Icon name={item.icon || "overview"} className="size-[17px] shrink-0 opacity-70" />
+                        {!collapsed ? (
+                          <>
+                            <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                            <span className="shrink-0 rounded border border-white/10 px-1.5 py-0.5 text-[9px] font-semibold tracking-wide text-[#9aa6bc]/90 uppercase">
+                              {item.badge || "Soon"}
+                            </span>
+                          </>
+                        ) : null}
                       </div>
                     </li>
                   );
@@ -495,6 +499,8 @@ function PayFlowShell() {
   const { user, logout } = useAuth();
   const { loading, error, menus, roleLabel, isOperationsAdmin, access } = usePayFlowAccess();
   const navigate = useNavigate();
+  const location = useLocation();
+  const routePerms = permissionsForPath(location.pathname);
   const isMobile = useIsMobile();
   const [desktopCollapsed, setDesktopCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -689,7 +695,13 @@ function PayFlowShell() {
         </header>
         <main className="relative flex-1">
           <div className="mx-auto w-full max-w-[1280px] px-5 py-7 lg:px-10 lg:py-9">
-            <Outlet />
+            {routePerms ? (
+              <RequirePayflowPermission anyOf={routePerms}>
+                <Outlet />
+              </RequirePayflowPermission>
+            ) : (
+              <Outlet />
+            )}
           </div>
         </main>
       </div>

@@ -67,7 +67,7 @@ export function EmailLogsPage() {
       <PageHeader
         title="Email Logs"
         description={`SMTP is not configured yet. Outbound emails (activation, password reset) are saved here so you can open the action link and complete the flow. Visible only to ${EMAIL_LOGS_ADMIN_EMAIL}.`}
-        breadcrumb={[{ label: "Platform", to: "/platform" }, { label: "Email Logs" }]}
+        breadcrumb={[{ label: "Logs" }, { label: "Email Logs" }]}
         actions={
           <Button variant="secondary" onClick={() => void load()}>
             Refresh

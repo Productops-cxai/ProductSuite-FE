@@ -3,6 +3,7 @@ const API_BASE =
 
 const ACCESS_KEY = "ps_access_token";
 const REFRESH_KEY = "ps_refresh_token";
+const SESSION_ENDED_KEY = "ps_session_ended_msg";
 
 export function getAccessToken(): string | null {
   return localStorage.getItem(ACCESS_KEY);
@@ -22,14 +23,34 @@ export function clearTokens(): void {
   localStorage.removeItem(REFRESH_KEY);
 }
 
+/** Read-and-clear message set when another login killed this session. */
+export function takeSessionEndedMessage(): string | null {
+  const msg = sessionStorage.getItem(SESSION_ENDED_KEY);
+  if (msg) sessionStorage.removeItem(SESSION_ENDED_KEY);
+  return msg;
+}
+
+export function markSessionEnded(detail: string, code?: string): void {
+  if (
+    code === "session_replaced" ||
+    code === "session_ended" ||
+    /another location/i.test(detail) ||
+    /session has ended/i.test(detail)
+  ) {
+    sessionStorage.setItem(SESSION_ENDED_KEY, detail);
+  }
+}
+
 export class ApiError extends Error {
   status: number;
   detail: string;
+  code?: string;
 
-  constructor(status: number, detail: string) {
+  constructor(status: number, detail: string, code?: string) {
     super(detail);
     this.status = status;
     this.detail = detail;
+    this.code = code;
   }
 }
 
@@ -42,10 +63,19 @@ type RequestOptions = {
 
 async function parseError(res: Response): Promise<ApiError> {
   let detail = res.statusText || "Request failed";
+  let code: string | undefined;
   try {
     const data = await res.json();
     if (typeof data?.detail === "string") {
       detail = data.detail;
+    } else if (
+      data?.detail &&
+      typeof data.detail === "object" &&
+      !Array.isArray(data.detail) &&
+      typeof data.detail.message === "string"
+    ) {
+      detail = data.detail.message;
+      if (typeof data.detail.code === "string") code = data.detail.code;
     } else if (Array.isArray(data?.detail)) {
       detail = data.detail
         .map((d: { loc?: unknown[]; msg?: string; type?: string }) => {
@@ -68,7 +98,18 @@ async function parseError(res: Response): Promise<ApiError> {
   } catch {
     /* ignore */
   }
-  return new ApiError(res.status, detail);
+  if (res.status === 401) {
+    markSessionEnded(detail, code);
+    if (code === "session_replaced" || code === "session_ended" || /another location/i.test(detail)) {
+      notifySessionEnded();
+    }
+  }
+  return new ApiError(res.status, detail, code);
+}
+
+function notifySessionEnded(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent("ps:session-ended"));
 }
 
 function friendlyFieldLabel(field: string): string {
@@ -189,6 +230,7 @@ async function tryRefresh(): Promise<boolean> {
       body: JSON.stringify({ refresh_token: refresh }),
     });
     if (!res.ok) {
+      await parseError(res);
       clearTokens();
       return false;
     }

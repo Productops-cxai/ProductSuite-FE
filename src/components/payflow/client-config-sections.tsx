@@ -4,6 +4,7 @@ import {
   Field,
   TextInput,
   SelectInput,
+  SearchableSelect,
   ChoiceCard,
   ToggleRow,
   Btn,
@@ -12,11 +13,17 @@ import {
   Td,
   type Tone,
 } from "./lovable/payflow-ui";
-import { PermissionPicker } from "./PermissionPicker";
 import { resolveAvatarUrl } from "../ui/UserAvatar";
+import { LogoCropModal } from "./LogoCropModal";
 import { removePayflowClientLogo, uploadPayflowClientLogo } from "../../api/payflow";
 import { ApiError } from "../../api/client";
-import type { PayflowClientMapping, PayflowPermissionGroup, PayflowUser } from "../../types";
+import {
+  fetchCities,
+  fetchCountryNames,
+  fetchStates,
+  getCountryMeta,
+} from "../../lib/geo-api";
+import type { PayflowClientMapping, PayflowUser } from "../../types";
 
 export type ClientTypeLabel = "First Party" | "Third Party";
 export type AiModeLabel = "Autopilot" | "Supervised AI";
@@ -27,14 +34,29 @@ export type ConnectionLabel =
   | "Connection Failed";
 export type MappingStatusLabel = "Mapped" | "Needs Attention" | "Unmapped" | "Validated";
 
+export type DataSourceLabel = "CRM" | "File";
+
 export interface ClientDraftConfig {
   code: string;
   clientType: ClientTypeLabel;
   useCase: string;
-  dataSource: "CRM" | null;
+  dataSource: DataSourceLabel | null;
   connection: ConnectionLabel;
   environment: string;
   syncFrequency: string;
+  crmClientNumber: string;
+  contactName: string;
+  contactTitle: string;
+  contactEmail: string;
+  contactPhone: string;
+  addressLine1: string;
+  addressLine2: string;
+  city: string;
+  provinceState: string;
+  country: string;
+  postalCode: string;
+  correspondenceLanguage: string;
+  currencyCode: string;
   mappings: {
     sourceField: string;
     payflowField: string;
@@ -64,7 +86,6 @@ export interface SectionProps {
   patch: (p: Partial<ClientDraft>) => void;
   patchConfig: (p: Partial<ClientDraftConfig>) => void;
   supervisorUsers?: PayflowUser[];
-  permissionGroups?: PayflowPermissionGroup[];
   payflowFields?: string[];
   governanceRules?: string[];
   readOnly?: boolean;
@@ -77,6 +98,20 @@ export interface SectionProps {
     sms_sender_id?: string;
     channels?: { email: boolean; sms: boolean; whatsapp: boolean };
   }) => void;
+}
+
+/** Canadian postal code: A1A 1A1 */
+export const CLIENT_POSTAL_CODE_PATTERN = /^[A-Z]\d[A-Z] \d[A-Z]\d$/;
+
+export function isValidClientPostalCode(value: string): boolean {
+  const cleaned = value.trim().toUpperCase();
+  if (!cleaned) return true;
+  return CLIENT_POSTAL_CODE_PATTERN.test(cleaned);
+}
+
+export function postalCodeConfigIssues(draft: ClientDraft): string[] {
+  if (isValidClientPostalCode(draft.config.postalCode)) return [];
+  return ["Postal code must match format A1A 1A1"];
 }
 
 export function connectionTone(state: ConnectionLabel): Tone {
@@ -110,10 +145,23 @@ export function emptyDraft(): ClientDraft {
       code: "",
       clientType: "Third Party",
       useCase: "Collections",
-      dataSource: null,
-      connection: "Not Connected",
+      dataSource: "File",
+      connection: "Connected",
       environment: "Sandbox",
       syncFrequency: "Every 15 minutes",
+      crmClientNumber: "",
+      contactName: "",
+      contactTitle: "",
+      contactEmail: "",
+      contactPhone: "",
+      addressLine1: "",
+      addressLine2: "",
+      city: "",
+      provinceState: "",
+      country: "",
+      postalCode: "",
+      correspondenceLanguage: "",
+      currencyCode: "",
       mappings: [],
       brandName: "",
       logoUrl: null,
@@ -136,6 +184,19 @@ export function draftFromDetail(
     ai_mode_label?: string | null;
     data_source_type?: string | null;
     connection_status_label?: string | null;
+    crm_client_number?: string | null;
+    contact_name?: string | null;
+    contact_title?: string | null;
+    contact_email?: string | null;
+    contact_phone?: string | null;
+    address_line1?: string | null;
+    address_line2?: string | null;
+    city?: string | null;
+    province_state?: string | null;
+    country?: string | null;
+    postal_code?: string | null;
+    correspondence_language?: string | null;
+    currency_code?: string | null;
     environment?: string | null;
     sync_frequency?: string | null;
     brand_name?: string;
@@ -158,10 +219,23 @@ export function draftFromDetail(
       code: detail.code || "",
       clientType: (detail.client_type_label as ClientTypeLabel) || "Third Party",
       useCase: "Collections",
-      dataSource: detail.data_source_type === "crm" ? "CRM" : null,
-      connection: (detail.connection_status_label as ConnectionLabel) || "Not Connected",
+      dataSource: "File",
+      connection: "Connected",
       environment: detail.environment || "Sandbox",
       syncFrequency: detail.sync_frequency || "Every 15 minutes",
+      crmClientNumber: detail.crm_client_number || "",
+      contactName: detail.contact_name || "",
+      contactTitle: detail.contact_title || "",
+      contactEmail: detail.contact_email || "",
+      contactPhone: detail.contact_phone || "",
+      addressLine1: detail.address_line1 || "",
+      addressLine2: detail.address_line2 || "",
+      city: detail.city || "",
+      provinceState: detail.province_state || "",
+      country: detail.country || "",
+      postalCode: detail.postal_code || "",
+      correspondenceLanguage: detail.correspondence_language || "",
+      currencyCode: detail.currency_code || "",
       mappings: (detail.mappings || []).map((m) => ({
         sourceField: m.source_field,
         payflowField: m.payflow_field || "— Not mapped —",
@@ -181,6 +255,7 @@ export function draftFromDetail(
 }
 
 export function draftToUpdatePayload(draft: ClientDraft) {
+  // Phase-1: only daily file intake on clients; CRM catalog is system-wide.
   return {
     name: draft.name.trim(),
     code: draft.config.code.trim(),
@@ -188,8 +263,22 @@ export function draftToUpdatePayload(draft: ClientDraft) {
     business_domain: "Collections",
     industry: draft.industry.trim() || undefined,
     ai_mode: draft.aiMode,
-    data_source_type: draft.config.dataSource === "CRM" ? "crm" : null,
-    connection_status: draft.config.connection,
+    data_source_type: "file",
+    connection_status: "Connected",
+    crm_client_number: draft.config.crmClientNumber.trim() || undefined,
+    contact_name: draft.config.contactName.trim() || undefined,
+    contact_title: draft.config.contactTitle.trim() || undefined,
+    contact_email: draft.config.contactEmail.trim() || undefined,
+    contact_phone: draft.config.contactPhone.trim() || undefined,
+    address_line1: draft.config.addressLine1.trim() || undefined,
+    address_line2: draft.config.addressLine2.trim() || undefined,
+    city: draft.config.city.trim() || undefined,
+    province_state: draft.config.provinceState.trim() || undefined,
+    country: draft.config.country.trim() || undefined,
+    postal_code: draft.config.postalCode.trim().toUpperCase() || undefined,
+    correspondence_language: draft.config.correspondenceLanguage.trim() || undefined,
+    currency_code: draft.config.currencyCode.trim() || undefined,
+    integration_ref: draft.config.crmClientNumber.trim() || undefined,
     environment: draft.config.environment,
     sync_frequency: draft.config.syncFrequency,
     brand_name: draft.config.brandName,
@@ -211,126 +300,392 @@ export function draftToUpdatePayload(draft: ClientDraft) {
 /* ---------------- Profile ---------------- */
 
 export function ProfileSection({ draft, patch, patchConfig, readOnly }: SectionProps) {
+  const [countries, setCountries] = useState<string[]>([]);
+  const [provinces, setProvinces] = useState<string[]>([]);
+  const [cities, setCities] = useState<string[]>([]);
+  const [languages, setLanguages] = useState<string[]>([]);
+  const [currencies, setCurrencies] = useState<string[]>([]);
+  const [geoError, setGeoError] = useState("");
+  const [loadingCountries, setLoadingCountries] = useState(true);
+  const [loadingProvinces, setLoadingProvinces] = useState(false);
+  const [loadingCities, setLoadingCities] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingCountries(true);
+    setGeoError("");
+    fetchCountryNames()
+      .then((names) => {
+        if (cancelled) return;
+        setCountries(names);
+        if (draft.config.country) {
+          const meta = getCountryMeta(draft.config.country);
+          setLanguages(meta.languages);
+          setCurrencies(meta.currencies);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setGeoError("Could not load country list. Check your network and try again.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingCountries(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Intentionally once on mount; country meta refreshes in the country effect below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const country = draft.config.country;
+    if (!country) {
+      setProvinces([]);
+      setCities([]);
+      setLanguages([]);
+      setCurrencies([]);
+      return;
+    }
+    const meta = getCountryMeta(country);
+    setLanguages(meta.languages);
+    setCurrencies(meta.currencies);
+
+    let cancelled = false;
+    setLoadingProvinces(true);
+    setGeoError("");
+    fetchStates(country)
+      .then((states) => {
+        if (!cancelled) {
+          setProvinces(states);
+          if (!states.length) {
+            setGeoError(
+              "Province list unavailable for this country — you can still type a province / state.",
+            );
+          }
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setProvinces([]);
+          setGeoError(
+            "Could not load provinces / states — type the value manually, or retry after Save.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingProvinces(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [draft.config.country]);
+
+  useEffect(() => {
+    const country = draft.config.country;
+    const province = draft.config.provinceState;
+    if (!country || !province) {
+      setCities([]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingCities(true);
+    // Soft: don't block edit when CRM stored a city name in province, etc.
+    fetchCities(country, province)
+      .then((list) => {
+        if (!cancelled) {
+          setCities(list);
+          if (!list.length) {
+            setGeoError(
+              "City list unavailable for this province — pick a real province (e.g. Ontario) or type the city.",
+            );
+          } else {
+            setGeoError("");
+          }
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCities([]);
+          setGeoError(
+            "Could not load cities — type the city manually, or choose a valid province / state first.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingCities(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [draft.config.country, draft.config.provinceState]);
+
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
-      <Field label="Client Name">
-        <TextInput
-          value={draft.name}
-          onChange={(v) => patch({ name: v })}
-          placeholder="PayPal"
-          disabled={readOnly}
-        />
-      </Field>
-      <Field label="Client Code / Reference">
-        <TextInput
-          value={draft.config.code}
-          onChange={(v) => patchConfig({ code: v })}
-          placeholder="PP-CLT-004"
-          disabled={readOnly}
-        />
-      </Field>
-      <Field label="Client Type">
-        <SelectInput
-          value={draft.config.clientType}
-          options={["First Party", "Third Party"]}
-          onChange={(v) => patchConfig({ clientType: v as ClientTypeLabel })}
-          disabled={readOnly}
-        />
-      </Field>
-      <Field label="Industry">
-        <TextInput
-          value={draft.industry}
-          onChange={(v) => patch({ industry: v })}
-          placeholder="Payments"
-          disabled={readOnly}
-        />
-      </Field>
-      <Field label="Business Use Case" hint="Additional use cases arrive in a later phase.">
-        <SelectInput
-          value={draft.config.useCase || "Collections"}
-          options={["Collections"]}
-          onChange={(v) => patchConfig({ useCase: v })}
-          disabled={readOnly}
-        />
-      </Field>
+    <div className="space-y-6">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Client Name *">
+          <TextInput
+            value={draft.name}
+            onChange={(v) => patch({ name: v })}
+            placeholder="PayPal"
+            disabled={readOnly}
+          />
+        </Field>
+        <Field label="Client Code / Reference *">
+          <TextInput
+            value={draft.config.code}
+            onChange={(v) => patchConfig({ code: v })}
+            placeholder="PP-CLT-004"
+            disabled={readOnly}
+          />
+        </Field>
+        <Field label="CRM Client Number" hint="Used to link PayFlow ↔ CRM later (two-way).">
+          <TextInput
+            value={draft.config.crmClientNumber}
+            onChange={(v) => patchConfig({ crmClientNumber: v })}
+            placeholder="2022-0001-001"
+            disabled={readOnly}
+          />
+        </Field>
+        <Field label="Client Type *">
+          <SelectInput
+            value={draft.config.clientType}
+            options={["First Party", "Third Party"]}
+            onChange={(v) => patchConfig({ clientType: v as ClientTypeLabel })}
+            disabled={readOnly}
+          />
+        </Field>
+        <Field label="Industry">
+          <TextInput
+            value={draft.industry}
+            onChange={(v) => patch({ industry: v })}
+            placeholder="Payments"
+            disabled={readOnly}
+          />
+        </Field>
+        <Field label="Business Use Case" hint="Additional use cases arrive in a later phase.">
+          <SelectInput
+            value={draft.config.useCase || "Collections"}
+            options={["Collections"]}
+            onChange={(v) => patchConfig({ useCase: v })}
+            disabled={readOnly}
+          />
+        </Field>
+      </div>
+
+      <div>
+        <p className="mb-3 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">
+          Primary contact
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Contact Name *">
+            <TextInput
+              value={draft.config.contactName}
+              onChange={(v) => patchConfig({ contactName: v })}
+              disabled={readOnly}
+            />
+          </Field>
+          <Field label="Contact Title">
+            <TextInput
+              value={draft.config.contactTitle}
+              onChange={(v) => patchConfig({ contactTitle: v })}
+              disabled={readOnly}
+            />
+          </Field>
+          <Field label="Email *">
+            <TextInput
+              value={draft.config.contactEmail}
+              onChange={(v) => patchConfig({ contactEmail: v })}
+              disabled={readOnly}
+            />
+          </Field>
+          <Field label="Phone *">
+            <TextInput
+              value={draft.config.contactPhone+"+1"}
+              onChange={(v) => patchConfig({ contactPhone: v.replace(/\D/g, "").slice(0, 15)})}
+              disabled={readOnly}
+            />
+            <div className="text-[11px] text-muted-foreground">
+              Enter your phone number with country code (maximum 15 digits)
+            </div>
+          </Field>
+        </div>
+      </div>
+
+      <div>
+        <p className="mb-3 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">
+          Address
+        </p>
+        <p className="mb-3 text-[11px] leading-relaxed text-muted-foreground">
+          Country drives province, city, language, and currency. You can always type a custom
+          province or city if the list is incomplete or CRM data is messy — Save keeps your edits.
+        </p>
+        {geoError ? (
+          <p className="mb-3 text-[12px] text-warning">{geoError}</p>
+        ) : null}
+        <div className="grid items-start gap-4 sm:grid-cols-2">
+          <Field label="Address line 1">
+            <TextInput
+              value={draft.config.addressLine1}
+              onChange={(v) => patchConfig({ addressLine1: v })}
+              disabled={readOnly}
+            />
+          </Field>
+          <Field label="Address line 2">
+            <TextInput
+              value={draft.config.addressLine2}
+              onChange={(v) => patchConfig({ addressLine2: v })}
+              disabled={readOnly}
+            />
+          </Field>
+          <Field label="Country *">
+            <SearchableSelect
+              value={draft.config.country}
+              options={countries}
+              placeholder={loadingCountries ? "Loading countries…" : "Search countries…"}
+              emptyLabel={loadingCountries ? "Loading…" : "No countries found"}
+              disabled={readOnly || loadingCountries}
+              allowCustom
+              onChange={(country) => {
+                const meta = getCountryMeta(country);
+                patchConfig({
+                  country,
+                  provinceState: "",
+                  city: "",
+                  correspondenceLanguage: meta.languages[0] || "",
+                  currencyCode: meta.currencies[0] || "",
+                });
+              }}
+            />
+          </Field>
+          <Field label="Province / State">
+            <SearchableSelect
+              value={draft.config.provinceState}
+              options={provinces}
+              placeholder={
+                !draft.config.country
+                  ? "Select country first"
+                  : loadingProvinces
+                    ? "Loading provinces…"
+                    : "Search or type province / state…"
+              }
+              emptyLabel={loadingProvinces ? "Loading…" : "Type a province / state"}
+              disabled={readOnly || !draft.config.country}
+              allowCustom
+              onChange={(provinceState) => {
+                patchConfig({
+                  provinceState,
+                  city: "",
+                });
+              }}
+            />
+          </Field>
+          <Field label="City">
+            <SearchableSelect
+              value={draft.config.city}
+              options={cities}
+              placeholder={
+                !draft.config.country
+                  ? "Select country first"
+                  : !draft.config.provinceState
+                    ? "Select province / state first"
+                    : loadingCities
+                      ? "Loading cities…"
+                      : "Search or type city…"
+              }
+              emptyLabel={loadingCities ? "Loading…" : "Type a city"}
+              disabled={readOnly || !draft.config.country || !draft.config.provinceState}
+              allowCustom
+              onChange={(city) => patchConfig({ city })}
+            />
+          </Field>
+          <Field
+            label="Postal code"
+            hint={
+              draft.config.postalCode.trim() &&
+              !isValidClientPostalCode(draft.config.postalCode)
+                ? undefined
+                : "Format: A1A 1A1"
+            }
+          >
+            <TextInput
+              value={draft.config.postalCode}
+              onChange={(v) => patchConfig({ postalCode: v.toUpperCase() })}
+              placeholder="A1A 1A1"
+              disabled={readOnly}
+              className={
+                draft.config.postalCode.trim() &&
+                !isValidClientPostalCode(draft.config.postalCode)
+                  ? "border-destructive focus:border-destructive focus:ring-destructive/15"
+                  : undefined
+              }
+            />
+            {draft.config.postalCode.trim() &&
+            !isValidClientPostalCode(draft.config.postalCode) ? (
+              <span className="mt-1 block text-[11px] text-destructive">
+                Use format A1A 1A1 (letter-number-letter space number-letter-number)
+              </span>
+            ) : null}
+          </Field>
+          <Field label="Language *">
+            <SearchableSelect
+              value={draft.config.correspondenceLanguage}
+              options={languages}
+              placeholder={draft.config.country ? "Search language…" : "Select country first"}
+              emptyLabel="Type a language"
+              disabled={readOnly || !draft.config.country}
+              allowCustom
+              onChange={(correspondenceLanguage) => patchConfig({ correspondenceLanguage })}
+            />
+          </Field>
+          <Field label="Currency *">
+            <SearchableSelect
+              value={draft.config.currencyCode}
+              options={currencies}
+              placeholder={draft.config.country ? "Search currency…" : "Select country first"}
+              emptyLabel="Type a currency code"
+              disabled={readOnly || !draft.config.country}
+              allowCustom
+              onChange={(currencyCode) => patchConfig({ currencyCode })}
+            />
+          </Field>
+        </div>
+      </div>
     </div>
   );
 }
 
-/* ---------------- Data source (CRM only) ---------------- */
+/* ---------------- Data source (daily file only for now) ---------------- */
 
-export function DataSourceSection({ draft, patchConfig, readOnly }: SectionProps) {
-  const { dataSource, connection } = draft.config;
-
-  const selectCrm = () =>
-    patchConfig({
-      dataSource: "CRM",
-      connection: dataSource === "CRM" ? connection : "Not Connected",
-    });
-
-  const test = () => {
-    if (readOnly) return;
-    patchConfig({ connection: "Connecting" });
-    window.setTimeout(() => patchConfig({ connection: "Connected" }), 900);
-  };
-
+export function DataSourceSection({ readOnly }: SectionProps) {
   return (
     <div className="space-y-4">
       <p className="text-[13px] text-muted-foreground">
-        Where will PayFlow receive customer and account data for this client? One primary
-        operational source only.
+        Clients receive account and reminder data through daily file upload. CRM field mapping
+        is configured once under System Mapping (not per client).
       </p>
-      <div className="grid gap-3 sm:grid-cols-1 max-w-xl">
+      <div className="grid gap-3 sm:grid-cols-2 max-w-3xl">
+        <ChoiceCard
+          title="Daily file"
+          description="Upload daily account / reminder files using client_code + sub_client_code after sub-clients exist."
+          selected
+          disabled={readOnly}
+        />
         <ChoiceCard
           title="CRM"
-          description="PayFlow receives customer and account records from the client's CRM system."
-          selected={dataSource === "CRM"}
-          onSelect={readOnly ? undefined : selectCrm}
-          disabled={readOnly}
+          description="Direct CRM connection — coming later. Use System Mapping for the global CRM → PayFlow field catalog."
+          selected={false}
+          badge="Coming later"
+          disabled
         />
       </div>
 
-      {dataSource === "CRM" && (
-        <div className="rounded-lg border border-border bg-surface p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-[13px] font-semibold text-foreground">CRM connection</p>
-              <p className="text-[11px] text-muted-foreground">
-                Connection details are confirmed with the client during technical setup.
-              </p>
-            </div>
-            <StatusPill tone={connectionTone(connection)}>{connection}</StatusPill>
-          </div>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <Field label="Environment">
-              <SelectInput
-                value={draft.config.environment}
-                options={["Sandbox", "Production"]}
-                onChange={(v) => patchConfig({ environment: v })}
-                disabled={readOnly}
-              />
-            </Field>
-            <Field label="Sync Frequency">
-              <SelectInput
-                value={draft.config.syncFrequency}
-                options={["Every 15 minutes", "Hourly", "Daily"]}
-                onChange={(v) => patchConfig({ syncFrequency: v })}
-                disabled={readOnly}
-              />
-            </Field>
-          </div>
-          {!readOnly && (
-            <div className="mt-3 flex gap-2">
-              <Btn onClick={test} disabled={connection === "Connecting"}>
-                Test Connection
-              </Btn>
-              <Btn variant="ghost" onClick={() => patchConfig({ connection: "Connection Failed" })}>
-                Simulate failure
-              </Btn>
-            </div>
-          )}
-        </div>
-      )}
+      <div className="rounded-lg border border-border bg-surface p-4">
+        <p className="text-[13px] font-semibold text-foreground">Daily file intake</p>
+        <p className="mt-1 text-[12px] text-muted-foreground">
+          Create the client and sub-clients, then upload daily files from Cases / Imports.
+          Global CRM source → PayFlow field mapping lives under Administration → System Mapping.
+        </p>
+      </div>
     </div>
   );
 }
@@ -432,6 +787,31 @@ export function MappingSection({
 
 /* ---------------- Branding ---------------- */
 
+/** Shared FE checks aligned with BE activation / onboarding branding rules. */
+export function brandingConfigIssues(draft: ClientDraft): string[] {
+  const c = draft.config;
+  const issues: string[] = [];
+  if (!c.channels.email && !c.channels.sms) {
+    issues.push("At least one communication channel must be enabled");
+  }
+  // Lovable: brandName + senderName required for all client types (no name fallback).
+  if (!c.brandName.trim()) {
+    issues.push("Display / brand name is required (set in Branding & Channels)");
+  }
+  if (!c.senderName.trim()) {
+    issues.push("Sender name is required (set in Branding & Channels)");
+  }
+  if (c.clientType === "First Party") {
+    if (c.channels.email && !c.emailFrom.trim()) {
+      issues.push("Email from address is required when Email is enabled");
+    }
+    if (c.channels.sms && !c.smsSenderId.trim()) {
+      issues.push("SMS sender ID is required when SMS is enabled");
+    }
+  }
+  return issues;
+}
+
 export function BrandingSection({
   draft,
   patchConfig,
@@ -442,13 +822,53 @@ export function BrandingSection({
   const c = draft.config;
   const thirdParty = c.clientType === "Third Party";
   const clientBrand = c.brandName || draft.name || "Client";
+  // Customer-facing brand: First Party = client; Third Party = PayFlow operator.
   const brand = thirdParty ? "PayFlow Collections" : clientBrand;
-  const initials = brand.slice(0, 2).toUpperCase();
-  const logoSrc = resolveAvatarUrl(c.logoUrl);
+  const previewInitials = brand.slice(0, 2).toUpperCase();
+  const clientLogoSrc = resolveAvatarUrl(c.logoUrl);
+  // Third Party previews never show the client logo — PayFlow operator identity only.
+  const previewLogoSrc = thirdParty ? null : clientLogoSrc;
   const fileRef = useRef<HTMLInputElement>(null);
+  const cropObjectUrlRef = useRef<string | null>(null);
   const [logoBusy, setLogoBusy] = useState(false);
   const [logoError, setLogoError] = useState("");
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [cropOpen, setCropOpen] = useState(false);
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
+  const [cropFileName, setCropFileName] = useState("logo.png");
+  const previewSender = thirdParty
+    ? c.senderName.trim() || "PayFlow Collections"
+    : c.senderName.trim() || brand;
+
+  function clearCropObjectUrl() {
+    if (cropObjectUrlRef.current) {
+      URL.revokeObjectURL(cropObjectUrlRef.current);
+      cropObjectUrlRef.current = null;
+    }
+  }
+
+  function closeCrop() {
+    if (logoBusy) return;
+    setCropOpen(false);
+    setCropSrc(null);
+    clearCropObjectUrl();
+    if (fileRef.current) fileRef.current.value = "";
+  }
+
+  function openCrop(src: string, fileName: string, revokeOnClose = false) {
+    if (revokeOnClose) {
+      clearCropObjectUrl();
+      cropObjectUrlRef.current = src;
+    }
+    setCropFileName(fileName);
+    setCropSrc(src);
+    setCropOpen(true);
+    setLogoError("");
+  }
+
+  useEffect(() => {
+    return () => clearCropObjectUrl();
+  }, []);
 
   useEffect(() => {
     if (!previewOpen) return;
@@ -459,28 +879,51 @@ export function BrandingSection({
     return () => window.removeEventListener("keydown", onKey);
   }, [previewOpen]);
 
-  async function onLogoSelected(file: File | null) {
-    if (!file || readOnly) return;
+  function onLogoSelected(file: File | null) {
+    if (!file || readOnly || thirdParty) return;
     if (clientId == null) {
       setLogoError("Save earlier steps first so this client exists, then upload a logo.");
       return;
     }
+    const objectUrl = URL.createObjectURL(file);
+    openCrop(objectUrl, file.name || "logo.png", true);
+  }
+
+  async function onAdjustLogo() {
+    if (!clientLogoSrc || readOnly || thirdParty || clientId == null || logoBusy || cropOpen) return;
+    setLogoError("");
+    try {
+      const res = await fetch(clientLogoSrc, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load logo for adjusting");
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      openCrop(objectUrl, "logo.png", true);
+    } catch (err) {
+      setLogoError(err instanceof Error ? err.message : "Failed to load logo for adjusting");
+    }
+  }
+
+  async function onCropApply(file: File) {
+    if (clientId == null || readOnly || thirdParty) return;
     setLogoBusy(true);
     setLogoError("");
     try {
       const updated = await uploadPayflowClientLogo(clientId, file);
       patchConfig({ logoUrl: updated.logo_url || null });
       onClientUpdated?.(updated);
+      setCropOpen(false);
+      setCropSrc(null);
+      clearCropObjectUrl();
+      if (fileRef.current) fileRef.current.value = "";
     } catch (err) {
       setLogoError(err instanceof ApiError ? err.detail : "Failed to upload logo");
     } finally {
       setLogoBusy(false);
-      if (fileRef.current) fileRef.current.value = "";
     }
   }
 
   async function onRemoveLogo() {
-    if (clientId == null || readOnly || !c.logoUrl) return;
+    if (clientId == null || readOnly || thirdParty || !c.logoUrl) return;
     setLogoBusy(true);
     setLogoError("");
     try {
@@ -497,7 +940,15 @@ export function BrandingSection({
 
   return (
     <div className="grid gap-5 lg:grid-cols-2">
-      {previewOpen && logoSrc ? (
+      <LogoCropModal
+        open={cropOpen}
+        imageSrc={cropSrc}
+        fileName={cropFileName}
+        busy={logoBusy}
+        onClose={closeCrop}
+        onApply={onCropApply}
+      />
+      {previewOpen && clientLogoSrc && !thirdParty ? (
         <div
           className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/80 p-5 backdrop-blur-sm"
           role="dialog"
@@ -516,7 +967,7 @@ export function BrandingSection({
             </svg>
           </button>
           <img
-            src={logoSrc}
+            src={clientLogoSrc}
             alt={`${clientBrand} logo`}
             className="max-h-[min(80vh,640px)] max-w-[min(90vw,520px)] rounded-2xl object-contain shadow-2xl ring-1 ring-white/10"
             onClick={(e) => e.stopPropagation()}
@@ -530,88 +981,122 @@ export function BrandingSection({
             ? `This is a Third Party client, so customer-facing communications and the payment page use PayFlow collection-operator branding on behalf of ${clientBrand}.`
             : `This is a First Party client, so customer-facing communications and the payment page use ${clientBrand} branding.`}
         </p>
-        <div className="flex items-start gap-3">
-          <button
-            type="button"
-            disabled={logoBusy || (readOnly && !logoSrc)}
-            title={logoSrc ? "View logo" : readOnly ? undefined : "Upload logo"}
-            onClick={() => {
-              if (logoSrc) setPreviewOpen(true);
-              else if (!readOnly) fileRef.current?.click();
-            }}
-            className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-md border border-border bg-surface text-[13px] font-semibold text-foreground transition hover:ring-2 hover:ring-primary/40 disabled:cursor-default disabled:hover:ring-0"
-          >
-            {logoSrc ? (
-              <img src={logoSrc} alt="" className="size-full object-cover" />
-            ) : (
-              initials
-            )}
-          </button>
-          <div className="min-w-0 flex-1">
-            <p className="text-[13px] font-medium text-foreground">Client Logo</p>
-            <p className="text-[11px] text-muted-foreground">
-              JPG, PNG, WEBP or GIF · up to 2 MB. Used on customer-facing communications.
-            </p>
-            {!readOnly ? (
-              <div className="mt-2 flex flex-wrap items-center gap-3">
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/gif"
-                  className="hidden"
-                  onChange={(e) => void onLogoSelected(e.target.files?.[0] || null)}
-                />
+        {readOnly ? (
+          <p className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-[11px] text-foreground">
+            Branding &amp; channels can only be edited while the client is in Draft status.
+          </p>
+        ) : null}
+
+        {thirdParty ? (
+          <div className="flex items-start gap-3 rounded-lg border border-border bg-card px-3 py-2.5">
+            <div className="grid size-14 shrink-0 place-items-center rounded-md border border-border bg-surface text-[13px] font-semibold text-foreground">
+              PF
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-medium text-foreground">PayFlow operator branding</p>
+              <p className="text-[11px] text-muted-foreground">
+                Customer-facing email/SMS use PayFlow Collections identity. Configure the client
+                display/reference name below so the obligation can be identified where required.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-start gap-3">
+            <button
+              type="button"
+              disabled={logoBusy || (readOnly && !clientLogoSrc)}
+              title={clientLogoSrc ? "View logo" : readOnly ? undefined : "Upload logo"}
+              onClick={() => {
+                if (clientLogoSrc) setPreviewOpen(true);
+                else if (!readOnly) fileRef.current?.click();
+              }}
+              className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-md border border-border bg-surface text-[13px] font-semibold text-foreground transition hover:ring-2 hover:ring-primary/40 disabled:cursor-default disabled:hover:ring-0"
+            >
+              {clientLogoSrc ? (
+                <img src={clientLogoSrc} alt="" className="size-full object-contain p-0.5" />
+              ) : (
+                previewInitials
+              )}
+            </button>
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-medium text-foreground">Client Logo</p>
+              <p className="text-[11px] text-muted-foreground">
+                JPG, PNG, WEBP or GIF · up to 2 MB. Adjust framing after selecting — landscape
+                logos stay full width. Used on customer-facing communications.
+              </p>
+              {!readOnly ? (
+                <div className="mt-2 flex flex-wrap items-center gap-3">
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    className="hidden"
+                    onChange={(e) => onLogoSelected(e.target.files?.[0] || null)}
+                  />
+                  <button
+                    type="button"
+                    className="text-[12px] font-semibold text-primary hover:text-primary-hover disabled:opacity-50"
+                    disabled={logoBusy || clientId == null}
+                    onClick={() => fileRef.current?.click()}
+                  >
+                    {logoBusy ? "Uploading…" : c.logoUrl ? "Change logo" : "Upload logo"}
+                  </button>
+                  {c.logoUrl ? (
+                    <>
+                      <button
+                        type="button"
+                        className="text-[12px] font-medium text-muted-foreground hover:text-foreground disabled:opacity-50"
+                        disabled={logoBusy || !clientLogoSrc || clientId == null}
+                        onClick={() => void onAdjustLogo()}
+                      >
+                        Adjust
+                      </button>
+                      <button
+                        type="button"
+                        className="text-[12px] font-medium text-muted-foreground hover:text-foreground disabled:opacity-50"
+                        disabled={logoBusy}
+                        onClick={() => setPreviewOpen(true)}
+                      >
+                        View
+                      </button>
+                      <button
+                        type="button"
+                        className="text-[12px] font-medium text-muted-foreground hover:text-red-600 dark:hover:text-red-400 disabled:opacity-50"
+                        disabled={logoBusy}
+                        onClick={() => void onRemoveLogo()}
+                      >
+                        Remove
+                      </button>
+                    </>
+                  ) : null}
+                  {clientId == null ? (
+                    <span className="text-[11px] text-muted-foreground">
+                      Save earlier steps first to enable upload.
+                    </span>
+                  ) : null}
+                </div>
+              ) : c.logoUrl ? (
                 <button
                   type="button"
-                  className="text-[12px] font-semibold text-primary hover:text-primary-hover disabled:opacity-50"
-                  disabled={logoBusy || clientId == null}
-                  onClick={() => fileRef.current?.click()}
+                  className="mt-2 text-[12px] font-semibold text-primary"
+                  onClick={() => setPreviewOpen(true)}
                 >
-                  {logoBusy ? "Uploading…" : c.logoUrl ? "Change logo" : "Upload logo"}
+                  View logo
                 </button>
-                {c.logoUrl ? (
-                  <>
-                    <button
-                      type="button"
-                      className="text-[12px] font-medium text-muted-foreground hover:text-foreground disabled:opacity-50"
-                      disabled={logoBusy}
-                      onClick={() => setPreviewOpen(true)}
-                    >
-                      View
-                    </button>
-                    <button
-                      type="button"
-                      className="text-[12px] font-medium text-muted-foreground hover:text-red-600 dark:hover:text-red-400 disabled:opacity-50"
-                      disabled={logoBusy}
-                      onClick={() => void onRemoveLogo()}
-                    >
-                      Remove
-                    </button>
-                  </>
-                ) : null}
-                {clientId == null ? (
-                  <span className="text-[11px] text-muted-foreground">
-                    Save earlier steps first to enable upload.
-                  </span>
-                ) : null}
-              </div>
-            ) : c.logoUrl ? (
-              <button
-                type="button"
-                className="mt-2 text-[12px] font-semibold text-primary"
-                onClick={() => setPreviewOpen(true)}
-              >
-                View logo
-              </button>
-            ) : null}
-            {logoError ? <p className="mt-1.5 text-[11px] text-red-600 dark:text-red-400">{logoError}</p> : null}
+              ) : null}
+              {logoError ? (
+                <p className="mt-1.5 text-[11px] text-red-600 dark:text-red-400">{logoError}</p>
+              ) : null}
+            </div>
           </div>
-        </div>
-        <Field label="Display / Brand Name">
+        )}
+
+        <Field label={thirdParty ? "Client display / reference name" : "Display / Brand Name"}>
           <TextInput
             value={c.brandName}
             onChange={(v) => patchConfig({ brandName: v })}
             disabled={readOnly}
+            placeholder={thirdParty ? draft.name || "Shown when identifying the obligation" : undefined}
           />
         </Field>
         <Field label="Sender Name">
@@ -619,6 +1104,7 @@ export function BrandingSection({
             value={c.senderName}
             onChange={(v) => patchConfig({ senderName: v })}
             disabled={readOnly}
+            placeholder={thirdParty ? "PayFlow Collections" : undefined}
           />
         </Field>
 
@@ -662,17 +1148,22 @@ export function BrandingSection({
 
       <div className="space-y-3">
         <p className="text-eyebrow">Customer-facing preview</p>
+        <p className="text-[11px] text-muted-foreground">
+          {thirdParty
+            ? "Preview uses PayFlow collection-operator branding."
+            : "Preview uses this client’s configured branding."}
+        </p>
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="flex items-center gap-2 border-b border-border pb-2.5">
             <div className="grid size-7 place-items-center overflow-hidden rounded bg-surface text-[11px] font-semibold">
-              {logoSrc ? (
-                <img src={logoSrc} alt="" className="size-full object-cover" />
+              {previewLogoSrc ? (
+                <img src={previewLogoSrc} alt="" className="size-full object-contain p-px" />
               ) : (
-                initials
+                previewInitials
               )}
             </div>
             <div className="text-[12px]">
-              <p className="font-medium text-foreground">{c.senderName || brand}</p>
+              <p className="font-medium text-foreground">{previewSender}</p>
               <p className="text-muted-foreground">{c.emailFrom}</p>
             </div>
           </div>
@@ -680,8 +1171,9 @@ export function BrandingSection({
             Your {brand} balance is past due
           </p>
           <p className="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
-            Hello John, your outstanding balance of $4,250 is now overdue. You can settle it
-            securely, or set up a payment plan that works for you.
+            Hello John, your outstanding balance of $4,250 is now overdue
+            {thirdParty ? ` (on behalf of ${clientBrand})` : ""}. You can settle it securely, or
+            set up a payment plan that works for you.
           </p>
           <span className="mt-3 inline-block rounded-md bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground">
             Pay now
@@ -690,7 +1182,8 @@ export function BrandingSection({
         <div className="rounded-lg border border-border bg-card p-4">
           <p className="text-eyebrow mb-2">SMS · {c.smsSenderId || "SENDER"}</p>
           <p className="rounded-lg bg-surface px-3 py-2 text-[12px] text-foreground">
-            {brand}: your balance of $4,250 is overdue. Pay or arrange a plan here: pay.fl/x9k2
+            {brand}: your balance of $4,250 is overdue
+            {thirdParty ? ` (${clientBrand})` : ""}. Pay or arrange a plan here: pay.fl/x9k2
           </p>
         </div>
       </div>
@@ -795,13 +1288,12 @@ export function AiGovernanceSection({
   );
 }
 
-/* ---------------- Supervisors only (permissions read-only) ---------------- */
+/* ---------------- Assigned users (role permissions managed under Users) ---------------- */
 
 export function SupervisorSection({
   draft,
   patch,
   supervisorUsers = [],
-  permissionGroups = [],
   readOnly,
 }: SectionProps) {
   const toggle = (userId: string) =>
@@ -811,104 +1303,41 @@ export function SupervisorSection({
         : [...draft.supervisorUserIds, userId],
     });
 
-  const selectedUsers = supervisorUsers.filter((u) =>
-    draft.supervisorUserIds.includes(String(u.id)),
-  );
-
-  const allCodes = permissionGroups.flatMap((g) => g.permissions.map((p) => p.code));
-
-  function codesForUser(user: PayflowUser) {
-    const fullAccess =
-      (user.role_permission_names || []).includes("Full Access") ||
-      user.role_scope === "platform_wide";
-    return fullAccess ? allCodes : user.role_permission_codes || [];
-  }
-
   return (
-    <div className="grid gap-5 lg:grid-cols-2">
-      <div>
-        <p className="text-[13px] font-semibold text-foreground">Assigned Supervisors</p>
-        <p className="mb-2 text-[11px] text-muted-foreground">
-          Assignment decides where a supervisor works. Supervisors only see assigned clients.
-          You can assign more than one.
-        </p>
-        <div className="divide-y divide-border rounded-lg border border-border bg-card">
-          {supervisorUsers.length === 0 && (
-            <p className="px-3 py-3 text-[13px] text-muted-foreground">
-              No supervisor users available. Create a supervisor under Users &amp; Permissions first.
-            </p>
-          )}
-          {supervisorUsers.map((user) => {
-            const selected = draft.supervisorUserIds.includes(String(user.id));
-            return (
-              <label
-                key={user.id}
-                className="flex cursor-pointer items-center gap-2.5 px-3 py-2.5"
-              >
-                <input
-                  type="checkbox"
-                  checked={selected}
-                  onChange={() => !readOnly && toggle(String(user.id))}
-                  disabled={readOnly}
-                  className="size-3.5 accent-[var(--color-primary)]"
-                />
-                <span className="text-[13px] text-foreground">{user.full_name}</span>
-                <span className="ml-auto text-[11px] text-muted-foreground">
-                  {user.role_name ? `${user.role_name} · ` : ""}
-                  {user.status_label || user.status}
-                </span>
-              </label>
-            );
-          })}
-        </div>
-      </div>
-
-      <div>
-        <p className="text-[13px] font-semibold text-foreground">Permissions</p>
-        <p className="mb-2 text-[11px] text-muted-foreground">
-          {selectedUsers.length === 0
-            ? "Select one or more supervisors to see each person’s role permissions."
-            : selectedUsers.length === 1
-              ? "Read-only view of this supervisor’s role permissions. Manage these under Users & Permissions."
-              : `${selectedUsers.length} supervisors selected — each person’s permissions are shown separately below.`}
-        </p>
-
-        {permissionGroups.length === 0 ? (
-          <p className="rounded-lg border border-border bg-card px-3 py-3 text-[13px] text-muted-foreground">
-            Permission catalog is unavailable.
+    <div>
+      <p className="text-[13px] font-semibold text-foreground">Assigned Users</p>
+      <p className="mb-2 text-[11px] text-muted-foreground">
+        Assignment decides where a user works. What they may do comes from their role in Users
+        &amp; Permissions.
+      </p>
+      <div className="divide-y divide-border rounded-lg border border-border bg-card">
+        {supervisorUsers.length === 0 && (
+          <p className="px-3 py-3 text-[13px] text-muted-foreground">
+            No supervisor users available. Create a user under Users &amp; Permissions first.
           </p>
-        ) : selectedUsers.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-border bg-card px-3 py-6 text-center text-[12.5px] text-muted-foreground">
-            No supervisor selected yet.
-          </p>
-        ) : (
-          <div className="space-y-3">
-            {selectedUsers.map((user) => (
-              <div
-                key={user.id}
-                className="rounded-lg border border-border bg-card p-3"
-              >
-                <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="text-[13px] font-semibold text-foreground">{user.full_name}</p>
-                    <p className="text-[11px] text-muted-foreground">
-                      {user.role_name || "Supervisor"} · view only
-                    </p>
-                  </div>
-                  <StatusPill>
-                    {(codesForUser(user).length || 0)} permissions
-                  </StatusPill>
-                </div>
-                <PermissionPicker
-                  groups={permissionGroups}
-                  selected={codesForUser(user)}
-                  disabled
-                  onToggle={() => undefined}
-                />
-              </div>
-            ))}
-          </div>
         )}
+        {supervisorUsers.map((user) => {
+          const selected = draft.supervisorUserIds.includes(String(user.id));
+          return (
+            <label
+              key={user.id}
+              className="flex cursor-pointer items-center gap-2.5 px-3 py-2.5"
+            >
+              <input
+                type="checkbox"
+                checked={selected}
+                onChange={() => !readOnly && toggle(String(user.id))}
+                disabled={readOnly}
+                className="size-3.5 accent-[var(--color-primary)]"
+              />
+              <span className="text-[13px] text-foreground">{user.full_name}</span>
+              <span className="ml-auto text-[11px] text-muted-foreground">
+                {user.role_name ? `${user.role_name} · ` : ""}
+                {user.status_label || user.status}
+              </span>
+            </label>
+          );
+        })}
       </div>
     </div>
   );

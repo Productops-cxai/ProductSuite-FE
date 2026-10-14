@@ -7,6 +7,7 @@ import {
   reactivatePayflowUser,
   resendPayflowInvitation,
   updatePayflowUser,
+  deletePayflowUser,
 } from "../../api/payflow";
 import {
   Btn,
@@ -18,6 +19,8 @@ import {
   TextInput,
 } from "../../components/payflow-ui";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
+import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
+import { useAuth } from "../../context/AuthContext";
 import type { PayflowUser } from "../../types";
 
 function statusTone(status: string) {
@@ -26,9 +29,16 @@ function statusTone(status: string) {
   return "neutral" as const;
 }
 
+function roleRank(scope?: string | null, code?: string | null): number {
+  if (scope === "platform_wide" || code === "operations_admin") return 2;
+  return 1;
+}
+
 export function PayFlowUserDetailPage() {
   const { userId } = useParams<{ userId: string }>();
-  const { isOperationsAdmin } = usePayFlowAccess();
+  const { hasPermission, isOperationsAdmin, loading: accessLoading } = usePayFlowAccess();
+  const canManageUsers = hasPermission("manage_users");
+  const { user: me } = useAuth();
   const navigate = useNavigate();
   const [user, setUser] = useState<PayflowUser | null>(null);
   const [roleOptions, setRoleOptions] = useState<{ value: string; label: string }[]>([]);
@@ -37,6 +47,9 @@ export function PayFlowUserDetailPage() {
   const [editing, setEditing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [statusBusy, setStatusBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const actorRank = isOperationsAdmin ? 2 : 1;
 
   const load = () => {
     if (!userId) return;
@@ -44,7 +57,12 @@ export function PayFlowUserDetailPage() {
     Promise.all([getPayflowUser(userId), listPayflowRoles()])
       .then(([u, rolesRes]) => {
         setUser(u);
-        setRoleOptions(rolesRes.roles.map((r) => ({ value: r.code, label: r.name })));
+        // Only roles at or below the actor's rank (Admin can assign Admin; others cannot).
+        setRoleOptions(
+          rolesRes.roles
+            .filter((r) => roleRank(r.scope, r.code) <= actorRank)
+            .map((r) => ({ value: r.code, label: r.name })),
+        );
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : "User not found");
@@ -54,15 +72,21 @@ export function PayFlowUserDetailPage() {
   };
 
   useEffect(() => {
-    if (!isOperationsAdmin) return;
+    if (!canManageUsers) return;
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, isOperationsAdmin]);
+  }, [userId, canManageUsers, actorRank]);
 
-  if (!isOperationsAdmin) {
+  if (accessLoading) {
+    return <p className="text-sm text-slate-500">Checking access…</p>;
+  }
+
+  if (!canManageUsers) {
     return (
-      <Panel title="Administrator access required">
-        <p className="text-sm text-slate-500">Only an Operations Admin can view user access details.</p>
+      <Panel title="Access required">
+        <p className="text-sm text-slate-500">
+          Your role needs the Manage Users &amp; Roles permission to view user details.
+        </p>
       </Panel>
     );
   }
@@ -81,6 +105,8 @@ export function PayFlowUserDetailPage() {
   }
 
   const isSupervisor = user.role_scope !== "platform_wide";
+  const targetRank = roleRank(user.role_scope, user.role_code);
+  const canManageTarget = targetRank <= actorRank;
 
   return (
     <>
@@ -96,8 +122,10 @@ export function PayFlowUserDetailPage() {
           <div className="flex flex-wrap items-center gap-2">
             <StatusPill tone={isSupervisor ? "neutral" : "info"}>{user.role_name}</StatusPill>
             <StatusPill tone={statusTone(user.status)}>{user.status_label}</StatusPill>
-            <Btn onClick={() => setEditing((v) => !v)}>{editing ? "Close" : "Edit User"}</Btn>
-            {user.status === "active" ? (
+            {canManageTarget ? (
+              <Btn onClick={() => setEditing((v) => !v)}>{editing ? "Close" : "Edit User"}</Btn>
+            ) : null}
+            {canManageTarget && user.status === "active" ? (
               <Btn
                 variant="danger"
                 disabled={statusBusy}
@@ -118,7 +146,7 @@ export function PayFlowUserDetailPage() {
                 {statusBusy ? "Working…" : "Deactivate"}
               </Btn>
             ) : null}
-            {user.status === "disabled" ? (
+            {canManageTarget && user.status === "disabled" ? (
               <Btn
                 variant="secondary"
                 disabled={statusBusy}
@@ -143,7 +171,7 @@ export function PayFlowUserDetailPage() {
                 {statusBusy ? "Working…" : "Reactivate"}
               </Btn>
             ) : null}
-            {user.status === "invited" ? (
+            {canManageTarget && user.status === "invited" ? (
               <Btn
                 variant="secondary"
                 onClick={() => {
@@ -158,9 +186,20 @@ export function PayFlowUserDetailPage() {
                 Resend Invitation
               </Btn>
             ) : null}
+            {canManageTarget && me?.id !== user.id ? (
+              <Btn variant="danger" disabled={statusBusy} onClick={() => setConfirmDelete(true)}>
+                Delete
+              </Btn>
+            ) : null}
           </div>
         }
       />
+
+      {!canManageTarget ? (
+        <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-900">
+          Only Operations Admin can edit users with a higher role (Admin).
+        </p>
+      ) : null}
 
       {message ? (
         <p className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-[12px] text-emerald-800">
@@ -168,7 +207,7 @@ export function PayFlowUserDetailPage() {
         </p>
       ) : null}
 
-      {editing ? (
+      {editing && canManageTarget ? (
         <div className="mb-5">
           <Panel title="Edit User">
             <EditUserForm
@@ -226,6 +265,25 @@ export function PayFlowUserDetailPage() {
           </Btn>
         </Panel>
       </div>
+
+      <ConfirmDelete
+        open={confirmDelete}
+        title={`Delete ${user.full_name}?`}
+        description="This permanently deletes the person, PayFlow membership, client assignments, and sessions. The record is saved in Deletion Logs."
+        busy={statusBusy}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={() => {
+          setStatusBusy(true);
+          setMessage(null);
+          deletePayflowUser(user.id)
+            .then(() => navigate("/payflow/users"))
+            .catch((err: unknown) => {
+              setMessage(err instanceof Error ? err.message : "Failed to delete user");
+              setStatusBusy(false);
+              setConfirmDelete(false);
+            });
+        }}
+      />
     </>
   );
 }
@@ -251,7 +309,6 @@ function EditUserForm({
   onSaved: (user: PayflowUser) => void;
 }) {
   const [fullName, setFullName] = useState(user.full_name);
-  const [email, setEmail] = useState(user.email);
   const [roleCode, setRoleCode] = useState(user.role_code);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -263,8 +320,8 @@ function EditUserForm({
         <Field label="Full Name">
           <TextInput value={fullName} onChange={setFullName} />
         </Field>
-        <Field label="Email">
-          <TextInput value={email} onChange={setEmail} type="email" />
+        <Field label="Email" hint="Email cannot be changed after the user is created.">
+          <TextInput value={user.email} onChange={() => undefined} type="email" disabled />
         </Field>
         <Field label="Role">
           <SelectInput value={roleCode} options={roleOptions} onChange={setRoleCode} />
@@ -283,13 +340,12 @@ function EditUserForm({
       <div className="mt-4 flex gap-2">
         <Btn
           variant="primary"
-          disabled={fullName.trim().length < 2 || !/.+@.+\..+/.test(email) || saving}
+          disabled={fullName.trim().length < 2 || saving}
           onClick={() => {
             setSaving(true);
             setError(null);
             updatePayflowUser(user.id, {
               full_name: fullName.trim(),
-              email: email.trim(),
               role_code: roleCode,
               confirm_role_change: roleChanged,
             })

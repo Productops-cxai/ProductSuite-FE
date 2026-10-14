@@ -51,12 +51,27 @@ const BASE_FALLBACK_MENUS: MenuSection[] = [
         sort_order: 4,
         is_coming_soon: false,
       },
+    ],
+  },
+  {
+    key: "logs",
+    label: "LOGS",
+    sort_order: 2,
+    items: [
       {
         key: "email_logs",
         label: "Email Logs",
         route: "/platform/email-logs",
         icon: "mail",
-        sort_order: 5,
+        sort_order: 1,
+        is_coming_soon: false,
+      },
+      {
+        key: "deletion_logs",
+        label: "Deletion Logs",
+        route: "/platform/deletion-logs",
+        icon: "billing",
+        sort_order: 2,
         is_coming_soon: false,
       },
     ],
@@ -64,7 +79,7 @@ const BASE_FALLBACK_MENUS: MenuSection[] = [
   {
     key: "future",
     label: "FUTURE",
-    sort_order: 2,
+    sort_order: 3,
     items: [
       {
         key: "billing",
@@ -84,7 +99,7 @@ function menusForUser(email: string | undefined | null): MenuSection[] {
   return BASE_FALLBACK_MENUS.map((section) => ({
     ...section,
     items: section.items.filter((item) => allowEmailLogs || item.key !== "email_logs"),
-  }));
+  })).filter((section) => section.items.length > 0);
 }
 
 export function PlatformLayout() {

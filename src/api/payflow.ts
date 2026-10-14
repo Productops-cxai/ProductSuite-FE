@@ -1,11 +1,16 @@
 import { apiRequest, apiRequestBlob, apiRequestMultipart } from "./client";
 import { cachedAsync, invalidateCache } from "../lib/dedupeAsync";
+import { deletionSource } from "../lib/deletionSource";
 import type {
   MenusResponse,
+  DeletionLog,
   PayflowAccessContext,
   PayflowAccountsListResponse,
   PayflowAccount,
   PayflowBulkUploadResult,
+  PayflowImportPreviewResponse,
+  PayflowImportListResponse,
+  PayflowImportRun,
   PayflowClient,
   PayflowClientDetail,
   PayflowClientsListResponse,
@@ -79,11 +84,11 @@ export async function updatePayflowUser(
   userId: string,
   payload: {
     full_name?: string;
-    email?: string;
     role_code?: string;
     confirm_role_change?: boolean;
   },
 ) {
+  // Email is immutable after create — never send it on update.
   const user = await apiRequest<PayflowUser>(`/payflow/users/${userId}/update`, {
     method: "POST",
     body: payload,
@@ -113,6 +118,15 @@ export async function reactivatePayflowUser(userId: string) {
   });
   invalidateCache("payflow:");
   return user;
+}
+
+export async function deletePayflowUser(userId: string) {
+  const res = await apiRequest<{ message: string }>(
+    `/payflow/users/${userId}/delete${deletionSource()}`,
+    { method: "POST" },
+  );
+  invalidateCache("payflow:");
+  return res;
 }
 
 export function listPayflowRoles() {
@@ -209,6 +223,15 @@ export async function updatePayflowClient(
   return client;
 }
 
+export async function deletePayflowClient(clientId: number) {
+  const res = await apiRequest<{ message: string }>(
+    `/payflow/clients/${clientId}/delete${deletionSource()}`,
+    { method: "POST" },
+  );
+  invalidateCache("payflow:");
+  return res;
+}
+
 export async function uploadPayflowClientLogo(clientId: number, file: File) {
   const form = new FormData();
   form.append("file", file);
@@ -272,6 +295,15 @@ export async function updatePayflowClientPortfolio(
   return portfolio;
 }
 
+export async function deletePayflowClientPortfolio(clientId: number, portfolioId: number) {
+  const res = await apiRequest<{ message: string }>(
+    `/payflow/clients/${clientId}/portfolios/${portfolioId}/delete${deletionSource()}`,
+    { method: "POST" },
+  );
+  invalidateCache("payflow:");
+  return res;
+}
+
 export function getPayflowClientMappingCatalog() {
   return cachedAsync("payflow:clients:mapping-catalog", () =>
     apiRequest<PayflowMappingCatalogResponse>("/payflow/clients/mapping-catalog"),
@@ -288,6 +320,15 @@ export async function downloadPayflowClientsBulkTemplate() {
   link.click();
   document.body.removeChild(link);
   window.URL.revokeObjectURL(url);
+}
+
+export async function validatePayflowClientsBulk(file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+  return apiRequestMultipart<PayflowImportPreviewResponse>(
+    "/payflow/clients/bulk-validate",
+    formData,
+  );
 }
 
 export async function uploadPayflowClientsBulk(file: File) {
@@ -338,9 +379,10 @@ export async function updatePayflowRole(
 }
 
 export async function deletePayflowRole(roleId: number) {
-  const res = await apiRequest<{ message: string }>(`/payflow/roles/${roleId}/delete`, {
-    method: "POST",
-  });
+  const res = await apiRequest<{ message: string }>(
+    `/payflow/roles/${roleId}/delete${deletionSource()}`,
+    { method: "POST" },
+  );
   invalidateCache("payflow:");
   return res;
 }
@@ -366,6 +408,49 @@ export function listPayflowAccounts(params?: {
 
 export function getPayflowAccount(accountId: number) {
   return apiRequest<PayflowAccount>(`/payflow/accounts/${accountId}`);
+}
+
+export async function downloadPayflowAccountImportTemplate() {
+  const blob = await apiRequestBlob("/payflow/imports/accounts/template");
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "payflow_daily_accounts_sample.xlsx";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(url);
+}
+
+export async function validatePayflowAccountImport(file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+  return apiRequestMultipart<PayflowImportPreviewResponse>(
+    "/payflow/imports/accounts/validate",
+    formData,
+  );
+}
+
+export async function uploadPayflowAccountImport(file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const result = await apiRequestMultipart<PayflowImportRun>(
+    "/payflow/imports/accounts/upload",
+    formData,
+  );
+  invalidateCache("payflow:");
+  return result;
+}
+
+export function listPayflowImports(params?: { type?: string }) {
+  const q = new URLSearchParams();
+  if (params?.type) q.set("type", params.type);
+  const qs = q.toString();
+  return apiRequest<PayflowImportListResponse>(`/payflow/imports${qs ? `?${qs}` : ""}`);
+}
+
+export function getPayflowImport(importId: string | number) {
+  return apiRequest<PayflowImportRun>(`/payflow/imports/${importId}`);
 }
 
 export function listPayflowIntegrations(params?: {
@@ -501,6 +586,15 @@ export async function deactivatePayflowRule(ruleId: number) {
   return apiRequest<PayflowRule>(`/payflow/rules/${ruleId}/deactivate`, { method: "POST" });
 }
 
+export async function deletePayflowRule(ruleId: number) {
+  const res = await apiRequest<{ message: string }>(
+    `/payflow/rules/${ruleId}/delete${deletionSource()}`,
+    { method: "POST" },
+  );
+  invalidateCache("payflow:");
+  return res;
+}
+
 export function listPayflowWorkflows(params?: {
   client_id?: number;
   portfolio_id?: number;
@@ -520,23 +614,49 @@ export function getPayflowWorkflow(strategyId: number) {
   return apiRequest<PayflowStrategy>(`/payflow/workflows/${strategyId}`);
 }
 
+export type PayflowWorkflowStepPayload = {
+  id?: string;
+  kind: string;
+  title: string;
+  origin?: string;
+  disabled?: boolean;
+  config?: {
+    channel?: string | null;
+    purpose?: string | null;
+    reference_event?: string | null;
+    amount?: number | null;
+    unit?: string | null;
+    direction?: string | null;
+    attribute?: string | null;
+    operator?: string | null;
+    value?: string | null;
+    action?: string | null;
+    outcome?: string | null;
+    note?: string | null;
+    template_id?: string | null;
+  };
+  next?: string | null;
+  yes?: string | null;
+  no?: string | null;
+  channel?: string | null;
+  purpose?: string | null;
+  timing?: string | null;
+  detail?: string | null;
+};
+
 export async function createPayflowWorkflow(payload: {
   name: string;
   client_id: number;
-  portfolio_id?: number | null;
+  portfolio_id: number;
   summary?: string;
   coverage?: string;
+  cases_covered?: number;
   segment?: Record<string, string>;
-  steps: {
-    id?: string;
-    kind: string;
-    title: string;
-    channel?: string;
-    purpose?: string;
-    timing?: string;
-    detail?: string;
-  }[];
+  steps: PayflowWorkflowStepPayload[];
+  entry_node_id?: string;
   status?: string;
+  source?: string;
+  ai_context?: { label: string; value: string }[];
 }) {
   return apiRequest<PayflowStrategy>("/payflow/workflows", { method: "POST", body: payload });
 }
@@ -547,17 +667,10 @@ export async function updatePayflowWorkflow(
     name?: string;
     summary?: string;
     coverage?: string;
+    cases_covered?: number;
     segment?: Record<string, string>;
-    steps?: {
-      id?: string;
-      kind: string;
-      title: string;
-      channel?: string;
-      purpose?: string;
-      timing?: string;
-      detail?: string;
-      disabled?: boolean;
-    }[];
+    steps?: PayflowWorkflowStepPayload[];
+    entry_node_id?: string;
   },
 ) {
   return apiRequest<PayflowStrategy>(`/payflow/workflows/${strategyId}/update`, {
@@ -568,6 +681,18 @@ export async function updatePayflowWorkflow(
 
 export async function savePayflowWorkflowDraft(strategyId: number) {
   return apiRequest<PayflowStrategy>(`/payflow/workflows/${strategyId}/save-draft`, {
+    method: "POST",
+  });
+}
+
+export async function beginPayflowWorkflowReview(strategyId: number) {
+  return apiRequest<PayflowStrategy>(`/payflow/workflows/${strategyId}/begin-review`, {
+    method: "POST",
+  });
+}
+
+export async function submitPayflowWorkflowReview(strategyId: number) {
+  return apiRequest<PayflowStrategy>(`/payflow/workflows/${strategyId}/submit-review`, {
     method: "POST",
   });
 }
@@ -583,6 +708,27 @@ export async function rejectPayflowWorkflow(strategyId: number, payload?: { note
     method: "POST",
     body: payload || {},
   });
+}
+
+export async function activatePayflowWorkflow(strategyId: number) {
+  return apiRequest<PayflowStrategy>(`/payflow/workflows/${strategyId}/activate`, {
+    method: "POST",
+  });
+}
+
+export async function deactivatePayflowWorkflow(strategyId: number) {
+  return apiRequest<PayflowStrategy>(`/payflow/workflows/${strategyId}/deactivate`, {
+    method: "POST",
+  });
+}
+
+export async function deletePayflowWorkflow(strategyId: number) {
+  const res = await apiRequest<{ message: string }>(
+    `/payflow/workflows/${strategyId}/delete${deletionSource()}`,
+    { method: "POST" },
+  );
+  invalidateCache("payflow:");
+  return res;
 }
 
 export function listPayflowComms(params?: {
@@ -639,4 +785,17 @@ export async function markAllPayflowNotificationsRead() {
   return apiRequest<PayflowNotificationsListResponse>("/payflow/notifications/read-all", {
     method: "POST",
   });
+}
+
+export function listPayflowDeletionLogs(params?: {
+  search?: string;
+  entity_type?: string;
+  limit?: number;
+}) {
+  const q = new URLSearchParams();
+  if (params?.search) q.set("search", params.search);
+  if (params?.entity_type) q.set("entity_type", params.entity_type);
+  if (params?.limit) q.set("limit", String(params.limit));
+  const qs = q.toString();
+  return apiRequest<DeletionLog[]>(`/payflow/deletion-logs${qs ? `?${qs}` : ""}`);
 }

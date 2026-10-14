@@ -1,10 +1,11 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ApiError } from "../../api/client";
-import { listProducts, saveProduct } from "../../api/platform";
+import { listProducts, saveProduct, deleteProduct } from "../../api/platform";
 import { PageHeader } from "../../components/payflow-ui";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
+import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { ui } from "../../lib/ui";
 import { titleCaseStatus } from "../../lib/utils";
 import type { Product } from "../../types";
@@ -16,6 +17,8 @@ export function ProductsPage() {
   const [loading, setLoading] = useState(true);
   const [registerOpen, setRegisterOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<Product | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [form, setForm] = useState({
     name: "",
     code: "",
@@ -72,6 +75,21 @@ export function ProductsPage() {
       setError(err instanceof ApiError ? err.detail : "Failed to register product");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function onDelete() {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    setError("");
+    try {
+      await deleteProduct(pendingDelete.id);
+      setPendingDelete(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail : "Failed to delete product");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -212,6 +230,9 @@ export function ProductsPage() {
                           View
                         </Button>
                       </Link>
+                      <Button variant="danger" size="sm" onClick={() => setPendingDelete(p)}>
+                        Delete
+                      </Button>
                     </div>
                   </td>
                 </tr>
@@ -220,6 +241,15 @@ export function ProductsPage() {
           </table>
         )}
       </div>
+
+      <ConfirmDelete
+        open={Boolean(pendingDelete)}
+        title={pendingDelete ? `Delete ${pendingDelete.name}?` : "Delete product?"}
+        description="This removes the product and all organization entitlements and person assignments. The action is logged."
+        busy={deleting}
+        onClose={() => setPendingDelete(null)}
+        onConfirm={() => void onDelete()}
+      />
     </div>
   );
 }

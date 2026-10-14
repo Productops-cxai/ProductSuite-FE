@@ -1,7 +1,7 @@
 import { cn } from "../../lib/utils";
 import type { PayflowPermissionGroup } from "../../types";
 
-/** Grouped permission checkboxes — WHAT a role/user may do. */
+/** Grouped permission checkboxes — pages and actions a role may use. */
 export function PermissionPicker({
   groups,
   selected,
@@ -14,7 +14,7 @@ export function PermissionPicker({
   disabled?: boolean;
 }) {
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
+    <div className="grid gap-3 sm:grid-cols-2">
       {groups.map((group) => (
         <div
           key={group.group_key}
@@ -23,7 +23,7 @@ export function PermissionPicker({
           <p className="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">
             {group.group_label}
           </p>
-          <div className="mt-1.5 space-y-1">
+          <div className="mt-1.5 space-y-0.5">
             {group.permissions.map((perm) => (
               <label
                 key={perm.code}

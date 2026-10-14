@@ -237,9 +237,9 @@ export function PayFlowRuleNewPage() {
                           options={fieldMeta.options}
                         />
                       ) : (
-                        <TextInput
+                        <TextInput 
                           value={c.value}
-                          onChange={(v) => updateCondition(index, { value: v })}
+                          onChange={(v) => updateCondition(index, { value: v.replace(/\D/g, "") })}
                           placeholder="Value"
                         />
                       )}
@@ -290,6 +290,7 @@ export function PayFlowRuleNewPage() {
               {busy ? "Saving…" : "Save as Draft"}
             </Btn>
             <Btn
+              variant="primary"
               disabled={busy || !name.trim()}
               onClick={() => void submit("Active")}
             >

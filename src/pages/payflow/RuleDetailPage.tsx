@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import {
   activatePayflowRule,
   deactivatePayflowRule,
+  deletePayflowRule,
   getPayflowRule,
 } from "../../api/payflow";
 import {
@@ -15,6 +16,8 @@ import {
   type Tone,
 } from "../../components/payflow/lovable/payflow-ui";
 import type { PayflowRule } from "../../types";
+import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
+import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 
 function ruleStatusTone(status: string): Tone {
   if (status === "Active") return "success";
@@ -24,10 +27,14 @@ function ruleStatusTone(status: string): Tone {
 
 export function PayFlowRuleDetailPage() {
   const { ruleId } = useParams<{ ruleId: string }>();
+  const navigate = useNavigate();
+  const { hasPermission } = usePayFlowAccess();
+  const canDelete = hasPermission("delete_rules");
   const [rule, setRule] = useState<PayflowRule | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   async function load() {
     const id = Number(ruleId);
@@ -77,6 +84,19 @@ export function PayFlowRuleDetailPage() {
     }
   }
 
+  async function onDelete() {
+    if (!rule) return;
+    setBusy(true);
+    try {
+      await deletePayflowRule(rule.id);
+      navigate("/payflow/rules");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail : "Delete failed");
+      setBusy(false);
+      setConfirmDelete(false);
+    }
+  }
+
   if (loading) return <p className="text-sm text-muted-foreground">Loading rule…</p>;
   if (error && !rule) {
     return (
@@ -111,6 +131,11 @@ export function PayFlowRuleDetailPage() {
             {rule.can_edit && rule.status === "Active" ? (
               <Btn disabled={busy} onClick={() => void onDeactivate()}>
                 Deactivate
+              </Btn>
+            ) : null}
+            {canDelete ? (
+              <Btn variant="danger" disabled={busy} onClick={() => setConfirmDelete(true)}>
+                Delete
               </Btn>
             ) : null}
           </div>
@@ -238,6 +263,15 @@ export function PayFlowRuleDetailPage() {
           </Panel>
         </div>
       </div>
+
+      <ConfirmDelete
+        open={confirmDelete}
+        title={`Delete ${rule.name}?`}
+        description="This deletes the rule. Linked reviews stay, but the rule reference is removed. The action is logged."
+        busy={busy}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={() => void onDelete()}
+      />
     </>
   );
 }
