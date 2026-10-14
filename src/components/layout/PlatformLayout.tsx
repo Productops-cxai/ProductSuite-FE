@@ -74,6 +74,14 @@ const BASE_FALLBACK_MENUS: MenuSection[] = [
         sort_order: 2,
         is_coming_soon: false,
       },
+      {
+        key: "ai_suggest_jobs",
+        label: "AI Suggest Jobs",
+        route: "/platform/ai-suggest-jobs",
+        icon: "document",
+        sort_order: 3,
+        is_coming_soon: false,
+      },
     ],
   },
   {

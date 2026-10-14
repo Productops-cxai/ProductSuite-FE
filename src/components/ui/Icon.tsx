@@ -65,6 +65,7 @@ const alias: Record<string, string> = {
   product: "products",
   email_logs: "mail",
   mail: "mail",
+  ai_suggest_jobs: "billing",
 };
 
 export function Icon({ name, className = "size-4 shrink-0" }: Props) {
