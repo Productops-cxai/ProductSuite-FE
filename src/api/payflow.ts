@@ -564,7 +564,9 @@ export function getPayflowRule(ruleId: number) {
   return apiRequest<PayflowRule>(`/payflow/rules/${ruleId}`);
 }
 
+/** Create a rule, or update when ``id`` is set — same POST /payflow/rules. */
 export async function createPayflowRule(payload: {
+  id?: number;
   name: string;
   description?: string;
   rule_type?: string;
@@ -575,7 +577,17 @@ export async function createPayflowRule(payload: {
   action: string;
   status?: string;
 }) {
-  return apiRequest<PayflowRule>("/payflow/rules", { method: "POST", body: payload });
+  const result = await apiRequest<PayflowRule>("/payflow/rules", { method: "POST", body: payload });
+  invalidateCache("payflow:rules");
+  return result;
+}
+
+/** Alias — same endpoint as create; pass ``id`` to update. */
+export async function updatePayflowRule(
+  ruleId: number,
+  payload: Omit<Parameters<typeof createPayflowRule>[0], "id">,
+) {
+  return createPayflowRule({ ...payload, id: ruleId });
 }
 
 export async function activatePayflowRule(ruleId: number) {
