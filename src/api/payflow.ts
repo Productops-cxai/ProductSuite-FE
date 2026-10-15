@@ -11,7 +11,6 @@ import type {
   PayflowImportPreviewResponse,
   PayflowImportListResponse,
   PayflowImportRun,
-  PayflowClient,
   PayflowClientDetail,
   PayflowClientsListResponse,
   PayflowCommunication,
@@ -589,13 +588,6 @@ export async function updatePayflowRule(
   payload: Omit<Parameters<typeof createPayflowRule>[0], "id">,
 ) {
   return createPayflowRule({ ...payload, id: ruleId });
-}
-
-export async function updatePayflowRule(ruleId: number, payload: PayflowRuleWritePayload) {
-  return apiRequest<PayflowRule>(`/payflow/rules/${ruleId}/update`, {
-    method: "POST",
-    body: payload,
-  });
 }
 
 export async function activatePayflowRule(ruleId: number) {
