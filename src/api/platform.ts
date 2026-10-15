@@ -221,6 +221,10 @@ export function listWorkflowWorkerLogs(params?: {
   );
 }
 
+export function getWorkflowWorkerLog(logId: number) {
+  return apiRequest<PayflowWorkflowWorkerLog>(`/workflow-worker-logs/${logId}`);
+}
+
 export function listDeletionLogs(params?: {
   search?: string;
   entity_type?: string;

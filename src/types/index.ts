@@ -162,13 +162,22 @@ export interface PayflowWorkflowWorkerLog {
   message: string;
   detail?: string | null;
   client_id?: number | null;
+  client_name?: string | null;
+  client_code?: string | null;
   portfolio_id?: number | null;
+  portfolio_name?: string | null;
+  portfolio_code?: string | null;
   account_id?: number | null;
+  account_reference?: string | null;
+  customer_name?: string | null;
   strategy_id?: number | null;
+  strategy_name?: string | null;
+  strategy_code?: string | null;
   run_id?: number | null;
   job_id?: number | null;
   step_id?: string | null;
   created_at?: string | null;
+  related_events?: PayflowWorkflowWorkerLog[] | null;
 }
 
 export interface PayflowWorkflowWorkerLogsResponse {

@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import { listWorkflowWorkerLogs } from "../../api/platform";
 import { PageHeader } from "../../components/payflow-ui";
@@ -8,7 +9,18 @@ import { useAuth } from "../../context/AuthContext";
 import { ui } from "../../lib/ui";
 import type { PayflowWorkflowWorkerLog } from "../../types";
 
+function levelClass(level: string): string {
+  if (level === "error") return "text-red-700 dark:text-red-300";
+  if (level === "warn") return "text-amber-700 dark:text-amber-300";
+  return "text-slate-700 dark:text-slate-200";
+}
+
+function eventLabel(eventType: string): string {
+  return eventType.replace(/_/g, " ");
+}
+
 export function WorkerLogsPage() {
+  const navigate = useNavigate();
   const { loading: authLoading, isSuperAdmin } = useAuth();
   const [rows, setRows] = useState<PayflowWorkflowWorkerLog[]>([]);
   const [search, setSearch] = useState("");
@@ -54,7 +66,7 @@ export function WorkerLogsPage() {
     <div className={ui.page}>
       <PageHeader
         title="Workflow Worker Logs"
-        description="Monitor workflow enrollment, step execution, waits, rule blocks, human-review pauses, and provider sends across all clients."
+        description="Enrollment, step execution, waits, rule blocks, and provider sends — with client, portfolio, and account context."
         breadcrumb={[{ label: "Logs" }, { label: "Workflow Worker Logs" }]}
         actions={
           <Button variant="secondary" onClick={() => void load()}>
@@ -72,7 +84,7 @@ export function WorkerLogsPage() {
           </span>
           <input
             className={ui.searchInput}
-            placeholder="Search message…"
+            placeholder="Search client, portfolio, account, message…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -83,13 +95,15 @@ export function WorkerLogsPage() {
           onChange={(e) => setEventFilter(e.target.value)}
         >
           <option value="">All events</option>
-          <option value="enroll_queued">enroll_queued</option>
-          <option value="account_enrolled">account_enrolled</option>
-          <option value="step_done">step_done</option>
-          <option value="step_failed">step_failed</option>
-          <option value="rule_matched">rule_matched</option>
-          <option value="human_review_paused">human_review_paused</option>
-          <option value="run_superseded">run_superseded</option>
+          <option value="enroll_queued">enroll queued</option>
+          <option value="enroll_complete">enroll complete</option>
+          <option value="account_enrolled">account enrolled</option>
+          <option value="step_done">step done</option>
+          <option value="step_failed">step failed</option>
+          <option value="step_skipped">step skipped</option>
+          <option value="rule_matched">rule matched</option>
+          <option value="human_review_paused">human review paused</option>
+          <option value="run_superseded">run superseded</option>
         </select>
         <select
           className={ui.select}
@@ -115,28 +129,86 @@ export function WorkerLogsPage() {
           <table className={ui.table}>
             <thead>
               <tr>
-                <th className={ui.th}>ID</th>
+                <th className={ui.th}>WHEN</th>
                 <th className={ui.th}>LEVEL</th>
                 <th className={ui.th}>EVENT</th>
-                <th className={ui.th}>MESSAGE</th>
                 <th className={ui.th}>CLIENT</th>
+                <th className={ui.th}>PORTFOLIO</th>
                 <th className={ui.th}>ACCOUNT</th>
-                <th className={ui.th}>RUN</th>
-                <th className={ui.th}>WHEN</th>
+                <th className={ui.th}>ACTION</th>
+                <th className={ui.th} />
               </tr>
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.id}>
-                  <td className={ui.td}>{row.id}</td>
-                  <td className={ui.td}>{row.level}</td>
-                  <td className={ui.td}>{row.event_type}</td>
-                  <td className={`${ui.td} ${ui.desc}`}>{row.message}</td>
-                  <td className={ui.td}>{row.client_id ?? "—"}</td>
-                  <td className={ui.td}>{row.account_id ?? "—"}</td>
-                  <td className={ui.td}>{row.run_id ?? "—"}</td>
+                <tr
+                  key={row.id}
+                  className="cursor-pointer hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
+                  onClick={() => navigate(`/platform/worker-logs/${row.id}`)}
+                >
                   <td className={`${ui.td} whitespace-nowrap text-slate-500`}>
                     {row.created_at ? new Date(row.created_at).toLocaleString() : "—"}
+                  </td>
+                  <td className={`${ui.td} font-semibold ${levelClass(row.level)}`}>
+                    {row.level}
+                  </td>
+                  <td className={ui.td}>
+                    <span className="capitalize">{eventLabel(row.event_type)}</span>
+                  </td>
+                  <td className={ui.td}>
+                    {row.client_name || row.client_id != null ? (
+                      <>
+                        <strong>{row.client_name || `#${row.client_id}`}</strong>
+                        {row.client_code ? (
+                          <div className={ui.desc}>{row.client_code}</div>
+                        ) : null}
+                      </>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className={ui.td}>
+                    {row.portfolio_name || row.portfolio_id != null ? (
+                      <>
+                        <strong>{row.portfolio_name || `#${row.portfolio_id}`}</strong>
+                        {row.portfolio_code ? (
+                          <div className={ui.desc}>{row.portfolio_code}</div>
+                        ) : null}
+                      </>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className={ui.td}>
+                    {row.account_reference || row.customer_name || row.account_id != null ? (
+                      <>
+                        <strong>
+                          {row.account_reference ||
+                            row.customer_name ||
+                            `#${row.account_id}`}
+                        </strong>
+                        {row.customer_name && row.account_reference ? (
+                          <div className={ui.desc}>{row.customer_name}</div>
+                        ) : null}
+                      </>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className={`${ui.td} ${ui.desc}`}>
+                    <div>{row.message}</div>
+                    {row.strategy_name || row.step_id ? (
+                      <div className="mt-0.5 text-[11px] text-slate-500">
+                        {[row.strategy_name, row.step_id ? `step ${row.step_id}` : null]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </div>
+                    ) : null}
+                  </td>
+                  <td className={ui.td} onClick={(e) => e.stopPropagation()}>
+                    <Link to={`/platform/worker-logs/${row.id}`} className={ui.link}>
+                      Details
+                    </Link>
                   </td>
                 </tr>
               ))}

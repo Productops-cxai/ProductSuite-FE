@@ -587,14 +587,17 @@ function PayFlowShell() {
   }
 
   // Communications UI parked on FE for now — show in nav as Coming Soon (BE untouched).
+  // Worker logs live under Platform Admin only — hide any leftover PayFlow nav row.
   const navSections = menus
     .map((section) => ({
       ...section,
-      items: section.items.map((item) =>
-        item.key === "comms"
-          ? { ...item, is_coming_soon: true, badge: item.badge || "Soon" }
-          : item,
-      ),
+      items: section.items
+        .filter((item) => item.key !== "worker_logs")
+        .map((item) =>
+          item.key === "comms"
+            ? { ...item, is_coming_soon: true, badge: item.badge || "Soon" }
+            : item,
+        ),
     }))
     .filter((section) => section.items.length > 0);
 
