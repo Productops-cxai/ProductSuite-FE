@@ -586,13 +586,25 @@ function PayFlowShell() {
     setDesktopCollapsed((v) => !v);
   }
 
+  // Communications UI parked on FE for now — show in nav as Coming Soon (BE untouched).
+  const navSections = menus
+    .map((section) => ({
+      ...section,
+      items: section.items.map((item) =>
+        item.key === "comms"
+          ? { ...item, is_coming_soon: true, badge: item.badge || "Soon" }
+          : item,
+      ),
+    }))
+    .filter((section) => section.items.length > 0);
+
   const panelProps = {
     userName: user.full_name,
     avatarUrl: user.avatar_url,
     roleLabel,
     isOperationsAdmin,
     assignedClientCount: isOperationsAdmin ? clientCount ?? 0 : assignedClientCount,
-    sections: menus,
+    sections: navSections,
     onProfile: () => navigate("/payflow/profile"),
     onLogout: () => void logout(),
   };

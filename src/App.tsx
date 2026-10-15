@@ -9,6 +9,8 @@ import { ProfilePage } from "./pages/ProfilePage";
 import { AccessPage } from "./pages/platform/AccessPage";
 import { AiSuggestJobsPage } from "./pages/platform/AiSuggestJobsPage";
 import { EmailLogsPage } from "./pages/platform/EmailLogsPage";
+import { SmsLogsPage } from "./pages/platform/SmsLogsPage";
+import { WorkerLogsPage } from "./pages/platform/WorkerLogsPage";
 import { OverviewPage } from "./pages/platform/OverviewPage";
 import { PeoplePage } from "./pages/platform/PeoplePage";
 import { ProductDetailPage } from "./pages/platform/ProductDetailPage";
@@ -38,6 +40,7 @@ import { PayFlowUsersPage } from "./pages/payflow/UsersPage";
 import { NoAccessPage, ProductLauncherPage } from "./pages/ProductLauncherPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { PayFlowHumanReview } from "./pages/payflow/HumanReview";
+import { PayFlowWorkerLogsPage } from "./pages/payflow/WorkerLogsPage";
 import { PayFlowWorkflowsPage } from "./pages/payflow/WorkflowsPage";
 import { PayFlowWorkflowNewPage } from "./pages/payflow/WorkflowNewPage";
 import { PayFlowWorkflowDetailPage } from "./pages/payflow/WorkflowDetailPage";
@@ -68,6 +71,8 @@ export default function App() {
         <Route path="people" element={<PeoplePage />} />
         <Route path="deletion-logs" element={<DeletionLogsPage workspace="platform" />} />
         <Route path="email-logs" element={<EmailLogsPage />} />
+        <Route path="sms-logs" element={<SmsLogsPage />} />
+        <Route path="worker-logs" element={<WorkerLogsPage />} />
         <Route path="ai-suggest-jobs" element={<AiSuggestJobsPage />} />
       </Route>
 
@@ -96,6 +101,7 @@ export default function App() {
         <Route path="users" element={<PayFlowUsersPage />} />
         <Route path="users/:userId" element={<PayFlowUserDetailPage />} />
         <Route path="review" element={<PayFlowHumanReview />} />
+        <Route path="worker-logs" element={<PayFlowWorkerLogsPage />} />
         <Route path="workflows" element={<PayFlowWorkflowsPage />} />
         <Route path="workflows/new" element={<PayFlowWorkflowNewPage />} />
         <Route path="workflows/:strategyId" element={<PayFlowWorkflowDetailPage />} />

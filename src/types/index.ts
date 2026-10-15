@@ -141,6 +141,40 @@ export interface EmailLog {
   created_at: string;
 }
 
+export interface SmsLog {
+  id: number;
+  to_phone: string;
+  body: string;
+  sms_type: string;
+  status: string;
+  provider_id?: string | null;
+  error?: string | null;
+  account_id?: number | null;
+  run_id?: number | null;
+  client_id?: number | null;
+  created_at: string;
+}
+
+export interface PayflowWorkflowWorkerLog {
+  id: number;
+  event_type: string;
+  level: string;
+  message: string;
+  detail?: string | null;
+  client_id?: number | null;
+  portfolio_id?: number | null;
+  account_id?: number | null;
+  strategy_id?: number | null;
+  run_id?: number | null;
+  job_id?: number | null;
+  step_id?: string | null;
+  created_at?: string | null;
+}
+
+export interface PayflowWorkflowWorkerLogsResponse {
+  items: PayflowWorkflowWorkerLog[];
+}
+
 export interface AiSuggestJob {
   id: number;
   client_id: number;
