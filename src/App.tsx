@@ -89,6 +89,7 @@ export default function App() {
         <Route path="imports/:importId" element={<PayFlowImportDetailPage />} />
         <Route path="rules" element={<PayFlowRulesPage />} />
         <Route path="rules/new" element={<PayFlowRuleNewPage />} />
+        <Route path="rules/:ruleId/edit" element={<PayFlowRuleNewPage />} />
         <Route path="rules/:ruleId" element={<PayFlowRuleDetailPage />} />
         <Route path="system-mapping" element={<PayFlowIntegrationsPage />} />
         <Route path="integrations" element={<PayFlowIntegrationsPage />} />

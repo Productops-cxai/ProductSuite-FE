@@ -564,7 +564,7 @@ export function getPayflowRule(ruleId: number) {
   return apiRequest<PayflowRule>(`/payflow/rules/${ruleId}`);
 }
 
-export async function createPayflowRule(payload: {
+export type PayflowRuleWritePayload = {
   name: string;
   description?: string;
   rule_type?: string;
@@ -574,8 +574,17 @@ export async function createPayflowRule(payload: {
   conditions: { id?: string; field: string; operator: string; value: string }[];
   action: string;
   status?: string;
-}) {
+};
+
+export async function createPayflowRule(payload: PayflowRuleWritePayload) {
   return apiRequest<PayflowRule>("/payflow/rules", { method: "POST", body: payload });
+}
+
+export async function updatePayflowRule(ruleId: number, payload: PayflowRuleWritePayload) {
+  return apiRequest<PayflowRule>(`/payflow/rules/${ruleId}/update`, {
+    method: "POST",
+    body: payload,
+  });
 }
 
 export async function activatePayflowRule(ruleId: number) {
