@@ -141,6 +141,31 @@ export interface EmailLog {
   created_at: string;
 }
 
+export interface AiSuggestJob {
+  id: number;
+  client_id: number;
+  client_name?: string | null;
+  client_code?: string | null;
+  portfolio_id: number;
+  portfolio_name?: string | null;
+  portfolio_code?: string | null;
+  trigger: string;
+  status: string;
+  skip_reason?: string | null;
+  error_message?: string | null;
+  requested_by_user_id?: string | null;
+  import_run_id?: number | null;
+  workflows_created: number;
+  workflow_ids: number[];
+  segments_count?: number | null;
+  batches_count?: number | null;
+  groq_calls?: number | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  duration_ms?: number | null;
+  created_at: string;
+}
+
 export interface DeletionLog {
   id: number;
   module: string;

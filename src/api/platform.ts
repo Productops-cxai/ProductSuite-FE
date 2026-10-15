@@ -10,6 +10,7 @@ import type {
   Product,
   ProductAccessItem,
   ProductSavePayload,
+  AiSuggestJob,
   EmailLog,
   DeletionLog,
 } from "../types";
@@ -163,6 +164,23 @@ export function listEmailLogs(params?: {
   if (params?.limit) q.set("limit", String(params.limit));
   const qs = q.toString();
   return apiRequest<EmailLog[]>(`/email-logs${qs ? `?${qs}` : ""}`);
+}
+
+export function listAiSuggestJobs(params?: {
+  search?: string;
+  status?: string;
+  client_id?: number;
+  portfolio_id?: number;
+  limit?: number;
+}) {
+  const q = new URLSearchParams();
+  if (params?.search) q.set("search", params.search);
+  if (params?.status) q.set("status", params.status);
+  if (params?.client_id != null) q.set("client_id", String(params.client_id));
+  if (params?.portfolio_id != null) q.set("portfolio_id", String(params.portfolio_id));
+  if (params?.limit) q.set("limit", String(params.limit));
+  const qs = q.toString();
+  return apiRequest<AiSuggestJob[]>(`/ai-suggest-jobs${qs ? `?${qs}` : ""}`);
 }
 
 export function listDeletionLogs(params?: {

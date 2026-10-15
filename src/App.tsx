@@ -7,6 +7,7 @@ import { AccountProfilePage } from "./pages/AccountProfilePage";
 import { LoginPage } from "./pages/LoginPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { AccessPage } from "./pages/platform/AccessPage";
+import { AiSuggestJobsPage } from "./pages/platform/AiSuggestJobsPage";
 import { EmailLogsPage } from "./pages/platform/EmailLogsPage";
 import { OverviewPage } from "./pages/platform/OverviewPage";
 import { PeoplePage } from "./pages/platform/PeoplePage";
@@ -67,6 +68,7 @@ export default function App() {
         <Route path="people" element={<PeoplePage />} />
         <Route path="deletion-logs" element={<DeletionLogsPage workspace="platform" />} />
         <Route path="email-logs" element={<EmailLogsPage />} />
+        <Route path="ai-suggest-jobs" element={<AiSuggestJobsPage />} />
       </Route>
 
       <Route path="/payflow" element={<PayFlowLayout />}>

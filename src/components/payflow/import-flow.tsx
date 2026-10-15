@@ -445,10 +445,17 @@ const formatInfo: Record<ImportKind, { required: string[]; note: string }> = {
       "client_number",
       "client_code",
       "is_master_client",
-      "master_client__client_number (subs)",
       "company_name / short_name",
+      "client_type__name",
+      "clientdemographiccontactinformation__full_name",
+      "email_address (or demographic email)",
+      "phone_number (or demographic phone)",
+      "country__name",
+      "correspondence_language__name",
+      "currency__name",
+      "master_client__client_number (subs)",
     ],
-    note: "CRM clients export (CSV/XLSX). Masters (is_master_client=True) become Clients; children with master_client__client_number become Sub-Clients/Portfolios. Daily account files then use master client_code + sub client_code.",
+    note: "CRM clients export (CSV/XLSX). Masters (is_master_client=True) become Clients and must include the same mandatory profile fields as Add Client (contact, country, language, currency). Children with master_client__client_number become Sub-Clients/Portfolios.",
   },
   account: {
     required: [
@@ -580,6 +587,7 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
     null,
   );
   const [previewRecords, setPreviewRecords] = useState<ImportRecord[]>([]);
+  const [previewErrors, setPreviewErrors] = useState<ImportError[]>([]);
 
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -618,6 +626,16 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
       }
       setPreviewSummary(preview.summary);
       setPreviewRecords(mapPreviewRecords(preview.preview));
+      setPreviewErrors(
+        (preview.errors || []).map((e) => ({
+          recordId: e.record_id,
+          client: e.client,
+          subClient: e.sub_client,
+          field: e.field,
+          error: e.error,
+          status: e.status === "Skipped" ? "Skipped" : "Rejected",
+        })),
+      );
       setStage("preview");
     } catch (err) {
       setSubmitError(err instanceof ApiError ? err.detail : "Validation failed");
@@ -654,6 +672,9 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
     setRun(null);
     setPreviewSummary(null);
     setPreviewRecords([]);
+    setPreviewErrors([]);
+    setSubmitError(null);
+    setFileError(null);
   };
 
   const returnBtn = (
@@ -763,6 +784,14 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
             all others will be processed when you continue.
           </p>
           {submitError ? <p className="text-[12.5px] font-medium text-destructive">{submitError}</p> : null}
+          {previewErrors.length > 0 && (
+            <Panel
+              title="Validation errors"
+              description={`${formatNumber(previewErrors.length)} record${previewErrors.length === 1 ? "" : "s"} need fixing before they can be imported.`}
+            >
+              <ImportErrorTable errors={previewErrors} />
+            </Panel>
+          )}
           {isClient ? (
             <ClientPreviewTable records={previewRecords} />
           ) : (
@@ -792,6 +821,7 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
       {stage === "done" && run && (
         <ImportResult
           run={run}
+          initialShowErrors={run.status === "Failed" || run.errors.length > 0}
           returnTo={
             <>
               {run.status === "Failed" && <Btn onClick={reset}>Upload Again</Btn>}
