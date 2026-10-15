@@ -98,6 +98,7 @@ export function EmailLogsPage() {
           <option value="">All types</option>
           <option value="activation">Activation</option>
           <option value="password_reset">Password reset</option>
+          <option value="collection_workflow">Collection workflow</option>
         </select>
       </form>
 

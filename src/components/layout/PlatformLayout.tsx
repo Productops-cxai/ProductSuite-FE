@@ -67,11 +67,27 @@ const BASE_FALLBACK_MENUS: MenuSection[] = [
         is_coming_soon: false,
       },
       {
+        key: "sms_logs",
+        label: "SMS Logs",
+        route: "/platform/sms-logs",
+        icon: "mail",
+        sort_order: 2,
+        is_coming_soon: false,
+      },
+      {
+        key: "workflow_worker_logs",
+        label: "Workflow Worker Logs",
+        route: "/platform/worker-logs",
+        icon: "document",
+        sort_order: 3,
+        is_coming_soon: false,
+      },
+      {
         key: "deletion_logs",
         label: "Deletion Logs",
         route: "/platform/deletion-logs",
         icon: "billing",
-        sort_order: 2,
+        sort_order: 4,
         is_coming_soon: false,
       },
       {
@@ -79,7 +95,7 @@ const BASE_FALLBACK_MENUS: MenuSection[] = [
         label: "AI Suggest Jobs",
         route: "/platform/ai-suggest-jobs",
         icon: "document",
-        sort_order: 3,
+        sort_order: 5,
         is_coming_soon: false,
       },
     ],
@@ -106,7 +122,9 @@ function menusForUser(email: string | undefined | null): MenuSection[] {
   const allowEmailLogs = (email || "").toLowerCase() === EMAIL_LOGS_ADMIN_EMAIL;
   return BASE_FALLBACK_MENUS.map((section) => ({
     ...section,
-    items: section.items.filter((item) => allowEmailLogs || item.key !== "email_logs"),
+    items: section.items.filter(
+      (item) => allowEmailLogs || (item.key !== "email_logs" && item.key !== "sms_logs"),
+    ),
   })).filter((section) => section.items.length > 0);
 }
 

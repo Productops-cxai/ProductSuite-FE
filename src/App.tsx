@@ -9,6 +9,9 @@ import { ProfilePage } from "./pages/ProfilePage";
 import { AccessPage } from "./pages/platform/AccessPage";
 import { AiSuggestJobsPage } from "./pages/platform/AiSuggestJobsPage";
 import { EmailLogsPage } from "./pages/platform/EmailLogsPage";
+import { SmsLogsPage } from "./pages/platform/SmsLogsPage";
+import { WorkerLogDetailPage } from "./pages/platform/WorkerLogDetailPage";
+import { WorkerLogsPage } from "./pages/platform/WorkerLogsPage";
 import { OverviewPage } from "./pages/platform/OverviewPage";
 import { PeoplePage } from "./pages/platform/PeoplePage";
 import { ProductDetailPage } from "./pages/platform/ProductDetailPage";
@@ -68,6 +71,9 @@ export default function App() {
         <Route path="people" element={<PeoplePage />} />
         <Route path="deletion-logs" element={<DeletionLogsPage workspace="platform" />} />
         <Route path="email-logs" element={<EmailLogsPage />} />
+        <Route path="sms-logs" element={<SmsLogsPage />} />
+        <Route path="worker-logs" element={<WorkerLogsPage />} />
+        <Route path="worker-logs/:logId" element={<WorkerLogDetailPage />} />
         <Route path="ai-suggest-jobs" element={<AiSuggestJobsPage />} />
       </Route>
 

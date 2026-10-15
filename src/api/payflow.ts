@@ -35,6 +35,7 @@ import type {
   PayflowStrategy,
   PayflowUser,
   PayflowUsersListResponse,
+  PayflowWorkflowWorkerLogsResponse,
 } from "../types";
 
 export function getPayflowAccessContext() {
@@ -564,7 +565,9 @@ export function getPayflowRule(ruleId: number) {
   return apiRequest<PayflowRule>(`/payflow/rules/${ruleId}`);
 }
 
-export type PayflowRuleWritePayload = {
+/** Create a rule, or update when ``id`` is set — same POST /payflow/rules. */
+export async function createPayflowRule(payload: {
+  id?: number;
   name: string;
   description?: string;
   rule_type?: string;
@@ -574,10 +577,18 @@ export type PayflowRuleWritePayload = {
   conditions: { id?: string; field: string; operator: string; value: string }[];
   action: string;
   status?: string;
-};
+}) {
+  const result = await apiRequest<PayflowRule>("/payflow/rules", { method: "POST", body: payload });
+  invalidateCache("payflow:rules");
+  return result;
+}
 
-export async function createPayflowRule(payload: PayflowRuleWritePayload) {
-  return apiRequest<PayflowRule>("/payflow/rules", { method: "POST", body: payload });
+/** Alias — same endpoint as create; pass ``id`` to update. */
+export async function updatePayflowRule(
+  ruleId: number,
+  payload: Omit<Parameters<typeof createPayflowRule>[0], "id">,
+) {
+  return createPayflowRule({ ...payload, id: ruleId });
 }
 
 export async function updatePayflowRule(ruleId: number, payload: PayflowRuleWritePayload) {
@@ -738,6 +749,31 @@ export async function deletePayflowWorkflow(strategyId: number) {
   );
   invalidateCache("payflow:");
   return res;
+}
+
+export function listPayflowWorkflowWorkerLogs(params?: {
+  client_id?: number;
+  portfolio_id?: number;
+  account_id?: number;
+  strategy_id?: number;
+  event_type?: string;
+  level?: string;
+  search?: string;
+  limit?: number;
+}) {
+  const q = new URLSearchParams();
+  if (params?.client_id != null) q.set("client_id", String(params.client_id));
+  if (params?.portfolio_id != null) q.set("portfolio_id", String(params.portfolio_id));
+  if (params?.account_id != null) q.set("account_id", String(params.account_id));
+  if (params?.strategy_id != null) q.set("strategy_id", String(params.strategy_id));
+  if (params?.event_type) q.set("event_type", params.event_type);
+  if (params?.level) q.set("level", params.level);
+  if (params?.search) q.set("search", params.search);
+  if (params?.limit != null) q.set("limit", String(params.limit));
+  const qs = q.toString();
+  return apiRequest<PayflowWorkflowWorkerLogsResponse>(
+    `/payflow/workflow-worker-logs${qs ? `?${qs}` : ""}`,
+  );
 }
 
 export function listPayflowComms(params?: {
