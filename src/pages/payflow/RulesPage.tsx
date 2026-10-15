@@ -160,7 +160,7 @@ export function PayFlowRulesPage() {
       {!loading && !error ? (
         <>
           <DataTable
-            minWidth={960}
+            minWidth={1080}
             head={[
               "Rule Name",
               "Type",
@@ -170,6 +170,7 @@ export function PayFlowRulesPage() {
               "Result",
               "Status",
               "Last Updated",
+              "Action",
             ]}
           >
             {rows.map((r) => (
@@ -193,6 +194,11 @@ export function PayFlowRulesPage() {
                 </Td>
                 <Td className="tabular text-muted-foreground">
                   {r.last_updated_label || "—"}
+                </Td>
+                <Td>
+                  <Link to={`/payflow/rules/${r.id}/edit`}>
+                    <Btn variant="primary">Edit</Btn>
+                  </Link>
                 </Td>
               </Tr>
             ))}

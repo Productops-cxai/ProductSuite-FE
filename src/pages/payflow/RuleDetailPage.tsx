@@ -123,6 +123,11 @@ export function PayFlowRuleDetailPage() {
           <div className="flex flex-wrap items-center gap-2">
             <StatusPill tone={ruleStatusTone(rule.status)}>{rule.status}</StatusPill>
             <StatusPill>{rule.rule_type}</StatusPill>
+            {rule.can_edit ? (
+              <Link to={`/payflow/rules/${rule.id}/edit`}>
+                <Btn variant="primary">Edit</Btn>
+              </Link>
+            ) : null}
             {rule.can_edit && rule.status !== "Active" ? (
               <Btn variant="primary" disabled={busy} onClick={() => void onActivate()}>
                 Activate

@@ -591,6 +591,13 @@ export async function updatePayflowRule(
   return createPayflowRule({ ...payload, id: ruleId });
 }
 
+export async function updatePayflowRule(ruleId: number, payload: PayflowRuleWritePayload) {
+  return apiRequest<PayflowRule>(`/payflow/rules/${ruleId}/update`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
 export async function activatePayflowRule(ruleId: number) {
   return apiRequest<PayflowRule>(`/payflow/rules/${ruleId}/activate`, { method: "POST" });
 }
