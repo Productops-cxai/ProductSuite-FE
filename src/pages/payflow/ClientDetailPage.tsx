@@ -227,7 +227,8 @@ export function PayFlowClientDetailPage() {
   }
 
   async function deleteClient() {
-    if (!detail || readOnly) return;
+    // Delete is gated by delete_client — not edit_client (readOnly).
+    if (!detail || !canDelete) return;
     setBusy(true);
     setError("");
     try {
