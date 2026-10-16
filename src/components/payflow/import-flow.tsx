@@ -462,10 +462,11 @@ const formatInfo: Record<ImportKind, { required: string[]; note: string }> = {
       "account_id (or account_number)",
       "customer name (or first_name / last_name)",
       "outstanding_balance",
-      "email (or email_address)",
+      "email (or email_address / customer_email) — account customer, for alerts",
+      "phone_mobile (or phone_number / dn_debtorcasephonenumber_phone_number) — for SMS",
       "client_code + sub_client_code — or CRM client_number",
     ],
-    note: "Daily CRM account file (CSV or XLSX), including Debtor Summary dumps. Native CRM columns (account_number, first_name, email_address, client_number, …) are mapped automatically. Clients must already exist in PayFlow (matched by client_code or CRM client_number). Defaults: country CA, currency CAD, product P4 when missing.",
+    note: "Daily CRM account file (CSV or XLSX), including Debtor Summary dumps. Account email/phone are the debtor contact channels used for collection Email/SMS — not the client's ops contact_email. Native CRM columns (account_number, first_name, email_address, phone fields, client_number, …) map automatically. Clients must already exist in PayFlow. Defaults: country CA, currency CAD, product P4 when missing.",
   },
 };
 

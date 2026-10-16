@@ -198,6 +198,16 @@ export function listAiSuggestJobs(params?: {
   return apiRequest<AiSuggestJob[]>(`/ai-suggest-jobs${qs ? `?${qs}` : ""}`);
 }
 
+export function requeueMissingAiSuggestJobs(params?: { client_id?: number }) {
+  const q = new URLSearchParams();
+  if (params?.client_id != null) q.set("client_id", String(params.client_id));
+  const qs = q.toString();
+  return apiRequest<{ enqueued: number; job_ids: number[] }>(
+    `/ai-suggest-jobs/requeue-missing${qs ? `?${qs}` : ""}`,
+    { method: "POST" },
+  );
+}
+
 export function listWorkflowWorkerLogs(params?: {
   search?: string;
   event_type?: string;

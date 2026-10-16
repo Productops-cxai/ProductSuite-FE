@@ -177,6 +177,9 @@ export interface PayflowWorkflowWorkerLog {
   job_id?: number | null;
   step_id?: string | null;
   created_at?: string | null;
+  event_count?: number | null;
+  group_key?: string | null;
+  step_summary?: string | null;
   related_events?: PayflowWorkflowWorkerLog[] | null;
 }
 

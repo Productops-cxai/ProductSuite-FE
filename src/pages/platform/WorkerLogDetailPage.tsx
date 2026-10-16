@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import { getWorkflowWorkerLog } from "../../api/platform";
 import { PageHeader } from "../../components/payflow-ui";
@@ -25,6 +25,16 @@ function MetaRow({ label, children }: { label: string; children: ReactNode }) {
       <div className="text-right text-[13px] text-slate-900 dark:text-slate-100">{children}</div>
     </div>
   );
+}
+
+function contextTitle(row: PayflowWorkflowWorkerLog): string {
+  const account =
+    row.account_reference || row.customer_name || (row.account_id != null ? `#${row.account_id}` : null);
+  const client = row.client_name || (row.client_id != null ? `Client #${row.client_id}` : null);
+  if (account && client) return `${account} · ${client}`;
+  if (account) return account;
+  if (client) return client;
+  return eventLabel(row.event_type);
 }
 
 export function WorkerLogDetailPage() {
@@ -67,14 +77,24 @@ export function WorkerLogDetailPage() {
   if (authLoading) return <div className={ui.loading}>Loading…</div>;
   if (!isSuperAdmin) return <div className={ui.error}>Platform Super Admin access required.</div>;
 
+  const timeline = row?.related_events?.length ? row.related_events : row ? [row] : [];
+  const stepCount = row?.event_count || timeline.length;
+
   return (
     <div className={ui.page}>
       <PageHeader
-        title={row ? eventLabel(row.event_type) : "Worker log"}
+        title={row ? contextTitle(row) : "Worker log"}
         description={
           row
-            ? `${row.message}${row.created_at ? ` · ${new Date(row.created_at).toLocaleString()}` : ""}`
-            : "Event detail with client, portfolio, account, and related timeline."
+            ? [
+                row.portfolio_name || null,
+                row.strategy_name || null,
+                stepCount > 1 ? `${stepCount} steps` : eventLabel(row.event_type),
+                row.created_at ? new Date(row.created_at).toLocaleString() : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")
+            : "Account run timeline — every step for this client / portfolio / account."
         }
         breadcrumb={[
           { label: "Logs" },
@@ -97,46 +117,53 @@ export function WorkerLogDetailPage() {
             <div className={ui.panel}>
               <div className={ui.panelHead}>
                 <div>
-                  <h2 className={ui.panelTitle}>What happened</h2>
-                  <p className={ui.panelText}>Worker action and any extra detail from the run.</p>
+                  <h2 className={ui.panelTitle}>Step timeline</h2>
+                  <p className={ui.panelText}>
+                    Every worker step for this account run — open the list row only for the
+                    outcome; details live here.
+                  </p>
                 </div>
                 <span className={`text-[12px] font-semibold uppercase ${levelClass(row.level)}`}>
                   {row.level}
                 </span>
               </div>
-              <p className="text-[14px] leading-relaxed text-slate-800 dark:text-slate-100">
-                {row.message}
-              </p>
-              {row.detail ? (
-                <pre className="mt-4 max-h-64 overflow-auto rounded-md border border-slate-100 bg-slate-50 p-3 text-[12px] leading-relaxed text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
-                  {row.detail}
-                </pre>
-              ) : null}
-            </div>
-
-            <div className={ui.panel}>
-              <div className={ui.panelHead}>
-                <div>
-                  <h2 className={ui.panelTitle}>Related timeline</h2>
-                  <p className={ui.panelText}>
-                    Other worker events on the same run, account, job, or strategy.
-                  </p>
-                </div>
-              </div>
-              {!row.related_events?.length ? (
-                <div className="py-4 text-center text-[13px] text-slate-500">No related events.</div>
+              {!timeline.length ? (
+                <div className="py-4 text-center text-[13px] text-slate-500">No steps recorded.</div>
               ) : (
-                <ul className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {row.related_events.map((ev) => (
-                    <li key={ev.id} className="py-3 first:pt-0 last:pb-0">
-                      <Link
-                        to={`/platform/worker-logs/${ev.id}`}
-                        className="block hover:opacity-90"
-                      >
+                <ol className="relative space-y-0 border-l border-slate-200 pl-5 dark:border-slate-700">
+                  {timeline.map((ev, idx) => {
+                    const isFocus = ev.id === row.id;
+                    return (
+                      <li key={ev.id} className="relative pb-5 last:pb-0">
+                        <span
+                          className={`absolute -left-[1.4rem] top-1.5 h-2.5 w-2.5 rounded-full ring-2 ring-white dark:ring-slate-900 ${
+                            ev.level === "error"
+                              ? "bg-red-500"
+                              : ev.level === "warn"
+                                ? "bg-amber-500"
+                                : "bg-slate-400"
+                          }`}
+                        />
                         <div className="flex flex-wrap items-baseline justify-between gap-2">
-                          <span className="text-[13px] font-semibold capitalize text-slate-900 dark:text-slate-100">
-                            {eventLabel(ev.event_type)}
-                          </span>
+                          <div className="flex flex-wrap items-baseline gap-2">
+                            <span className="text-[11px] font-medium text-slate-400">
+                              {idx + 1}.
+                            </span>
+                            <span
+                              className={`text-[13px] font-semibold capitalize ${
+                                isFocus
+                                  ? "text-slate-900 dark:text-slate-50"
+                                  : "text-slate-800 dark:text-slate-100"
+                              }`}
+                            >
+                              {eventLabel(ev.event_type)}
+                            </span>
+                            <span
+                              className={`text-[11px] font-semibold uppercase ${levelClass(ev.level)}`}
+                            >
+                              {ev.level}
+                            </span>
+                          </div>
                           <span className="text-[11px] text-slate-500">
                             {ev.created_at ? new Date(ev.created_at).toLocaleString() : "—"}
                           </span>
@@ -144,15 +171,22 @@ export function WorkerLogDetailPage() {
                         <p className="mt-0.5 text-[12.5px] text-slate-600 dark:text-slate-300">
                           {ev.message}
                         </p>
-                        {(ev.account_reference || ev.customer_name) && (
+                        {ev.step_id || ev.strategy_name ? (
                           <p className="mt-0.5 text-[11px] text-slate-500">
-                            {[ev.account_reference, ev.customer_name].filter(Boolean).join(" · ")}
+                            {[ev.strategy_name, ev.step_id ? `step ${ev.step_id}` : null]
+                              .filter(Boolean)
+                              .join(" · ")}
                           </p>
-                        )}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
+                        ) : null}
+                        {ev.detail ? (
+                          <pre className="mt-2 max-h-40 overflow-auto rounded-md border border-slate-100 bg-slate-50 p-2.5 text-[11px] leading-relaxed text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+                            {ev.detail}
+                          </pre>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ol>
               )}
             </div>
           </div>
@@ -160,8 +194,8 @@ export function WorkerLogDetailPage() {
           <div className={ui.panel}>
             <div className={ui.panelHead}>
               <div>
-                <h2 className={ui.panelTitle}>Context</h2>
-                <p className={ui.panelText}>Where this action ran.</p>
+                <h2 className={ui.panelTitle}>Where</h2>
+                <p className={ui.panelText}>Client, portfolio, and account for this run.</p>
               </div>
             </div>
             <MetaRow label="Client">
@@ -214,10 +248,12 @@ export function WorkerLogDetailPage() {
                 "—"
               )}
             </MetaRow>
-            <MetaRow label="Step">{row.step_id || "—"}</MetaRow>
+            <MetaRow label="Outcome">
+              <span className="capitalize">{eventLabel(row.event_type)}</span>
+            </MetaRow>
+            <MetaRow label="Steps">{stepCount}</MetaRow>
             <MetaRow label="Run">{row.run_id != null ? `#${row.run_id}` : "—"}</MetaRow>
             <MetaRow label="Job">{row.job_id != null ? `#${row.job_id}` : "—"}</MetaRow>
-            <MetaRow label="Log ID">#{row.id}</MetaRow>
             <MetaRow label="When">
               {row.created_at ? new Date(row.created_at).toLocaleString() : "—"}
             </MetaRow>

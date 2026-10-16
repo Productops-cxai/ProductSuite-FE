@@ -66,7 +66,7 @@ export function WorkerLogsPage() {
     <div className={ui.page}>
       <PageHeader
         title="Workflow Worker Logs"
-        description="Enrollment, step execution, waits, rule blocks, and provider sends — with client, portfolio, and account context."
+        description="One row per account run — client, portfolio, and what happened. Open Details for the full step timeline."
         breadcrumb={[{ label: "Logs" }, { label: "Workflow Worker Logs" }]}
         actions={
           <Button variant="secondary" onClick={() => void load()}>
@@ -94,9 +94,7 @@ export function WorkerLogsPage() {
           value={eventFilter}
           onChange={(e) => setEventFilter(e.target.value)}
         >
-          <option value="">All events</option>
-          <option value="enroll_queued">enroll queued</option>
-          <option value="enroll_complete">enroll complete</option>
+          <option value="">All outcomes</option>
           <option value="account_enrolled">account enrolled</option>
           <option value="step_done">step done</option>
           <option value="step_failed">step failed</option>
@@ -130,88 +128,99 @@ export function WorkerLogsPage() {
             <thead>
               <tr>
                 <th className={ui.th}>WHEN</th>
-                <th className={ui.th}>LEVEL</th>
-                <th className={ui.th}>EVENT</th>
                 <th className={ui.th}>CLIENT</th>
                 <th className={ui.th}>PORTFOLIO</th>
                 <th className={ui.th}>ACCOUNT</th>
-                <th className={ui.th}>ACTION</th>
+                <th className={ui.th}>WHAT HAPPENED</th>
+                <th className={ui.th}>LEVEL</th>
                 <th className={ui.th} />
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
-                <tr
-                  key={row.id}
-                  className="cursor-pointer hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
-                  onClick={() => navigate(`/platform/worker-logs/${row.id}`)}
-                >
-                  <td className={`${ui.td} whitespace-nowrap text-slate-500`}>
-                    {row.created_at ? new Date(row.created_at).toLocaleString() : "—"}
-                  </td>
-                  <td className={`${ui.td} font-semibold ${levelClass(row.level)}`}>
-                    {row.level}
-                  </td>
-                  <td className={ui.td}>
-                    <span className="capitalize">{eventLabel(row.event_type)}</span>
-                  </td>
-                  <td className={ui.td}>
-                    {row.client_name || row.client_id != null ? (
-                      <>
-                        <strong>{row.client_name || `#${row.client_id}`}</strong>
-                        {row.client_code ? (
-                          <div className={ui.desc}>{row.client_code}</div>
+              {rows.map((row) => {
+                const steps = row.event_count && row.event_count > 1 ? row.event_count : null;
+                return (
+                  <tr
+                    key={row.group_key || row.id}
+                    className="cursor-pointer hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
+                    onClick={() => navigate(`/platform/worker-logs/${row.id}`)}
+                  >
+                    <td className={`${ui.td} whitespace-nowrap text-slate-500`}>
+                      {row.created_at ? new Date(row.created_at).toLocaleString() : "—"}
+                    </td>
+                    <td className={ui.td}>
+                      {row.client_name || row.client_id != null ? (
+                        <>
+                          <strong>{row.client_name || `#${row.client_id}`}</strong>
+                          {row.client_code ? (
+                            <div className={ui.desc}>{row.client_code}</div>
+                          ) : null}
+                        </>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className={ui.td}>
+                      {row.portfolio_name || row.portfolio_id != null ? (
+                        <>
+                          <strong>{row.portfolio_name || `#${row.portfolio_id}`}</strong>
+                          {row.portfolio_code ? (
+                            <div className={ui.desc}>{row.portfolio_code}</div>
+                          ) : null}
+                        </>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className={ui.td}>
+                      {row.account_reference || row.customer_name || row.account_id != null ? (
+                        <>
+                          <strong>
+                            {row.account_reference ||
+                              row.customer_name ||
+                              `#${row.account_id}`}
+                          </strong>
+                          {row.customer_name && row.account_reference ? (
+                            <div className={ui.desc}>{row.customer_name}</div>
+                          ) : null}
+                        </>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className={ui.td}>
+                      <div className="flex flex-wrap items-baseline gap-2">
+                        <span className="font-medium capitalize text-slate-900 dark:text-slate-100">
+                          {eventLabel(row.event_type)}
+                        </span>
+                        {steps ? (
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                            {steps} steps
+                          </span>
                         ) : null}
-                      </>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td className={ui.td}>
-                    {row.portfolio_name || row.portfolio_id != null ? (
-                      <>
-                        <strong>{row.portfolio_name || `#${row.portfolio_id}`}</strong>
-                        {row.portfolio_code ? (
-                          <div className={ui.desc}>{row.portfolio_code}</div>
-                        ) : null}
-                      </>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td className={ui.td}>
-                    {row.account_reference || row.customer_name || row.account_id != null ? (
-                      <>
-                        <strong>
-                          {row.account_reference ||
-                            row.customer_name ||
-                            `#${row.account_id}`}
-                        </strong>
-                        {row.customer_name && row.account_reference ? (
-                          <div className={ui.desc}>{row.customer_name}</div>
-                        ) : null}
-                      </>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td className={`${ui.td} ${ui.desc}`}>
-                    <div>{row.message}</div>
-                    {row.strategy_name || row.step_id ? (
-                      <div className="mt-0.5 text-[11px] text-slate-500">
-                        {[row.strategy_name, row.step_id ? `step ${row.step_id}` : null]
-                          .filter(Boolean)
-                          .join(" · ")}
                       </div>
-                    ) : null}
-                  </td>
-                  <td className={ui.td} onClick={(e) => e.stopPropagation()}>
-                    <Link to={`/platform/worker-logs/${row.id}`} className={ui.link}>
-                      Details
-                    </Link>
-                  </td>
-                </tr>
-              ))}
+                      <div className={`mt-0.5 ${ui.desc}`}>{row.message}</div>
+                      {row.step_summary ? (
+                        <div className="mt-0.5 text-[11px] capitalize text-slate-500">
+                          {row.step_summary.replace(/_/g, " ")}
+                        </div>
+                      ) : row.strategy_name ? (
+                        <div className="mt-0.5 text-[11px] text-slate-500">
+                          {row.strategy_name}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className={`${ui.td} font-semibold ${levelClass(row.level)}`}>
+                      {row.level}
+                    </td>
+                    <td className={ui.td} onClick={(e) => e.stopPropagation()}>
+                      <Link to={`/platform/worker-logs/${row.id}`} className={ui.link}>
+                        Details
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
