@@ -356,7 +356,7 @@ export function StrategyMiniMap({ strategy }: { strategy: PayflowStrategy }) {
   let current: string | null | undefined = entryNodeId(linked);
   let guard = 0;
   while (current && guard < 6) {
-    const node = nodes[current];
+    const node: PayflowStrategyStep | undefined = nodes[current];
     if (!node) break;
     if (node.kind === "Condition") {
       rows.push({ kinds: ["Condition"] });

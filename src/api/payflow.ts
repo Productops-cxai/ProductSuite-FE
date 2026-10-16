@@ -639,7 +639,7 @@ export function getPayflowWorkflow(strategyId: number) {
 }
 
 export type PayflowWorkflowStepPayload = {
-  id?: string;
+  id?: string | null;
   kind: string;
   title: string;
   origin?: string;
