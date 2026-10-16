@@ -32,6 +32,7 @@ import type {
   PayflowRulesListResponse,
   PayflowStrategiesListResponse,
   PayflowStrategy,
+  PayflowStrategyStep,
   PayflowUser,
   PayflowUsersListResponse,
   PayflowWorkflowWorkerLogsResponse,
@@ -638,35 +639,8 @@ export function getPayflowWorkflow(strategyId: number) {
   return apiRequest<PayflowStrategy>(`/payflow/workflows/${strategyId}`);
 }
 
-export type PayflowWorkflowStepPayload = {
-  id?: string | null;
-  kind: string;
-  title: string;
-  origin?: string;
-  disabled?: boolean;
-  config?: {
-    channel?: string | null;
-    purpose?: string | null;
-    reference_event?: string | null;
-    amount?: number | null;
-    unit?: string | null;
-    direction?: string | null;
-    attribute?: string | null;
-    operator?: string | null;
-    value?: string | null;
-    action?: string | null;
-    outcome?: string | null;
-    note?: string | null;
-    template_id?: string | null;
-  };
-  next?: string | null;
-  yes?: string | null;
-  no?: string | null;
-  channel?: string | null;
-  purpose?: string | null;
-  timing?: string | null;
-  detail?: string | null;
-};
+/** Same shape as strategy steps from the API / canvas builders. */
+export type PayflowWorkflowStepPayload = PayflowStrategyStep;
 
 export async function createPayflowWorkflow(payload: {
   name: string;
