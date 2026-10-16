@@ -63,6 +63,7 @@ export function PayFlowHumanReview() {
   const [statuses, setStatuses] = useState<string[]>([]);
   const [priorities, setPriorities] = useState<string[]>([]);
   const [reasons, setReasons] = useState<string[]>([]);
+  const [actions, setActions] = useState<string[]>([]);
   const [waitingBuckets, setWaitingBuckets] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -72,6 +73,8 @@ export function PayFlowHumanReview() {
   const [status, setStatus] = useState(searchParams.get("status") || "All Statuses");
   const [priority, setPriority] = useState(searchParams.get("priority") || "All Priorities");
   const [reason, setReason] = useState("All Reasons");
+  const [rule, setRule] = useState("All Rules");
+  const [action, setAction] = useState("All Actions");
   const [age, setAge] = useState("Any Age");
 
   useEffect(() => {
@@ -95,6 +98,7 @@ export function PayFlowHumanReview() {
         setStatuses(reviewRes.statuses || []);
         setPriorities(reviewRes.priorities || []);
         setReasons(reviewRes.reasons || []);
+        setActions(reviewRes.proposed_actions || []);
         setWaitingBuckets(reviewRes.waiting_buckets || []);
         setClients(clientRes.clients || []);
       })
@@ -118,6 +122,8 @@ export function PayFlowHumanReview() {
       if (status !== "All Statuses" && r.status !== status) return false;
       if (priority !== "All Priorities" && r.priority !== priority) return false;
       if (reason !== "All Reasons" && r.reason !== reason) return false;
+      if (rule !== "All Rules" && r.rule_name !== rule) return false;
+      if (action !== "All Actions" && r.proposed_action !== action) return false;
       if (age !== "Any Age") {
         const m = r.waiting_minutes;
         if (age === "Under 30 min" && !(m < 30)) return false;
@@ -140,7 +146,20 @@ export function PayFlowHumanReview() {
       }
       return true;
     });
-  }, [reviews, client, status, priority, reason, age, search]);
+  }, [reviews, client, status, priority, reason, rule, action, age, search]);
+
+  const ruleOptions = useMemo(() => {
+    const names = reviews.map((r) => r.rule_name).filter((name): name is string => !!name);
+    return ["All Rules", ...Array.from(new Set(names)).sort()];
+  }, [reviews]);
+
+  const actionOptions = useMemo(() => {
+    if (actions.length) return actions;
+    const fromReviews = reviews
+      .map((r) => r.proposed_action)
+      .filter((name): name is string => !!name);
+    return Array.from(new Set(fromReviews)).sort();
+  }, [actions, reviews]);
 
   return (
     <>
@@ -157,7 +176,11 @@ export function PayFlowHumanReview() {
       </div>
 
       <div className="mb-4 flex flex-wrap gap-2">
-        <SearchInput value={search} onChange={setSearch} placeholder="Search reviews…" />
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Search customer, reference or rule"
+        />
         <FilterSelect
           label="Client"
           value={client}
@@ -175,6 +198,18 @@ export function PayFlowHumanReview() {
           value={reason}
           onChange={setReason}
           options={["All Reasons", ...reasons]}
+        />
+        <FilterSelect
+          label="Rule"
+          value={rule}
+          onChange={setRule}
+          options={ruleOptions}
+        />
+        <FilterSelect
+          label="Action"
+          value={action}
+          onChange={setAction}
+          options={["All Actions", ...actionOptions]}
         />
         <FilterSelect
           label="Status"
