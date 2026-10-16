@@ -4,6 +4,7 @@ import { ApiError } from "../../api/client";
 import { listPayflowClients, listPayflowReviews } from "../../api/payflow";
 import {
   DataTable,
+  EmptyState,
   FilterSelect,
   KpiCard,
   PageHeader,
@@ -230,6 +231,12 @@ export function PayFlowHumanReview() {
 
       {!loading && !error ? (
         <>
+          {rows.length === 0 ? (
+            <EmptyState
+              title="No reviews match these filters"
+              description="Human review is an exception queue — an empty queue means automation is operating within governance."
+            />
+          ) : (
           <DataTable
             minWidth={980}
             head={[
@@ -291,9 +298,7 @@ export function PayFlowHumanReview() {
               </Tr>
             ))}
           </DataTable>
-          {rows.length === 0 ? (
-            <p className="mt-3 text-sm text-muted-foreground">No reviews match these filters.</p>
-          ) : null}
+          )}
         </>
       ) : null}
     </>
