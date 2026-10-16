@@ -180,12 +180,25 @@ export function PayFlowRuleDetailPage() {
 
           <Panel title="Where This Rule Is Used">
             {(rule.applied_to || []).length === 0 ? (
-              <p className="text-[13px] text-muted-foreground">No client applications recorded.</p>
+              <p className="text-[13px] text-muted-foreground">
+                {rule.rule_type === "System Rule"
+                  ? "Not selected on any client’s governance settings yet."
+                  : "No client applications recorded."}
+              </p>
             ) : (
               <ul className="space-y-1 text-[13px]">
-                {rule.applied_to.map((code) => (
-                  <li key={code} className="text-muted-foreground">
-                    {code}
+                {rule.applied_to.map((clientName) => (
+                  <li key={clientName} className="font-medium text-foreground">
+                    {rule.client_id && rule.client_name === clientName ? (
+                      <Link
+                        to={`/payflow/clients/${rule.client_id}`}
+                        className="text-primary hover:underline"
+                      >
+                        {clientName}
+                      </Link>
+                    ) : (
+                      clientName
+                    )}
                   </li>
                 ))}
               </ul>

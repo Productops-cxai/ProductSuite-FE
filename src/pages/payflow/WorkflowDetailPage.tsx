@@ -8,6 +8,8 @@ import {
   deactivatePayflowWorkflow,
   deletePayflowWorkflow,
   getPayflowWorkflow,
+  listPayflowWorkflows,
+  regeneratePayflowWorkflow,
   rejectPayflowWorkflow,
   savePayflowWorkflowDraft,
   submitPayflowWorkflowReview,
@@ -15,35 +17,38 @@ import {
 } from "../../api/payflow";
 import { StrategyCanvas } from "../../components/payflow/strategy-canvas";
 import {
+  StepConfigForm,
+  StepEditorDialog,
+} from "../../components/payflow/strategy-step-editor";
+import { WorkflowActionNoteModal } from "../../components/payflow/WorkflowActionNoteModal";
+import {
   Btn,
   Field,
   PageHeader,
   Panel,
   SelectInput,
   StatusPill,
-  TextArea,
-  TextInput,
 } from "../../components/payflow/lovable/payflow-ui";
 import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import {
-  CASE_ACTIONS,
-  CHANNELS,
-  CONDITION_ATTRIBUTES,
-  CONDITION_OPERATORS,
-  CONDITION_VALUES,
-  MESSAGE_PURPOSES,
-  OUTCOMES,
-  PAYMENT_ACTIONS,
-  REFERENCE_EVENTS,
-  TIME_DIRECTIONS,
-  TIME_UNITS,
+  addStepAfter,
   ensureStepLinks,
   originTone,
+  removeStep,
   stepConfig,
   strategyStatusTone,
+  templateById,
+  type AddableStepKind,
 } from "../../lib/strategy-workflow";
-import type { PayflowStrategy, PayflowStrategyStep, PayflowStrategyStepConfig } from "../../types";
+import type {
+  PayflowStrategy,
+  PayflowStrategyCatalog,
+  PayflowStrategyStep,
+  PayflowStrategyStepConfig,
+} from "../../types";
+
+type NoteAction = "update" | "approve" | "activate" | "reject";
 
 function findStep(strategy: PayflowStrategy, id: string | null): PayflowStrategyStep | null {
   if (!id) return null;
@@ -57,16 +62,22 @@ export function PayFlowWorkflowDetailPage() {
   const canDelete = hasPermission("delete_workflows");
   const canEdit = hasPermission("create_edit_workflows");
   const [strategy, setStrategy] = useState<PayflowStrategy | null>(null);
+  const [catalog, setCatalog] = useState<PayflowStrategyCatalog | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draftStep, setDraftStep] = useState<PayflowStrategyStep | null>(null);
-  const [rejectNote, setRejectNote] = useState("");
+  const [pendingSteps, setPendingSteps] = useState<PayflowStrategyStep[] | null>(null);
   const [showContext, setShowContext] = useState(false);
-  const [showAudit, setShowAudit] = useState(false);
+  const [showAudit, setShowAudit] = useState(true);
+  const [showAiSnapshot, setShowAiSnapshot] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [expandOpen, setExpandOpen] = useState(false);
+  const [noteAction, setNoteAction] = useState<NoteAction | null>(null);
+  const [segmentDraft, setSegmentDraft] = useState<Record<string, string>>({});
+  const [segmentDirty, setSegmentDirty] = useState(false);
 
   async function load() {
     const id = Number(strategyId);
@@ -78,12 +89,20 @@ export function PayFlowWorkflowDetailPage() {
     setLoading(true);
     setError("");
     try {
-      const row = ensureStepLinks(await getPayflowWorkflow(id));
-      setStrategy(row);
-      const firstId = row.entry_node_id || row.steps?.[0]?.id || null;
+      const [row, listRes] = await Promise.all([
+        getPayflowWorkflow(id),
+        listPayflowWorkflows({}).catch(() => null),
+      ]);
+      const linked = ensureStepLinks(row);
+      setStrategy(linked);
+      setSegmentDraft({ ...(linked.segment || {}) });
+      setSegmentDirty(false);
+      if (listRes?.catalog) setCatalog(listRes.catalog);
+      const firstId = linked.entry_node_id || linked.steps?.[0]?.id || null;
       setSelectedId((prev) => prev || firstId);
-      const first = findStep(row, firstId) || row.steps?.[0] || null;
+      const first = findStep(linked, firstId) || linked.steps?.[0] || null;
       if (first) setDraftStep({ ...first, id: first.id || firstId || "s1" });
+      setPendingSteps(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Failed to load workflow");
       setStrategy(null);
@@ -97,32 +116,72 @@ export function PayFlowWorkflowDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [strategyId]);
 
+  const displayStrategy = useMemo(() => {
+    if (!strategy) return null;
+    if (!pendingSteps) return strategy;
+    return ensureStepLinks({ ...strategy, steps: pendingSteps });
+  }, [strategy, pendingSteps]);
+
   function selectStep(id: string) {
-    if (!strategy) return;
-    const step = findStep(strategy, id);
+    if (!displayStrategy) return;
+    const step = findStep(displayStrategy, id);
     if (!step) return;
     setSelectedId(id);
     setDraftStep({ ...step, id, config: { ...(step.config || {}) } });
   }
 
-  function patchConfig(patch: Partial<PayflowStrategyStepConfig>) {
-    if (!draftStep) return;
-    setDraftStep({
-      ...draftStep,
-      config: { ...(draftStep.config || {}), ...patch },
-      channel: patch.channel !== undefined ? patch.channel : draftStep.channel,
-      purpose: patch.purpose !== undefined ? patch.purpose : draftStep.purpose,
-    });
+  function workingSteps(): PayflowStrategyStep[] {
+    return pendingSteps || displayStrategy?.steps || strategy?.steps || [];
   }
 
-  async function applyStepChanges() {
-    if (!strategy || !draftStep) return;
+  function applyLocalSteps(next: PayflowStrategyStep[], focusId?: string | null) {
+    const linked = ensureStepLinks({
+      ...(strategy as PayflowStrategy),
+      steps: next,
+    });
+    setPendingSteps(linked.steps);
+    const id = focusId || selectedId;
+    if (id) {
+      const step = findStep(linked, id);
+      if (step) {
+        setSelectedId(id);
+        setDraftStep({ ...step, id, config: { ...(step.config || {}) } });
+      }
+    }
+  }
+
+  function patchDraft(
+    patch: Partial<PayflowStrategyStepConfig> & { title?: string },
+  ) {
+    if (!draftStep) return;
+    const { title, ...cfgPatch } = patch;
+    const nextCfg = { ...(draftStep.config || {}), ...cfgPatch };
+    const updated: PayflowStrategyStep = {
+      ...draftStep,
+      title: title !== undefined ? title : draftStep.title,
+      config: nextCfg,
+      channel: nextCfg.channel ?? draftStep.channel,
+      purpose: nextCfg.purpose ?? draftStep.purpose,
+      origin: "Human Modified",
+    };
+    setDraftStep(updated);
+    const steps = workingSteps().map((s, i) => {
+      const id = s.id || `s${i + 1}`;
+      return id === updated.id ? { ...updated, id } : s;
+    });
+    applyLocalSteps(steps, updated.id);
+  }
+
+  async function persistSteps(note?: string) {
+    if (!strategy) return;
     setBusy(true);
     setError("");
     try {
-      const next = strategy.steps.map((s, i) => {
+      const steps = workingSteps().map((s, i) => {
         const id = s.id || `s${i + 1}`;
-        if (id !== draftStep.id) return s;
+        if (!draftStep || id !== draftStep.id) {
+          return { ...s, id };
+        }
         const cfg = { ...(draftStep.config || {}) };
         return {
           ...draftStep,
@@ -135,18 +194,44 @@ export function PayFlowWorkflowDetailPage() {
       });
       const updated = ensureStepLinks(
         await updatePayflowWorkflow(strategy.id, {
-          steps: next,
+          steps: steps.map((s) => ({
+            id: s.id || undefined,
+            kind: s.kind,
+            title: s.title,
+            origin: s.origin || undefined,
+            disabled: s.disabled,
+            config: s.config || undefined,
+            next: s.next ?? null,
+            yes: s.yes ?? null,
+            no: s.no ?? null,
+            channel: s.channel ?? null,
+            purpose: s.purpose ?? null,
+            timing: s.timing ?? null,
+            detail: s.detail ?? null,
+          })),
           entry_node_id: strategy.entry_node_id || undefined,
+          segment: segmentDirty ? segmentDraft : undefined,
+          note: note || undefined,
         }),
       );
       setStrategy(updated);
-      setNotice("Change recorded as Human Modified. Workflow is not activated by editing.");
-      const refreshed = findStep(updated, draftStep.id!);
-      if (refreshed) setDraftStep({ ...refreshed, id: draftStep.id });
+      setSegmentDraft({ ...(updated.segment || {}) });
+      setSegmentDirty(false);
+      setPendingSteps(null);
+      setNotice(
+        strategy.status === "Approved" || strategy.status === "Active"
+          ? "Prior approved configuration archived. Changes recorded as Human Modified — not activated."
+          : "Change recorded as Human Modified. Workflow is not activated by editing.",
+      );
+      if (draftStep?.id) {
+        const refreshed = findStep(updated, draftStep.id);
+        if (refreshed) setDraftStep({ ...refreshed, id: draftStep.id });
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Failed to update workflow");
     } finally {
       setBusy(false);
+      setNoteAction(null);
     }
   }
 
@@ -160,11 +245,69 @@ export function PayFlowWorkflowDetailPage() {
     try {
       const updated = ensureStepLinks(await action());
       setStrategy(updated);
+      setPendingSteps(null);
       setNotice(typeof success === "function" ? success(updated) : success);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Action failed");
     } finally {
       setBusy(false);
+      setNoteAction(null);
+    }
+  }
+
+  async function onNoteConfirm(note: string) {
+    if (!strategy || !noteAction) return;
+    if (noteAction === "update") {
+      await persistSteps(note);
+      return;
+    }
+    if (noteAction === "approve") {
+      await runAction(
+        () => approvePayflowWorkflow(strategy.id, { note: note || undefined }),
+        (row) =>
+          `Strategy approved${row.approved_by ? ` by ${row.approved_by}` : ""}. Activate it when ready for collection execution.`,
+      );
+      return;
+    }
+    if (noteAction === "activate") {
+      await runAction(
+        () => activatePayflowWorkflow(strategy.id, { note: note || undefined }),
+        "Workflow is now Active for collection execution.",
+      );
+      return;
+    }
+    if (noteAction === "reject") {
+      setBusy(true);
+      setError("");
+      try {
+        const isAi = strategy.source === "AI Generated";
+        await rejectPayflowWorkflow(strategy.id, { note: note || undefined });
+        if (isAi) {
+          if (note.trim().length < 3) {
+            setError("Remarks of at least 3 characters are required to regenerate.");
+            setBusy(false);
+            setNoteAction(null);
+            return;
+          }
+          const regenerated = ensureStepLinks(
+            await regeneratePayflowWorkflow(strategy.id, { remarks: note.trim() }),
+          );
+          setNotice(
+            "Rejected and regenerated. Opening the new AI-proposed workflow.",
+          );
+          navigate(`/payflow/workflows/${regenerated.id}`);
+          return;
+        }
+        const refreshed = ensureStepLinks(await getPayflowWorkflow(strategy.id));
+        setStrategy(refreshed);
+        setPendingSteps(null);
+        setNotice("Returned for changes. Status reset; history is retained.");
+      } catch (err) {
+        setError(err instanceof ApiError ? err.detail : "Reject / regenerate failed");
+      } finally {
+        setBusy(false);
+        setNoteAction(null);
+      }
     }
   }
 
@@ -181,8 +324,7 @@ export function PayFlowWorkflowDetailPage() {
     }
   }
 
-  const cfg = useMemo(() => (draftStep ? stepConfig(draftStep) : {}), [draftStep]);
-  const conditionValueOptions = CONDITION_VALUES[cfg.attribute || ""] || [];
+  const canMutateGraph = canEdit && strategy?.status !== "Active";
 
   if (loading) return <p className="text-sm text-muted-foreground">Loading workflow…</p>;
   if (error && !strategy) {
@@ -198,7 +340,7 @@ export function PayFlowWorkflowDetailPage() {
       </Panel>
     );
   }
-  if (!strategy) return null;
+  if (!strategy || !displayStrategy) return null;
 
   const segmentEntries = Object.entries(strategy.segment || {}).filter(([, v]) => !!v);
   const isAiProposed = strategy.status === "AI Proposed";
@@ -217,6 +359,14 @@ export function PayFlowWorkflowDetailPage() {
   const showAiBanner =
     (strategy.source === "AI Generated" || strategy.origin === "AI Proposed") &&
     strategy.status !== "Active";
+  const excluded =
+    catalog?.excluded_targeting_attributes || [
+      "Race / ethnicity",
+      "Religion",
+      "Disability status",
+      "Gender identity",
+      "Sexual orientation",
+    ];
 
   return (
     <>
@@ -288,15 +438,7 @@ export function PayFlowWorkflowDetailPage() {
               <Btn
                 variant="danger"
                 disabled={busy}
-                onClick={() =>
-                  void runAction(
-                    () =>
-                      rejectPayflowWorkflow(strategy.id, {
-                        note: rejectNote.trim() || undefined,
-                      }),
-                    "Returned for regeneration. Status reset; AI proposal history is retained.",
-                  )
-                }
+                onClick={() => setNoteAction("reject")}
               >
                 Reject / Request Regeneration
               </Btn>
@@ -305,13 +447,7 @@ export function PayFlowWorkflowDetailPage() {
               <Btn
                 variant="primary"
                 disabled={busy}
-                onClick={() =>
-                  void runAction(
-                    () => approvePayflowWorkflow(strategy.id),
-                    (row) =>
-                      `Strategy approved${row.approved_by ? ` by ${row.approved_by}` : ""}. Activate it when ready for collection execution.`,
-                  )
-                }
+                onClick={() => setNoteAction("approve")}
               >
                 Approve Strategy
               </Btn>
@@ -320,12 +456,7 @@ export function PayFlowWorkflowDetailPage() {
               <Btn
                 variant="primary"
                 disabled={busy}
-                onClick={() =>
-                  void runAction(
-                    () => activatePayflowWorkflow(strategy.id),
-                    "Workflow is now Active for collection execution.",
-                  )
-                }
+                onClick={() => setNoteAction("activate")}
               >
                 Activate
               </Btn>
@@ -360,6 +491,12 @@ export function PayFlowWorkflowDetailPage() {
       {error && (
         <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/[0.06] px-4 py-2.5 text-[12.5px] text-destructive">
           {error}
+        </div>
+      )}
+      {pendingSteps && (
+        <div className="mb-4 rounded-lg border border-warning/30 bg-warning/[0.08] px-4 py-2.5 text-[12.5px] text-foreground">
+          You have unsaved step changes. Apply them with a note to persist — editing does not
+          activate the workflow.
         </div>
       )}
 
@@ -402,38 +539,98 @@ export function PayFlowWorkflowDetailPage() {
         </Panel>
       )}
 
-      {segmentEntries.length > 0 && (
+      {(segmentEntries.length > 0 || canMutateGraph) && (
         <Panel
           title="Who this strategy applies to"
-          description="Operational and geographic attributes only."
+          description="Operational and geographic attributes only. Protected attributes are never used for targeting."
           className="mb-4"
-        >
-          <div className="flex flex-wrap gap-1.5">
-            {segmentEntries.map(([key, value]) => (
-              <span
-                key={key}
-                className="rounded-lg border border-border/70 bg-surface px-2.5 py-1.5 text-[11.5px]"
+          action={
+            canMutateGraph && segmentDirty ? (
+              <Btn
+                variant="primary"
+                disabled={busy}
+                onClick={() => setNoteAction("update")}
               >
-                <span className="text-muted-foreground">
-                  {key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}:{" "}
+                Save segment
+              </Btn>
+            ) : undefined
+          }
+        >
+          {canMutateGraph ? (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {(
+                [
+                  ["age_band", "Age band", catalog?.age_bands],
+                  ["postal_region", "Postal region", catalog?.postal_regions],
+                  ["balance_band", "Balance band", catalog?.balance_bands],
+                  ["delinquency", "Delinquency", catalog?.delinquency_bands],
+                  [
+                    "language",
+                    "Language",
+                    catalog?.language_preferences || catalog?.languages,
+                  ],
+                  ["tenure", "Tenure", catalog?.tenure_bands || catalog?.tenures],
+                ] as const
+              ).map(([key, label, options]) => {
+                const opts = options?.length
+                  ? options
+                  : [segmentDraft[key] || strategy.segment?.[key] || "—"].filter(Boolean);
+                const value = segmentDraft[key] || opts[0] || "";
+                return (
+                  <Field key={key} label={label}>
+                    <SelectInput
+                      value={value}
+                      options={opts}
+                      onChange={(v) => {
+                        setSegmentDraft((prev) => ({ ...prev, [key]: v }));
+                        setSegmentDirty(true);
+                      }}
+                    />
+                  </Field>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {segmentEntries.map(([key, value]) => (
+                <span
+                  key={key}
+                  className="rounded-lg border border-border/70 bg-surface px-2.5 py-1.5 text-[11.5px]"
+                >
+                  <span className="text-muted-foreground">
+                    {key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}:{" "}
+                  </span>
+                  <span className="font-medium text-foreground">{value}</span>
                 </span>
-                <span className="font-medium text-foreground">{value}</span>
-              </span>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
+          <p className="mt-3 text-[11.5px] text-muted-foreground">
+            Excluded from targeting: {excluded.join(", ")}.
+          </p>
         </Panel>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-[1fr_320px]">
+      <div className="grid gap-4 xl:grid-cols-[1fr_340px]">
         <Panel
           title="Strategy flow"
-          description="Connected nodes with conditions, waits and outcomes. Select a step to configure it."
+          description="Connected nodes with conditions, waits and outcomes. Select a step to configure it, or expand for the full editor."
           bodyClassName="p-3"
         >
           <StrategyCanvas
-            strategy={strategy}
+            strategy={displayStrategy}
             selectedId={selectedId}
             onSelect={selectStep}
+            onExpand={(id) => {
+              selectStep(id);
+              setExpandOpen(true);
+            }}
+            templateSnippetFor={(node) => {
+              const cfg = stepConfig(node);
+              const tpl = templateById(catalog?.message_templates || [], cfg.template_id);
+              if (!tpl?.body) return null;
+              return tpl.body.slice(0, 120);
+            }}
           />
         </Panel>
 
@@ -446,167 +643,52 @@ export function PayFlowWorkflowDetailPage() {
             </Panel>
           ) : (
             <Panel title={draftStep.kind} description={draftStep.title}>
-              <div className="space-y-3">
-                <Field label="Title">
-                  <TextInput
-                    value={draftStep.title}
-                    onChange={(v) => setDraftStep({ ...draftStep, title: v })}
-                    disabled={busy || !canEdit || isActive}
-                  />
-                </Field>
-
-                {draftStep.kind === "Communication" && (
-                  <>
-                    <Field label="Channel">
-                      <SelectInput
-                        value={cfg.channel || "Email"}
-                        options={CHANNELS}
-                        onChange={(v) => patchConfig({ channel: v })}
-                      />
-                    </Field>
-                    <Field label="Purpose">
-                      <SelectInput
-                        value={cfg.purpose || MESSAGE_PURPOSES[0]!}
-                        options={MESSAGE_PURPOSES}
-                        onChange={(v) => patchConfig({ purpose: v })}
-                      />
-                    </Field>
-                  </>
-                )}
-
-                {(draftStep.kind === "Communication" ||
-                  draftStep.kind === "Wait" ||
-                  draftStep.kind === "Trigger") && (
-                  <>
-                    <Field label="Reference event">
-                      <SelectInput
-                        value={cfg.reference_event || REFERENCE_EVENTS[0]!}
-                        options={REFERENCE_EVENTS}
-                        onChange={(v) => patchConfig({ reference_event: v })}
-                      />
-                    </Field>
-                    <div className="grid grid-cols-3 gap-2">
-                      <Field label="Amount">
-                        <TextInput
-                          value={String(cfg.amount ?? 0)}
-                          onChange={(v) =>
-                            patchConfig({
-                              amount: Math.max(0, Number(v.replace(/[^\d.]/g, "")) || 0),
-                            })
-                          }
-                          disabled={busy || !canEdit || isActive}
-                        />
-                      </Field>
-                      <Field label="Unit">
-                        <SelectInput
-                          value={cfg.unit || "Days"}
-                          options={TIME_UNITS}
-                          onChange={(v) => patchConfig({ unit: v })}
-                        />
-                      </Field>
-                      <Field label="Direction">
-                        <SelectInput
-                          value={cfg.direction || "After"}
-                          options={TIME_DIRECTIONS}
-                          onChange={(v) => patchConfig({ direction: v })}
-                        />
-                      </Field>
-                    </div>
-                    <p className="text-[11px] text-muted-foreground">
-                      Timing uses an explicit event (e.g. 3 Days After Due Date), never Day N.
-                    </p>
-                  </>
-                )}
-
-                {draftStep.kind === "Condition" && (
-                  <>
-                    <Field label="Attribute">
-                      <SelectInput
-                        value={cfg.attribute || CONDITION_ATTRIBUTES[0]!}
-                        options={CONDITION_ATTRIBUTES}
-                        onChange={(v) =>
-                          patchConfig({
-                            attribute: v,
-                            value: (CONDITION_VALUES[v] || [])[0] || "",
-                          })
-                        }
-                      />
-                    </Field>
-                    <Field label="Operator">
-                      <SelectInput
-                        value={cfg.operator || "Equals"}
-                        options={CONDITION_OPERATORS}
-                        onChange={(v) => patchConfig({ operator: v })}
-                      />
-                    </Field>
-                    <Field label="Value">
-                      <SelectInput
-                        value={cfg.value || conditionValueOptions[0] || ""}
-                        options={conditionValueOptions.length ? conditionValueOptions : [cfg.value || ""]}
-                        onChange={(v) => patchConfig({ value: v })}
-                      />
-                    </Field>
-                  </>
-                )}
-
-                {draftStep.kind === "Payment Action" && (
-                  <Field label="Action">
-                    <SelectInput
-                      value={cfg.action || PAYMENT_ACTIONS[0]!}
-                      options={PAYMENT_ACTIONS}
-                      onChange={(v) => patchConfig({ action: v })}
-                    />
-                  </Field>
-                )}
-
-                {draftStep.kind === "Case Action" && (
-                  <Field label="Action">
-                    <SelectInput
-                      value={cfg.action || CASE_ACTIONS[0]!}
-                      options={CASE_ACTIONS}
-                      onChange={(v) => patchConfig({ action: v })}
-                    />
-                  </Field>
-                )}
-
-                {draftStep.kind === "Outcome" && (
-                  <Field label="Outcome">
-                    <SelectInput
-                      value={cfg.outcome || OUTCOMES[0]!}
-                      options={OUTCOMES}
-                      onChange={(v) => patchConfig({ outcome: v })}
-                    />
-                  </Field>
-                )}
-
-                {(draftStep.kind === "Human Review" || draftStep.kind === "AI Reassessment") && (
-                  <Field label="Note">
-                    <TextArea
-                      value={cfg.note || draftStep.detail || ""}
-                      onChange={(v) => patchConfig({ note: v })}
-                      placeholder="Guidance for this step"
-                    />
-                  </Field>
-                )}
-
-                {canEdit && !isActive && (
-                  <div className="flex flex-wrap gap-2">
-                    {draftStep.kind !== "Trigger" && (
-                      <Btn
-                        disabled={busy}
-                        onClick={() =>
-                          setDraftStep({ ...draftStep, disabled: !draftStep.disabled })
-                        }
-                      >
-                        {draftStep.disabled ? "Enable step" : "Disable step"}
-                      </Btn>
-                    )}
-                    <Btn variant="primary" disabled={busy} onClick={() => void applyStepChanges()}>
-                      Apply step changes
-                    </Btn>
-                  </div>
-                )}
-              </div>
+              <StepConfigForm
+                strategy={displayStrategy}
+                step={draftStep}
+                catalog={catalog}
+                canEdit={!!canMutateGraph && !busy}
+                onChange={patchDraft}
+                onToggleDisabled={() => {
+                  const flipped = {
+                    ...draftStep,
+                    disabled: !draftStep.disabled,
+                    origin: "Human Modified" as const,
+                  };
+                  setDraftStep(flipped);
+                  applyLocalSteps(
+                    workingSteps().map((s) => (s.id === flipped.id ? flipped : s)),
+                    flipped.id,
+                  );
+                }}
+                onAddAfter={(kind: AddableStepKind) => {
+                  if (!draftStep.id) return;
+                  const next = addStepAfter(workingSteps(), draftStep.id, kind);
+                  const created = next.find(
+                    (s) => !workingSteps().some((o) => (o.id || "") === (s.id || "")),
+                  );
+                  applyLocalSteps(next, created?.id || draftStep.id);
+                }}
+                onRemove={() => {
+                  if (!draftStep.id) return;
+                  const next = removeStep(workingSteps(), draftStep.id);
+                  applyLocalSteps(next, strategy.entry_node_id || next[0]?.id || null);
+                }}
+              />
+              {canMutateGraph && (
+                <div className="mt-3 flex flex-wrap gap-2 border-t border-border/60 pt-3">
+                  <Btn
+                    variant="primary"
+                    disabled={busy}
+                    onClick={() => setNoteAction("update")}
+                  >
+                    Apply step changes
+                  </Btn>
+                  <Btn disabled={busy} onClick={() => setExpandOpen(true)}>
+                    Expand editor
+                  </Btn>
+                </div>
+              )}
             </Panel>
           )}
 
@@ -622,10 +704,16 @@ export function PayFlowWorkflowDetailPage() {
               {[
                 ["Source", strategy.source || "—"],
                 ["Origin", strategy.origin],
-                ["Human Modified", strategy.human_modified || strategy.origin === "Human Modified" ? "Yes" : "No"],
+                [
+                  "Human Modified",
+                  strategy.human_modified || strategy.origin === "Human Modified"
+                    ? "Yes"
+                    : "No",
+                ],
                 ["Reviewed By", strategy.reviewed_by || "—"],
                 ["Approved By", strategy.approved_by || "Not yet approved"],
                 ["Approval Date", strategy.approval_date || "—"],
+                ["Updated", strategy.last_updated_label || strategy.updated_at || "—"],
                 ["Strategy Version", `v${strategy.version}`],
                 [
                   "Coverage",
@@ -646,22 +734,52 @@ export function PayFlowWorkflowDetailPage() {
                 </div>
               ))}
             </dl>
+
+            {strategy.ai_proposal_snapshot && (
+              <div className="mt-3 border-t border-border/60 pt-3">
+                <Btn onClick={() => setShowAiSnapshot((v) => !v)}>
+                  {showAiSnapshot ? "Hide original AI proposal" : "Original AI proposal"}
+                </Btn>
+                {showAiSnapshot && (
+                  <p className="mt-2 text-[11.5px] leading-relaxed text-muted-foreground">
+                    Original AI steps were captured before the first human edit and are retained
+                    for traceability. Prior approved configurations are archived into version
+                    history rather than overwritten.
+                  </p>
+                )}
+              </div>
+            )}
+
             {showAudit && (
-              <ul className="mt-3 space-y-2 border-t border-border/60 pt-3">
+              <ul className="mt-3 space-y-3 border-t border-border/60 pt-3">
                 {(strategy.versions || []).length === 0 ? (
                   <li className="text-[11.5px] text-muted-foreground">No version history yet.</li>
                 ) : (
                   (strategy.versions || []).map((v, i) => (
-                    <li key={`${v.version}-${i}`}>
+                    <li key={`${v.id || v.version}-${i}`} className="rounded-lg border border-border/60 bg-surface px-3 py-2">
                       <div className="flex items-baseline justify-between gap-3">
                         <span className="text-[12.5px] font-semibold text-foreground">
                           v{v.version}
+                          {v.status ? (
+                            <span className="ml-2 text-[11px] font-normal text-muted-foreground">
+                              {v.status}
+                            </span>
+                          ) : null}
                         </span>
                         <span className="text-[11px] text-muted-foreground">{v.date}</span>
                       </div>
-                      <p className="text-[11.5px] text-muted-foreground">{v.note}</p>
+                      <p className="mt-0.5 text-[11.5px] text-muted-foreground">{v.note}</p>
+                      {v.reviewer_note && (
+                        <p className="mt-1 text-[11.5px] text-foreground">
+                          <span className="font-semibold">Reviewer note: </span>
+                          {v.reviewer_note}
+                        </p>
+                      )}
+                      {v.origin && (
+                        <p className="mt-1 text-[11px] text-muted-foreground">Origin: {v.origin}</p>
+                      )}
                       {(v.changes || []).length > 0 && (
-                        <ul className="mt-1 list-inside list-disc text-[11px] text-muted-foreground">
+                        <ul className="mt-1.5 list-inside list-disc text-[11px] text-muted-foreground">
                           {v.changes!.map((c) => (
                             <li key={c}>{c}</li>
                           ))}
@@ -673,20 +791,99 @@ export function PayFlowWorkflowDetailPage() {
               </ul>
             )}
           </Panel>
-
-          {canReject && (
-            <Panel title="Request regeneration">
-              <Field label="Note for PayFlow" hint="Optional. Explain what should change.">
-                <TextArea
-                  value={rejectNote}
-                  onChange={setRejectNote}
-                  placeholder="e.g. reduce contact volume for low balances"
-                />
-              </Field>
-            </Panel>
-          )}
         </div>
       </div>
+
+      <StepEditorDialog
+        strategy={displayStrategy}
+        step={draftStep}
+        catalog={catalog}
+        open={expandOpen}
+        canEdit={!!canMutateGraph && !busy}
+        onClose={() => setExpandOpen(false)}
+        onChange={patchDraft}
+        onToggleDisabled={() => {
+          if (!draftStep) return;
+          const flipped = {
+            ...draftStep,
+            disabled: !draftStep.disabled,
+            origin: "Human Modified" as const,
+          };
+          setDraftStep(flipped);
+          applyLocalSteps(
+            workingSteps().map((s) => (s.id === flipped.id ? flipped : s)),
+            flipped.id,
+          );
+        }}
+        onAddAfter={(kind) => {
+          if (!draftStep?.id) return;
+          const next = addStepAfter(workingSteps(), draftStep.id, kind);
+          const created = next.find(
+            (s) => !workingSteps().some((o) => (o.id || "") === (s.id || "")),
+          );
+          applyLocalSteps(next, created?.id || draftStep.id);
+        }}
+        onRemove={() => {
+          if (!draftStep?.id) return;
+          const next = removeStep(workingSteps(), draftStep.id);
+          applyLocalSteps(next, strategy.entry_node_id || next[0]?.id || null);
+          setExpandOpen(false);
+        }}
+      />
+
+      <WorkflowActionNoteModal
+        open={noteAction === "update"}
+        title="Apply step changes"
+        description="Describe why this edit was made. The note is stored in version history for AI learning."
+        confirmLabel="Apply changes"
+        busy={busy}
+        required={false}
+        placeholder="e.g. SMS timing reduced from 5 days to 3 days after previous email"
+        onClose={() => setNoteAction(null)}
+        onConfirm={(note) => void onNoteConfirm(note)}
+      />
+      <WorkflowActionNoteModal
+        open={noteAction === "approve"}
+        title="Approve strategy"
+        description="Optional note for the approval record and AI reassessment history."
+        confirmLabel="Approve"
+        busy={busy}
+        required={false}
+        onClose={() => setNoteAction(null)}
+        onConfirm={(note) => void onNoteConfirm(note)}
+      />
+      <WorkflowActionNoteModal
+        open={noteAction === "activate"}
+        title="Activate workflow"
+        description="Optional note recorded when this workflow becomes Active for collection execution."
+        confirmLabel="Activate"
+        busy={busy}
+        required={false}
+        onClose={() => setNoteAction(null)}
+        onConfirm={(note) => void onNoteConfirm(note)}
+      />
+      <WorkflowActionNoteModal
+        open={noteAction === "reject"}
+        title={
+          strategy.source === "AI Generated"
+            ? "Reject & regenerate"
+            : "Reject workflow"
+        }
+        description={
+          strategy.source === "AI Generated"
+            ? "Your remarks are sent to PayFlow AI to regenerate a new AI Proposed workflow."
+            : "Explain what should change. Status will return to Draft."
+        }
+        confirmLabel={
+          strategy.source === "AI Generated" ? "Reject & regenerate" : "Reject"
+        }
+        busy={busy}
+        required={strategy.source === "AI Generated"}
+        minLength={strategy.source === "AI Generated" ? 3 : 0}
+        placeholder="e.g. reduce contact volume for low balances; wait longer after SMS"
+        onClose={() => setNoteAction(null)}
+        onConfirm={(note) => void onNoteConfirm(note)}
+      />
 
       <ConfirmDelete
         open={confirmDelete}

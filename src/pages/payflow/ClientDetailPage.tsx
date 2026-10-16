@@ -140,6 +140,19 @@ export function PayFlowClientDetailPage() {
     void load();
   }, [id]);
 
+  // Refresh governance list when returning from Rule Builder (new tab).
+  useEffect(() => {
+    function refreshGovernance() {
+      void getPayflowClientMappingCatalog()
+        .then((catalog) => setGovernanceRules(catalog.governance_rules || []))
+        .catch(() => {
+          /* ignore */
+        });
+    }
+    window.addEventListener("focus", refreshGovernance);
+    return () => window.removeEventListener("focus", refreshGovernance);
+  }, []);
+
   const patch = (p: Partial<ClientDraft>) => setDraft((d) => ({ ...d, ...p }));
   const patchConfig = (p: Partial<ClientDraftConfig>) =>
     setDraft((d) => ({ ...d, config: { ...d.config, ...p } }));

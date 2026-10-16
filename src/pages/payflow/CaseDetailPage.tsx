@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import { getPayflowAccount } from "../../api/payflow";
+import { WorkflowFlowPanel } from "../../components/payflow/WorkflowFlowPanel";
 import {
   PageHeader,
   Panel,
@@ -208,24 +209,11 @@ export function PayFlowCaseDetailPage() {
             </p>
           </Panel>
 
-          <Panel
+          <WorkflowFlowPanel
+            clientId={account.client_id}
+            workflowName={account.current_workflow}
             title="Current Workflow"
-            description={account.current_workflow || "No workflow assigned"}
-            action={
-              <Link
-                to="/payflow/workflows"
-                className="text-[12.5px] font-semibold text-primary hover:underline"
-              >
-                Open strategies
-              </Link>
-            }
-          >
-            <p className="text-[13px] text-muted-foreground">
-              {account.current_workflow
-                ? `This case is associated with “${account.current_workflow}”. Open Strategies / Workflows to review or modify collection strategies.`
-                : "No collection strategy is currently assigned to this case."}
-            </p>
-          </Panel>
+          />
 
           <Panel title="Communications">
             <p className="text-[13px] text-muted-foreground">

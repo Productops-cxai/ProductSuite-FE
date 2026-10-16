@@ -1201,15 +1201,8 @@ export function AiGovernanceSection({
   readOnly,
 }: SectionProps) {
   const rules = draft.config.governanceRules;
-  const library = governanceRules.length
-    ? governanceRules
-    : [
-        "High Balance Human Review",
-        "Repeated Attempts Escalation",
-        "Low Confidence Review",
-        "Dispute Detected Review",
-        "Settlement Offer Approval",
-      ];
+  // Active system rules from Rules + any already-selected names (so edits stay visible).
+  const library = Array.from(new Set([...governanceRules, ...rules]));
 
   const toggleRule = (rule: string) =>
     patchConfig({
@@ -1254,24 +1247,31 @@ export function AiGovernanceSection({
             ) : null}
           </div>
           <p className="mt-0.5 text-[11px] text-muted-foreground">
-            Select rules for this client. Use Create Rule to open the Rule Builder in a new tab.
+            Select active system rules for this client. Use Create Rule to open the Rule Builder in a
+            new tab, then refresh this step.
           </p>
           <div className="mt-3 space-y-1">
-            {library.map((rule) => (
-              <label
-                key={rule}
-                className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-card"
-              >
-                <input
-                  type="checkbox"
-                  checked={rules.includes(rule)}
-                  onChange={() => !readOnly && toggleRule(rule)}
-                  disabled={readOnly}
-                  className="size-3.5 rounded border-border-strong accent-[var(--color-primary)] dark:border-slate-500"
-                />
-                <span className="text-[13px] text-foreground">{rule}</span>
-              </label>
-            ))}
+            {library.length === 0 ? (
+              <p className="px-2 py-1.5 text-[13px] text-muted-foreground">
+                No active system rules yet. Create a System Rule to assign governance here.
+              </p>
+            ) : (
+              library.map((rule) => (
+                <label
+                  key={rule}
+                  className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-card"
+                >
+                  <input
+                    type="checkbox"
+                    checked={rules.includes(rule)}
+                    onChange={() => !readOnly && toggleRule(rule)}
+                    disabled={readOnly}
+                    className="size-3.5 rounded border-border-strong accent-[var(--color-primary)] dark:border-slate-500"
+                  />
+                  <span className="text-[13px] text-foreground">{rule}</span>
+                </label>
+              ))
+            )}
           </div>
           {rules.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-1.5 border-t border-border pt-3">

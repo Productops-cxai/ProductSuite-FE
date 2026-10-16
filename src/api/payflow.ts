@@ -578,7 +578,9 @@ export async function createPayflowRule(payload: {
   status?: string;
 }) {
   const result = await apiRequest<PayflowRule>("/payflow/rules", { method: "POST", body: payload });
+  // Rules feed client governance catalog + rules list caches.
   invalidateCache("payflow:rules");
+  invalidateCache("payflow:clients:mapping-catalog");
   return result;
 }
 
@@ -591,11 +593,21 @@ export async function updatePayflowRule(
 }
 
 export async function activatePayflowRule(ruleId: number) {
-  return apiRequest<PayflowRule>(`/payflow/rules/${ruleId}/activate`, { method: "POST" });
+  const result = await apiRequest<PayflowRule>(`/payflow/rules/${ruleId}/activate`, {
+    method: "POST",
+  });
+  invalidateCache("payflow:rules");
+  invalidateCache("payflow:clients:mapping-catalog");
+  return result;
 }
 
 export async function deactivatePayflowRule(ruleId: number) {
-  return apiRequest<PayflowRule>(`/payflow/rules/${ruleId}/deactivate`, { method: "POST" });
+  const result = await apiRequest<PayflowRule>(`/payflow/rules/${ruleId}/deactivate`, {
+    method: "POST",
+  });
+  invalidateCache("payflow:rules");
+  invalidateCache("payflow:clients:mapping-catalog");
+  return result;
 }
 
 export async function deletePayflowRule(ruleId: number) {
@@ -683,6 +695,7 @@ export async function updatePayflowWorkflow(
     segment?: Record<string, string>;
     steps?: PayflowWorkflowStepPayload[];
     entry_node_id?: string;
+    note?: string;
   },
 ) {
   return apiRequest<PayflowStrategy>(`/payflow/workflows/${strategyId}/update`, {
@@ -709,9 +722,13 @@ export async function submitPayflowWorkflowReview(strategyId: number) {
   });
 }
 
-export async function approvePayflowWorkflow(strategyId: number) {
+export async function approvePayflowWorkflow(
+  strategyId: number,
+  payload?: { note?: string },
+) {
   return apiRequest<PayflowStrategy>(`/payflow/workflows/${strategyId}/approve`, {
     method: "POST",
+    body: payload || {},
   });
 }
 
@@ -722,10 +739,53 @@ export async function rejectPayflowWorkflow(strategyId: number, payload?: { note
   });
 }
 
-export async function activatePayflowWorkflow(strategyId: number) {
+export async function activatePayflowWorkflow(
+  strategyId: number,
+  payload?: { note?: string },
+) {
   return apiRequest<PayflowStrategy>(`/payflow/workflows/${strategyId}/activate`, {
     method: "POST",
+    body: payload || {},
   });
+}
+
+export async function suggestPayflowWorkflows(payload: {
+  client_id: number;
+  portfolio_id: number;
+}) {
+  return apiRequest<{
+    client_id: number;
+    portfolio_id: number;
+    portfolio_name: string;
+    workflows: PayflowStrategy[];
+  }>("/payflow/workflows/suggest", { method: "POST", body: payload });
+}
+
+export async function regeneratePayflowWorkflow(
+  strategyId: number,
+  payload: { remarks: string },
+) {
+  return apiRequest<PayflowStrategy>(`/payflow/workflows/${strategyId}/regenerate`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function previewPayflowPortfolioSegments(clientId: number, portfolioId: number) {
+  return apiRequest<{
+    client_id: number;
+    portfolio_id: number;
+    portfolio_name: string;
+    total_accounts: number;
+    eligible_accounts: number;
+    excluded: Record<string, number>;
+    segments: {
+      segment_id: string;
+      label: string;
+      segment: Record<string, string>;
+      stats: Record<string, number | string>;
+    }[];
+  }>(`/payflow/clients/${clientId}/portfolios/${portfolioId}/segments`);
 }
 
 export async function deactivatePayflowWorkflow(strategyId: number) {

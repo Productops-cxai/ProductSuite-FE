@@ -408,3 +408,227 @@ export function originTone(origin: string): Tone {
   if (origin === "Human Modified") return "info";
   return "neutral";
 }
+
+export type AddableStepKind =
+  | "Communication"
+  | "Wait"
+  | "Condition"
+  | "AI Reassessment"
+  | "Case Action"
+  | "Payment Action"
+  | "Human Review";
+
+export const ADDABLE_STEP_KINDS: AddableStepKind[] = [
+  "Communication",
+  "Wait",
+  "Condition",
+  "AI Reassessment",
+  "Case Action",
+  "Payment Action",
+  "Human Review",
+];
+
+function cloneSteps(steps: PayflowStrategyStep[]): PayflowStrategyStep[] {
+  return steps.map((s, i) => ({
+    ...s,
+    id: s.id || `s${i + 1}`,
+    config: { ...(s.config || {}) },
+  }));
+}
+
+function defaultStepForKind(kind: AddableStepKind): PayflowStrategyStep {
+  const id = uid();
+  if (kind === "Communication") {
+    return {
+      id,
+      kind,
+      title: `Send Email — ${MESSAGE_PURPOSES[0]}`,
+      origin: "Human Modified",
+      config: {
+        channel: "Email",
+        purpose: MESSAGE_PURPOSES[0],
+        reference_event: "Previous Action",
+        amount: 2,
+        unit: "Days",
+        direction: "After",
+      },
+      channel: "Email",
+      purpose: MESSAGE_PURPOSES[0],
+      next: null,
+    };
+  }
+  if (kind === "Condition") {
+    return {
+      id,
+      kind,
+      title: "Payment received?",
+      origin: "Human Modified",
+      config: {
+        attribute: "Payment Status",
+        operator: "Equals",
+        value: "Paid In Full",
+      },
+      next: null,
+      yes: null,
+      no: null,
+    };
+  }
+  if (kind === "Payment Action") {
+    return {
+      id,
+      kind,
+      title: PAYMENT_ACTIONS[0]!,
+      origin: "Human Modified",
+      config: {
+        action: PAYMENT_ACTIONS[0],
+        reference_event: "Previous Action",
+        amount: 0,
+        unit: "Days",
+        direction: "After",
+      },
+      next: null,
+    };
+  }
+  if (kind === "Case Action") {
+    return {
+      id,
+      kind,
+      title: CASE_ACTIONS[0]!,
+      origin: "Human Modified",
+      config: {
+        action: CASE_ACTIONS[0],
+        reference_event: "Previous Action",
+        amount: 0,
+        unit: "Days",
+        direction: "After",
+      },
+      next: null,
+    };
+  }
+  if (kind === "Human Review") {
+    return {
+      id,
+      kind,
+      title: "Human review",
+      origin: "Human Modified",
+      config: {
+        note: "Supervisor review required before continuing",
+        reference_event: "Previous Action",
+        amount: 0,
+        unit: "Days",
+        direction: "After",
+      },
+      next: null,
+    };
+  }
+  if (kind === "AI Reassessment") {
+    return {
+      id,
+      kind,
+      title: "AI reassessment",
+      origin: "Human Modified",
+      config: {
+        note: "Reassess treatment with latest case context",
+        reference_event: "Previous Action",
+        amount: 0,
+        unit: "Days",
+        direction: "After",
+      },
+      next: null,
+    };
+  }
+  return {
+    id,
+    kind: "Wait",
+    title: "Wait / observe",
+    origin: "Human Modified",
+    config: {
+      reference_event: "Previous Action",
+      amount: 3,
+      unit: "Days",
+      direction: "After",
+    },
+    next: null,
+  };
+}
+
+/** Insert a new step after `afterId`, rewiring next/yes/no links. */
+export function addStepAfter(
+  steps: PayflowStrategyStep[],
+  afterId: string,
+  kind: AddableStepKind,
+): PayflowStrategyStep[] {
+  const list = cloneSteps(steps);
+  const after = list.find((s) => s.id === afterId);
+  if (!after || after.kind === "Condition") return list;
+
+  const created = defaultStepForKind(kind);
+  const previousNext = after.next ?? null;
+
+  if (kind === "Condition") {
+    const outcomeId = `${created.id}-yes`;
+    const outcome: PayflowStrategyStep = {
+      id: outcomeId,
+      kind: "Outcome",
+      title: "Case closed — paid",
+      origin: "Human Modified",
+      config: { outcome: "Paid In Full" },
+      next: null,
+    };
+    created.yes = outcomeId;
+    created.no = previousNext;
+    created.next = null;
+    after.next = created.id!;
+    return [...list, created, outcome];
+  }
+
+  created.next = previousNext;
+  after.next = created.id!;
+  return [...list, created];
+}
+
+/** Remove a step and rewire predecessors to its next (or NO branch for conditions). */
+export function removeStep(
+  steps: PayflowStrategyStep[],
+  stepId: string,
+): PayflowStrategyStep[] {
+  const list = cloneSteps(steps);
+  const target = list.find((s) => s.id === stepId);
+  if (!target || target.kind === "Trigger") return list;
+
+  const fallback =
+    target.kind === "Condition" ? target.no ?? target.yes ?? null : target.next ?? null;
+  const removeIds = new Set<string>([stepId]);
+  if (target.kind === "Condition" && target.yes) {
+    const yesNode = list.find((s) => s.id === target.yes);
+    if (yesNode?.kind === "Outcome" && !yesNode.next) removeIds.add(target.yes);
+  }
+
+  return list
+    .filter((s) => !removeIds.has(s.id!))
+    .map((s) => {
+      const next = s.next === stepId ? fallback : s.next;
+      const yes = s.yes === stepId ? fallback : s.yes;
+      const no = s.no === stepId ? fallback : s.no;
+      return { ...s, next, yes, no };
+    });
+}
+
+export function templatesForChannelPurpose(
+  templates: { id: string; name: string; channel: string; purpose: string; subject?: string | null; body?: string | null }[],
+  channel?: string | null,
+  purpose?: string | null,
+) {
+  return templates.filter(
+    (t) =>
+      (!channel || t.channel === channel) && (!purpose || t.purpose === purpose),
+  );
+}
+
+export function templateById(
+  templates: { id: string; name: string; channel: string; purpose: string; subject?: string | null; body?: string | null }[],
+  templateId?: string | null,
+) {
+  if (!templateId) return undefined;
+  return templates.find((t) => t.id === templateId);
+}

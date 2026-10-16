@@ -99,9 +99,16 @@ async function parseError(res: Response): Promise<ApiError> {
     /* ignore */
   }
   if (res.status === 401) {
-    markSessionEnded(detail, code);
-    if (code === "session_replaced" || code === "session_ended" || /another location/i.test(detail)) {
-      notifySessionEnded();
+    // refresh_reused is a concurrent refresh race — not a real logout signal.
+    if (code !== "refresh_reused") {
+      markSessionEnded(detail, code);
+      if (
+        code === "session_replaced" ||
+        code === "session_ended" ||
+        /another location/i.test(detail)
+      ) {
+        notifySessionEnded();
+      }
     }
   }
   return new ApiError(res.status, detail, code);
@@ -220,25 +227,44 @@ export async function apiRequestMultipart<T>(
   return (await res.json()) as T;
 }
 
+/** In-flight refresh so parallel 401s share one rotation (avoids false session_replaced). */
+let refreshInFlight: Promise<boolean> | null = null;
+
 async function tryRefresh(): Promise<boolean> {
-  const refresh = getRefreshToken();
-  if (!refresh) return false;
-  try {
-    const res = await fetch(`${API_BASE}/auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ refresh_token: refresh }),
-    });
-    if (!res.ok) {
-      await parseError(res);
+  if (refreshInFlight) return refreshInFlight;
+
+  refreshInFlight = (async () => {
+    const refresh = getRefreshToken();
+    if (!refresh) return false;
+    try {
+      const res = await fetch(`${API_BASE}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ refresh_token: refresh }),
+      });
+      if (!res.ok) {
+        const err = await parseError(res);
+        // Concurrent callers already rotated this refresh — do not wipe a good new session.
+        if (err.code === "refresh_reused" && getAccessToken() && getRefreshToken() !== refresh) {
+          return true;
+        }
+        // Only hard-logout on real session replacement / ended; other 401s still clear.
+        if (err.code === "refresh_reused") {
+          return false;
+        }
+        clearTokens();
+        return false;
+      }
+      const data = (await res.json()) as { access_token: string; refresh_token: string };
+      setTokens(data.access_token, data.refresh_token);
+      return true;
+    } catch {
       clearTokens();
       return false;
+    } finally {
+      refreshInFlight = null;
     }
-    const data = (await res.json()) as { access_token: string; refresh_token: string };
-    setTokens(data.access_token, data.refresh_token);
-    return true;
-  } catch {
-    clearTokens();
-    return false;
-  }
+  })();
+
+  return refreshInFlight;
 }
