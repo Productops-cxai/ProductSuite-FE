@@ -100,6 +100,7 @@ export function StepConfigForm({
   step,
   catalog,
   canEdit = true,
+  showTitle = true,
   onChange,
   onToggleDisabled,
   onAddAfter,
@@ -109,6 +110,7 @@ export function StepConfigForm({
   step: PayflowStrategyStep;
   catalog?: PayflowStrategyCatalog | null;
   canEdit?: boolean;
+  showTitle?: boolean;
   onChange: (patch: Partial<PayflowStrategyStepConfig> & { title?: string }) => void;
   onToggleDisabled: () => void;
   onAddAfter: (kind: AddableStepKind) => void;
@@ -129,13 +131,15 @@ export function StepConfigForm({
 
   return (
     <div className="space-y-3">
-      <Field label="Title">
-        <TextInput
-          value={step.title}
-          disabled={!canEdit}
-          onChange={(v) => onChange({ title: v })}
-        />
-      </Field>
+      {showTitle ? (
+        <Field label="Title">
+          <TextInput
+            value={step.title}
+            disabled={!canEdit}
+            onChange={(v) => onChange({ title: v })}
+          />
+        </Field>
+      ) : null}
 
       {step.kind === "Communication" && (
         <>
@@ -209,7 +213,17 @@ export function StepConfigForm({
         </Field>
       )}
 
-      {(step.kind === "Human Review" || step.kind === "AI Reassessment") && (
+      {step.kind === "Human Review" && (
+        <Field label="Review Note" hint="Shown to the supervisor who picks up the review.">
+          <TextArea
+            value={cfg.note ?? step.detail ?? ""}
+            disabled={!canEdit}
+            onChange={(v) => onChange({ note: v })}
+          />
+        </Field>
+      )}
+
+      {step.kind === "AI Reassessment" && (
         <Field label="Note">
           <TextArea
             value={cfg.note ?? step.detail ?? ""}
@@ -361,6 +375,8 @@ export function StepEditorDialog({
   catalog,
   open,
   canEdit = true,
+  busy = false,
+  error,
   onClose,
   onChange,
   onToggleDisabled,
@@ -372,6 +388,8 @@ export function StepEditorDialog({
   catalog?: PayflowStrategyCatalog | null;
   open: boolean;
   canEdit?: boolean;
+  busy?: boolean;
+  error?: string;
   onClose: () => void;
   onChange: (patch: Partial<PayflowStrategyStepConfig> & { title?: string }) => void;
   onToggleDisabled: () => void;
@@ -383,28 +401,31 @@ export function StepEditorDialog({
     <Modal
       open={open}
       title={step.title}
-      description={`${step.kind} step — adjust details below. Changes are recorded as human modifications when you apply them.`}
+      titleExtra={
+        <StatusPill tone={step.origin === "AI Proposed" ? "ai" : "info"}>
+          {step.origin || "Human Modified"}
+        </StatusPill>
+      }
+      showClose
+      description={`${step.kind} step — adjust the details below. Changes are recorded as human modifications.`}
       onClose={onClose}
       size="wide"
       overlayClassName="z-[70]"
       footer={
         <div className="mt-2 flex justify-end gap-2.5">
-          <Btn variant="primary" onClick={onClose}>
-            Done
+          <Btn variant="primary" disabled={busy} onClick={onClose}>
+            {busy ? "Saving…" : "Done"}
           </Btn>
         </div>
       }
     >
-      <div className="mb-3">
-        <StatusPill tone={step.origin === "AI Proposed" ? "ai" : "info"}>
-          {step.origin || "Human Modified"}
-        </StatusPill>
-      </div>
+      {error ? <p className="mb-3 text-[12.5px] text-destructive">{error}</p> : null}
       <StepConfigForm
         strategy={strategy}
         step={step}
         catalog={catalog}
         canEdit={canEdit}
+        showTitle={false}
         onChange={onChange}
         onToggleDisabled={onToggleDisabled}
         onAddAfter={onAddAfter}
