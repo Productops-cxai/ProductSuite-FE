@@ -14,6 +14,9 @@ type Props = {
   footer?: ReactNode;
   overlayClassName?: string;
   bodyClassName?: string;
+  /** Rendered inline after the title, e.g. an origin pill. */
+  titleExtra?: ReactNode;
+  showClose?: boolean;
 };
 
 export function Modal({
@@ -27,6 +30,8 @@ export function Modal({
   footer,
   overlayClassName,
   bodyClassName,
+  titleExtra,
+  showClose = false,
 }: Props) {
   if (!open) return null;
 
@@ -56,9 +61,33 @@ export function Modal({
         role="dialog"
         aria-modal="true"
       >
-        <h3 className="font-display mb-1.5 shrink-0 text-[1.15rem] font-bold">{title}</h3>
+        <div className="mb-1.5 flex shrink-0 items-start justify-between gap-3">
+          <h3
+            className={cn(
+              "flex flex-wrap items-center gap-2 font-display",
+              titleExtra || showClose
+                ? "text-[1.05rem] font-semibold text-slate-900"
+                : "text-[1.15rem] font-bold",
+            )}
+          >
+            {title}
+            {titleExtra}
+          </h3>
+          {showClose ? (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="grid size-7 shrink-0 place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            >
+              <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
+          ) : null}
+        </div>
         {description ? (
-          <p className="mb-[18px] shrink-0 text-[0.9rem] text-slate-500">{description}</p>
+          <p className="mb-[18px] shrink-0 text-[12.5px] leading-relaxed text-slate-500">{description}</p>
         ) : null}
         <div className={cn("min-h-0 flex-1 overflow-y-auto", bodyClassName)}>{children}</div>
         {footer ?? (

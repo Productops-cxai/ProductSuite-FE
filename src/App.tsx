@@ -44,6 +44,7 @@ import { PayFlowHumanReview } from "./pages/payflow/HumanReview";
 import { PayFlowWorkflowsPage } from "./pages/payflow/WorkflowsPage";
 import { PayFlowWorkflowNewPage } from "./pages/payflow/WorkflowNewPage";
 import { PayFlowWorkflowDetailPage } from "./pages/payflow/WorkflowDetailPage";
+import { PayFlowReviewDetailPage } from "./pages/payflow/ReviewDetailPage";
 
 function HomeRedirect() {
   const { loading, user, nextStep, products } = useAuth();
@@ -103,6 +104,7 @@ export default function App() {
         <Route path="users" element={<PayFlowUsersPage />} />
         <Route path="users/:userId" element={<PayFlowUserDetailPage />} />
         <Route path="review" element={<PayFlowHumanReview />} />
+        <Route path="review/:reviewId" element={<PayFlowReviewDetailPage />} />
         <Route path="workflows" element={<PayFlowWorkflowsPage />} />
         <Route path="workflows/new" element={<PayFlowWorkflowNewPage />} />
         <Route path="workflows/:strategyId" element={<PayFlowWorkflowDetailPage />} />
