@@ -196,9 +196,15 @@ export function PayFlowRulesPage() {
                   {r.last_updated_label || "—"}
                 </Td>
                 <Td>
-                  <Link to={`/payflow/rules/${r.id}/edit`}>
-                    <Btn variant="primary">Edit</Btn>
-                  </Link>
+                  {r.can_edit ? (
+                    <Link to={`/payflow/rules/${r.id}/edit`}>
+                      <Btn variant="ghost" className="text-primary hover:text-primary">
+                        Edit
+                      </Btn>
+                    </Link>
+                  ) : (
+                    <span className="text-[13px] text-muted-foreground">—</span>
+                  )}
                 </Td>
               </Tr>
             ))}

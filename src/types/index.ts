@@ -970,6 +970,7 @@ export interface PayflowStrategyStep {
 }
 
 export interface PayflowStrategyVersion {
+  id?: number | null;
   version: number;
   date: string;
   note: string;
@@ -977,7 +978,10 @@ export interface PayflowStrategyVersion {
   origin?: string | null;
   approved_by?: string | null;
   approval_date?: string | null;
+  steps?: PayflowStrategyStep[] | null;
+  segment?: Record<string, string> | null;
   changes?: string[];
+  reviewer_note?: string | null;
 }
 
 export interface PayflowStrategyStats {
@@ -994,25 +998,37 @@ export interface PayflowStrategyContextItem {
   value: string;
 }
 
+export interface PayflowMessageTemplate {
+  id: string;
+  name: string;
+  channel: string;
+  purpose: string;
+  subject?: string | null;
+  body?: string | null;
+}
+
 export interface PayflowStrategyCatalog {
   channels?: string[];
   message_purposes?: string[];
   reference_events?: string[];
-  message_templates?: {
-    id: string;
-    name: string;
-    channel: string;
-    purpose: string;
-    subject?: string | null;
-    body?: string | null;
-  }[];
+  time_units?: string[];
+  time_directions?: string[];
+  condition_attributes?: string[];
+  condition_operators?: string[];
+  condition_values?: Record<string, string[]>;
+  case_actions?: string[];
+  payment_actions?: string[];
+  outcomes?: string[];
   age_bands?: string[];
   postal_regions?: string[];
   balance_bands?: string[];
   delinquency_bands?: string[];
+  language_preferences?: string[];
   languages?: string[];
+  tenure_bands?: string[];
   tenures?: string[];
   excluded_targeting_attributes?: string[];
+  message_templates?: PayflowMessageTemplate[];
 }
 
 export interface PayflowStrategy {
@@ -1037,6 +1053,7 @@ export interface PayflowStrategy {
   stats: PayflowStrategyStats;
   ai_context: PayflowStrategyContextItem[];
   ai_proposal_snapshot?: Record<string, unknown> | null;
+  revision_of_id?: number | null;
   versions: PayflowStrategyVersion[];
   approved_by?: string | null;
   approval_date?: string | null;

@@ -141,10 +141,14 @@ function NodeCard({
   node,
   selected,
   onSelect,
+  onExpand,
+  templateSnippet,
 }: {
   node: PayflowStrategyStep;
   selected: boolean;
   onSelect: () => void;
+  onExpand?: () => void;
+  templateSnippet?: string | null;
 }) {
   const cfg = stepConfig(node);
   const timing = timingLabel(node);
@@ -184,10 +188,29 @@ function NodeCard({
             Human
           </span>
         )}
+        {onExpand && (
+          <button
+            type="button"
+            className="ml-auto rounded-md border border-border/70 bg-surface px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground hover:text-foreground"
+            onClick={(e) => {
+              e.stopPropagation();
+              onExpand();
+            }}
+            title="Expand step editor"
+          >
+            Expand
+          </button>
+        )}
       </div>
       <p className="mt-2 text-[13px] leading-snug font-semibold text-foreground">{node.title}</p>
       {condition && <p className="mt-1 text-[11.5px] text-muted-foreground">{condition}</p>}
       {timing && <p className="mt-1 text-[11.5px] text-muted-foreground">{timing}</p>}
+      {templateSnippet && (
+        <p className="mt-1.5 line-clamp-2 rounded-md border border-border/60 bg-surface px-2 py-1 text-[10.5px] text-muted-foreground">
+          <span className="font-semibold text-foreground">Sending: </span>
+          {templateSnippet}
+        </p>
+      )}
       <div className="mt-2 flex flex-wrap gap-1.5">
         {channel && <StatusPill tone={stepTone(node.kind)}>{channel}</StatusPill>}
         {purpose && <StatusPill>{purpose}</StatusPill>}
@@ -204,12 +227,16 @@ function NodeBranch({
   nodeId,
   selectedId,
   onSelect,
+  onExpand,
+  templateSnippetFor,
   depth = 0,
 }: {
   nodes: Record<string, PayflowStrategyStep>;
   nodeId: string | null | undefined;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onExpand?: (id: string) => void;
+  templateSnippetFor?: (node: PayflowStrategyStep) => string | null | undefined;
   depth?: number;
 }) {
   if (!nodeId || depth > 24) return null;
@@ -222,6 +249,8 @@ function NodeBranch({
         node={node}
         selected={selectedId === node.id}
         onSelect={() => onSelect(node.id!)}
+        onExpand={onExpand ? () => onExpand(node.id!) : undefined}
+        templateSnippet={templateSnippetFor?.(node)}
       />
       {node.kind === "Condition" ? (
         (() => {
@@ -251,6 +280,8 @@ function NodeBranch({
                       nodeId={node[path]}
                       selectedId={selectedId}
                       onSelect={onSelect}
+                      onExpand={onExpand}
+                      templateSnippetFor={templateSnippetFor}
                       depth={depth + 1}
                     />
                   </div>
@@ -267,6 +298,8 @@ function NodeBranch({
             nodeId={node.next}
             selectedId={selectedId}
             onSelect={onSelect}
+            onExpand={onExpand}
+            templateSnippetFor={templateSnippetFor}
             depth={depth + 1}
           />
         </>
@@ -279,10 +312,14 @@ export function StrategyCanvas({
   strategy,
   selectedId,
   onSelect,
+  onExpand,
+  templateSnippetFor,
 }: {
   strategy: PayflowStrategy;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onExpand?: (id: string) => void;
+  templateSnippetFor?: (node: PayflowStrategyStep) => string | null | undefined;
 }) {
   const linked = ensureStepLinks(strategy);
   const nodes = stepsById(linked);
@@ -298,7 +335,14 @@ export function StrategyCanvas({
       }}
     >
       <div className="flex min-w-max justify-center">
-        <NodeBranch nodes={nodes} nodeId={entry} selectedId={selectedId} onSelect={onSelect} />
+        <NodeBranch
+          nodes={nodes}
+          nodeId={entry}
+          selectedId={selectedId}
+          onSelect={onSelect}
+          onExpand={onExpand}
+          templateSnippetFor={templateSnippetFor}
+        />
       </div>
     </div>
   );

@@ -5,6 +5,8 @@ import {
   createPayflowWorkflow,
   listPayflowClientPortfolios,
   listPayflowClients,
+  listPayflowWorkflows,
+  suggestPayflowWorkflows,
 } from "../../api/payflow";
 import { StrategyCanvas } from "../../components/payflow/strategy-canvas";
 import {
@@ -20,6 +22,7 @@ import {
 import {
   CHANNELS,
   MESSAGE_PURPOSES,
+  TIME_UNITS,
   buildStepsFromDraft,
   draftStepTitle,
   makeDraftStep,
@@ -27,7 +30,12 @@ import {
   type DraftStep,
   type DraftStepKind,
 } from "../../lib/strategy-workflow";
-import type { PayflowClient, PayflowPortfolio, PayflowStrategy } from "../../types";
+import type {
+  PayflowClient,
+  PayflowPortfolio,
+  PayflowStrategy,
+  PayflowStrategyCatalog,
+} from "../../types";
 
 const ADDABLE_KINDS: DraftStepKind[] = [
   "Communication",
@@ -87,6 +95,9 @@ export function PayFlowWorkflowNewPage() {
   const [portfolioId, setPortfolioId] = useState(searchParams.get("portfolioId") || "");
   const [addKind, setAddKind] = useState<DraftStepKind>("Communication");
   const [steps, setSteps] = useState<DraftStep[]>([]);
+  const [catalog, setCatalog] = useState<PayflowStrategyCatalog | null>(null);
+  const [suggestBusy, setSuggestBusy] = useState(false);
+  const [dragId, setDragId] = useState<string | null>(null);
   const [segment, setSegment] = useState({
     age_band: AGE_BANDS[0]!,
     postal_region: POSTAL_REGIONS[0]!,
@@ -96,14 +107,37 @@ export function PayFlowWorkflowNewPage() {
     tenure: TENURES[0]!,
   });
 
+  const ageBands = catalog?.age_bands?.length ? catalog.age_bands : AGE_BANDS;
+  const postalRegions = catalog?.postal_regions?.length
+    ? catalog.postal_regions
+    : POSTAL_REGIONS;
+  const balanceBands = catalog?.balance_bands?.length ? catalog.balance_bands : BALANCE_BANDS;
+  const delinquencyBands = catalog?.delinquency_bands?.length
+    ? catalog.delinquency_bands
+    : DELINQUENCY_BANDS;
+  const languages =
+    catalog?.language_preferences?.length || catalog?.languages?.length
+      ? catalog.language_preferences || catalog.languages || LANGUAGES
+      : LANGUAGES;
+  const tenures =
+    catalog?.tenure_bands?.length || catalog?.tenures?.length
+      ? catalog.tenure_bands || catalog.tenures || TENURES
+      : TENURES;
+  const timeUnits = catalog?.time_units?.length ? catalog.time_units : TIME_UNITS;
+  const channels = catalog?.channels?.length ? catalog.channels : CHANNELS;
+  const purposes = catalog?.message_purposes?.length
+    ? catalog.message_purposes
+    : MESSAGE_PURPOSES;
+
   useEffect(() => {
     let cancelled = false;
-    listPayflowClients({})
-      .then((res) => {
+    Promise.all([listPayflowClients({}), listPayflowWorkflows({}).catch(() => null)])
+      .then(([res, wf]) => {
         if (cancelled) return;
         const list = res.clients || [];
         setClients(list);
         if (!clientId && list[0]) setClientId(String(list[0].id));
+        if (wf?.catalog) setCatalog(wf.catalog);
       })
       .catch((err) => {
         if (!cancelled) {
@@ -210,6 +244,67 @@ export function PayFlowWorkflowNewPage() {
     });
   }
 
+  function reorderByDrag(targetId: string) {
+    if (!dragId || dragId === targetId) return;
+    setSteps((prev) => {
+      const from = prev.findIndex((s) => s.id === dragId);
+      const to = prev.findIndex((s) => s.id === targetId);
+      if (from < 0 || to < 0) return prev;
+      const copy = [...prev];
+      const [item] = copy.splice(from, 1);
+      copy.splice(to, 0, item!);
+      return copy;
+    });
+  }
+
+  async function runAiSuggest() {
+    setError("");
+    const cid = Number(clientId);
+    const pid = Number(portfolioId);
+    if (Number.isFinite(cid) && cid > 0 && Number.isFinite(pid) && pid > 0) {
+      setSuggestBusy(true);
+      try {
+        const res = await suggestPayflowWorkflows({
+          client_id: cid,
+          portfolio_id: pid,
+        });
+        const first = res.workflows?.[0];
+        if (first?.id) {
+          navigate(`/payflow/workflows/${first.id}`);
+          return;
+        }
+        setSteps(suggestFromPrompt(prompt));
+        setError("");
+      } catch (err) {
+        setSteps(suggestFromPrompt(prompt));
+        setError(
+          err instanceof ApiError
+            ? `${err.detail} — using local step suggestions instead.`
+            : "AI suggest unavailable — using local step suggestions.",
+        );
+      } finally {
+        setSuggestBusy(false);
+      }
+      return;
+    }
+    setSteps(suggestFromPrompt(prompt));
+  }
+
+  const tipChips = useMemo(() => {
+    const tips: string[] = [];
+    if (segment.balance_band.toLowerCase().includes("under") || segment.balance_band.includes("500")) {
+      tips.push("Prefer SMS for small balances");
+    }
+    if (segment.delinquency.includes("90")) {
+      tips.push("Escalate sooner for 90+ days");
+    }
+    if (segment.language.toLowerCase().includes("french")) {
+      tips.push("Use French-capable templates");
+    }
+    if (!tips.length) tips.push("Gentle early reminder", "Offer payment plan if no response");
+    return tips;
+  }, [segment]);
+
   async function createWorkflow() {
     setError("");
     if (!name.trim()) {
@@ -314,54 +409,58 @@ export function PayFlowWorkflowNewPage() {
               <Field label="Age band">
                 <SelectInput
                   value={segment.age_band}
-                  options={AGE_BANDS}
+                  options={ageBands}
                   onChange={(v) => setSegment((s) => ({ ...s, age_band: v }))}
                 />
               </Field>
               <Field label="Postal region">
                 <SelectInput
                   value={segment.postal_region}
-                  options={POSTAL_REGIONS}
+                  options={postalRegions}
                   onChange={(v) => setSegment((s) => ({ ...s, postal_region: v }))}
                 />
               </Field>
               <Field label="Balance band">
                 <SelectInput
                   value={segment.balance_band}
-                  options={BALANCE_BANDS}
+                  options={balanceBands}
                   onChange={(v) => setSegment((s) => ({ ...s, balance_band: v }))}
                 />
               </Field>
               <Field label="Delinquency stage">
                 <SelectInput
                   value={segment.delinquency}
-                  options={DELINQUENCY_BANDS}
+                  options={delinquencyBands}
                   onChange={(v) => setSegment((s) => ({ ...s, delinquency: v }))}
                 />
               </Field>
               <Field label="Language preference">
                 <SelectInput
                   value={segment.language}
-                  options={LANGUAGES}
+                  options={languages}
                   onChange={(v) => setSegment((s) => ({ ...s, language: v }))}
                 />
               </Field>
               <Field label="Customer tenure">
                 <SelectInput
                   value={segment.tenure}
-                  options={TENURES}
+                  options={tenures}
                   onChange={(v) => setSegment((s) => ({ ...s, tenure: v }))}
                 />
               </Field>
               <p className="text-[11.5px] text-muted-foreground">
-                Excluded from targeting: ethnicity, religion, gender, health status, marital status.
+                Excluded from targeting:{" "}
+                {(catalog?.excluded_targeting_attributes || []).length
+                  ? catalog!.excluded_targeting_attributes!.join(", ")
+                  : "ethnicity, religion, gender, health status, marital status"}
+                .
               </p>
             </div>
           </Panel>
 
           <Panel
             title="Ask PayFlow AI"
-            description="Describe the outcome you want. AI suggests the steps; you stay in control. The workflow remains human-created."
+            description="With client + portfolio selected, PayFlow AI proposes governed workflows. Otherwise local step suggestions are used from your prompt."
             action={<StatusPill tone="ai">AI assist</StatusPill>}
           >
             <Field label="Your prompt">
@@ -371,15 +470,29 @@ export function PayFlowWorkflowNewPage() {
                 placeholder="e.g. gentle SMS-first reminder for small balances, offer an installment plan if there is no payment after a week"
               />
             </Field>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {tipChips.map((tip) => (
+                <button
+                  key={tip}
+                  type="button"
+                  className="rounded-full border border-ai/25 bg-ai/[0.06] px-2.5 py-1 text-[11px] text-foreground hover:border-ai/50"
+                  onClick={() => setPrompt((p) => (p ? `${p}. ${tip}` : tip))}
+                >
+                  {tip}
+                </button>
+              ))}
+            </div>
             <Btn
               className="mt-2"
               variant="primary"
-              onClick={() => {
-                setSteps(suggestFromPrompt(prompt));
-                setError("");
-              }}
+              disabled={suggestBusy}
+              onClick={() => void runAiSuggest()}
             >
-              {steps.length ? "Re-suggest steps" : "Suggest steps"}
+              {suggestBusy
+                ? "Asking PayFlow AI…"
+                : steps.length
+                  ? "Re-suggest steps"
+                  : "Suggest steps"}
             </Btn>
           </Panel>
         </div>
@@ -387,7 +500,7 @@ export function PayFlowWorkflowNewPage() {
         <div className="space-y-4">
           <Panel
             title="Build the steps"
-            description="Reorder with ↑ ↓. A condition splits the flow into a YES (paid) and NO (continue) path. Timing uses days after a reference event."
+            description="Drag to reorder, or use ↑ ↓. A condition splits YES (paid) and NO (continue). Timing uses an amount + unit after a reference event."
             action={
               <div className="flex items-end gap-2">
                 <SelectInput
@@ -415,10 +528,22 @@ export function PayFlowWorkflowNewPage() {
                 {steps.map((step, i) => (
                   <li
                     key={step.id}
-                    className="rounded-xl border border-border bg-card px-3 py-2.5 shadow-subtle"
+                    draggable
+                    onDragStart={() => setDragId(step.id)}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={() => {
+                      reorderByDrag(step.id);
+                      setDragId(null);
+                    }}
+                    onDragEnd={() => setDragId(null)}
+                    className={`cursor-grab rounded-xl border border-border bg-card px-3 py-2.5 shadow-subtle active:cursor-grabbing ${
+                      dragId === step.id ? "opacity-60 ring-2 ring-primary/30" : ""
+                    }`}
                   >
                     <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-bold text-muted-foreground">{i + 1}</span>
+                      <span className="text-[11px] font-bold text-muted-foreground" title="Drag to reorder">
+                        ⋮⋮ {i + 1}
+                      </span>
                       <StatusPill>{step.kind}</StatusPill>
                       <span className="truncate text-[12.5px] font-medium text-foreground">
                         {draftStepTitle(step)}
@@ -448,18 +573,18 @@ export function PayFlowWorkflowNewPage() {
                         <Field label="Channel">
                           <SelectInput
                             value={step.channel || "Email"}
-                            options={CHANNELS}
+                            options={channels}
                             onChange={(v) => patchStep(step.id, { channel: v })}
                           />
                         </Field>
                         <Field label="Message purpose">
                           <SelectInput
-                            value={step.purpose || MESSAGE_PURPOSES[0]!}
-                            options={MESSAGE_PURPOSES}
+                            value={step.purpose || purposes[0]!}
+                            options={purposes}
                             onChange={(v) => patchStep(step.id, { purpose: v })}
                           />
                         </Field>
-                        <Field label="Days after previous">
+                        <Field label="Amount after previous">
                           <TextInput
                             value={String(step.amount)}
                             onChange={(v) =>
@@ -472,8 +597,8 @@ export function PayFlowWorkflowNewPage() {
                       </div>
                     )}
                     {step.kind === "Wait" && (
-                      <div className="mt-2">
-                        <Field label="Wait (days after previous action)">
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                        <Field label="Wait amount">
                           <TextInput
                             value={String(step.amount)}
                             onChange={(v) =>
@@ -481,6 +606,13 @@ export function PayFlowWorkflowNewPage() {
                                 amount: Math.max(0, Number(v.replace(/\D/g, "")) || 0),
                               })
                             }
+                          />
+                        </Field>
+                        <Field label="Unit">
+                          <SelectInput
+                            value={step.unit || "Days"}
+                            options={timeUnits}
+                            onChange={(v) => patchStep(step.id, { unit: v })}
                           />
                         </Field>
                       </div>
