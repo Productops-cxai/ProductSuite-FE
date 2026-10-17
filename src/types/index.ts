@@ -150,8 +150,12 @@ export interface SmsLog {
   provider_id?: string | null;
   error?: string | null;
   account_id?: number | null;
+  account_reference?: string | null;
+  customer_name?: string | null;
   run_id?: number | null;
   client_id?: number | null;
+  client_name?: string | null;
+  client_code?: string | null;
   created_at: string;
 }
 
