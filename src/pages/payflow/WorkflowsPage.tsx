@@ -250,7 +250,7 @@ export function PayFlowWorkflowsPage() {
 
                 <div className="mt-3 flex flex-wrap items-center gap-1.5">
                   <StatusPill tone={originTone(s.origin)}>{s.origin}</StatusPill>
-                  {(s.human_modified || s.origin === "Human Modified") && (
+                  {s.human_modified && s.origin !== "Human Modified" && (
                     <StatusPill tone="info">Human Modified</StatusPill>
                   )}
                   {s.source === "AI Generated" && s.origin !== "AI Proposed" && (
