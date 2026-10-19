@@ -20,6 +20,7 @@ import {
   draftFromDetail,
   draftToUpdatePayload,
   emptyDraft,
+  generalConfigIssues,
   postalCodeConfigIssues,
   type ClientDraft,
   type ClientDraftConfig,
@@ -50,6 +51,7 @@ import {
   configSectionHint,
   isClientSettingUp,
   missingSetupChips,
+  remainingSetupIssueMessages,
   setupTargetForLabel,
   type OnboardingStage,
   type SetupCheck,
@@ -296,10 +298,16 @@ export function PayFlowClientDetailPage() {
     () => (detail ? buildActivationChecks(detail) : []),
     [detail],
   );
-  const onboardingStages = useMemo(
-    () => (detail ? buildOnboardingStages(detail) : []),
-    [detail],
-  );
+  const onboardingStages = useMemo(() => {
+    if (!detail) return [];
+    const stages = buildOnboardingStages(detail);
+    const generalBad = generalConfigIssues(draft).length > 0;
+    return stages.map((s) =>
+      s.key === "profile"
+        ? { ...s, done: !generalBad && s.done, pending: generalBad || s.pending }
+        : s,
+    );
+  }, [detail, draft]);
   const checksDone = activationChecks.filter((c) => c.done).length;
   const checksPct = activationChecks.length
     ? Math.round((checksDone / activationChecks.length) * 100)
@@ -422,9 +430,17 @@ export function PayFlowClientDetailPage() {
       )}
 
       {(() => {
-            const missing = missingSetupChips(detail);
-            if (missing.length === 0) return null;
+            const missing = [
+              ...missingSetupChips(detail),
+              ...(generalConfigIssues(draft).length &&
+              !missingSetupChips(detail).some((m) => /profile|general/i.test(m))
+                ? ["Client Profile"]
+                : []),
+            ];
+            const issueMessages = remainingSetupIssueMessages(detail, draft);
+            if (missing.length === 0 && issueMessages.length === 0) return null;
             const drafting = isClientSettingUp(statusLabel);
+            const issueCount = Math.max(missing.length, issueMessages.length);
             return (
               <div className="mb-4 rounded-lg border border-warning/40 bg-warning/8 px-4 py-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -433,8 +449,8 @@ export function PayFlowClientDetailPage() {
                       <span className="mr-1.5 inline-block" aria-hidden>
                         ⚠
                       </span>
-                      Client setup incomplete — {missing.length} step
-                      {missing.length > 1 ? "s" : ""} left
+                      Client setup incomplete — {issueCount} item
+                      {issueCount > 1 ? "s" : ""} left
                     </p>
                     <p className="mt-0.5 text-[12px] text-muted-foreground">
                       {drafting
@@ -453,13 +469,29 @@ export function PayFlowClientDetailPage() {
                         </button>
                       ))}
                     </div>
+                    {issueMessages.length > 0 ? (
+                      <ul className="mt-2 list-disc space-y-0.5 pl-5 text-[12px] text-foreground">
+                        {issueMessages.map((msg) => (
+                          <li key={msg}>
+                            <button
+                              type="button"
+                              className="text-left hover:underline"
+                              onClick={() => goSetupTarget(setupTargetForLabel(msg))}
+                            >
+                              {msg}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
                   </div>
                   {canEdit ? (
                     <Btn
                       variant="primary"
                       className="shrink-0"
                       onClick={() =>
-                        missing.some((m) => /portfolio|sub-client/i.test(m))
+                        missing.some((m) => /portfolio|sub-client/i.test(m)) ||
+                        issueMessages.some((m) => /portfolio|sub-client/i.test(m))
                           ? goSetupTarget("portfolios")
                           : changeTab("Configuration")
                       }
@@ -664,7 +696,7 @@ export function PayFlowClientDetailPage() {
           <div className="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
             <div className="panel overflow-hidden p-2">
               {CONFIG_SECTIONS.map((s) => {
-                const hint = configSectionHint(s, detail);
+                const hint = configSectionHint(s, detail, draft);
                 return (
                   <button
                     key={s}

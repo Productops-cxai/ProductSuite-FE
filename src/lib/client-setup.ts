@@ -1,8 +1,45 @@
+import {
+  brandingConfigIssues,
+  generalConfigIssues,
+  type ClientDraft,
+} from "../components/payflow/client-config-sections";
 import type {
   PayflowClientDetail,
   PayflowOnboardingProgress,
   PayflowOnboardingStep,
 } from "../types";
+
+/** Profile/general issues from saved detail (matches BE _profile_issues). */
+export function generalIssuesFromDetail(detail: PayflowClientDetail): string[] {
+  const issues: string[] = [];
+  if (!(detail.name || "").trim()) issues.push("Client name is required");
+  if (!(detail.code || "").trim()) issues.push("Client code is required");
+  if (!(detail.client_type || "").trim()) issues.push("Client type is required");
+  if (!(detail.business_domain || "").trim()) issues.push("Business use case is required");
+  if (!(detail.contact_name || "").trim()) issues.push("Primary contact name is required");
+  const email = (detail.contact_email || "").trim();
+  if (!email) issues.push("Primary contact email is required");
+  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    issues.push("Enter a valid primary contact email");
+  }
+  if (!(detail.contact_phone || "").trim()) issues.push("Primary contact phone is required");
+  if (!(detail.country || "").trim()) issues.push("Country is required");
+  if (!(detail.correspondence_language || "").trim()) issues.push("Language is required");
+  if (!(detail.currency_code || "").trim()) issues.push("Currency is required");
+  const postal = (detail.postal_code || "").trim().toUpperCase();
+  if (postal) {
+    const normalized =
+      postal.replace(/\s+/g, "").length === 6
+        ? `${postal.replace(/\s+/g, "").slice(0, 3)} ${postal.replace(/\s+/g, "").slice(3)}`
+        : postal;
+    if (!/^[A-Z]\d[A-Z] \d[A-Z]\d$/.test(normalized)) {
+      issues.push(
+        "Postal code must match format A1A 1A1 (letter-number-letter space number-letter-number)",
+      );
+    }
+  }
+  return issues;
+}
 
 export type SetupCheck = {
   label: string;
@@ -48,13 +85,15 @@ function isHiddenJourneyLabel(label: string): boolean {
   return l.includes("data mapping") || l === "mapping";
 }
 
-/** Banner / clients-grid chips (excludes AI, activation, and Data Mapping). */
+/** Banner / clients-grid chips — every journey step still open (not Data Mapping). */
 const BANNER_CHIP_KEYS = new Set([
   "profile",
   "portfolios",
   "data_source",
   "branding",
+  "ai_governance",
   "supervisors",
+  "activation",
 ]);
 
 /** Setup steps still incomplete — used by clients list + detail header chips. */
@@ -82,6 +121,71 @@ export function missingSetupChips(detail: PayflowClientDetail): string[] {
   return buildOnboardingStages(detail)
     .filter((s) => BANNER_CHIP_KEYS.has(s.key) && !s.done)
     .map((s) => s.label);
+}
+
+const SETUP_ISSUE_PREFIXES = [
+  "client profile:",
+  "branding & channels:",
+  "supervisor assignment:",
+  "data source:",
+  "ai & governance:",
+  "ai mode & governance:",
+  "sub-clients / portfolios:",
+  "review & activation:",
+] as const;
+
+/** Normalize "Client Profile: X" and bare "X" to the same dedupe key. */
+function setupIssueDedupeKey(message: string): string {
+  let t = (message || "").trim().toLowerCase();
+  for (const prefix of SETUP_ISSUE_PREFIXES) {
+    if (t.startsWith(prefix)) {
+      t = t.slice(prefix.length).trim();
+      break;
+    }
+  }
+  return t;
+}
+
+function preferPrefixedIssue(a: string, b: string): string {
+  const aPrefixed = SETUP_ISSUE_PREFIXES.some((p) => a.toLowerCase().startsWith(p));
+  const bPrefixed = SETUP_ISSUE_PREFIXES.some((p) => b.toLowerCase().startsWith(p));
+  if (aPrefixed && !bPrefixed) return a;
+  if (bPrefixed && !aPrefixed) return b;
+  return a.length >= b.length ? a : b;
+}
+
+/** Concrete remaining issues (deduped across setup_issues, blockers, and live draft). */
+export function remainingSetupIssueMessages(
+  detail: PayflowClientDetail,
+  draft?: ClientDraft | null,
+): string[] {
+  // Prefer section-prefixed setup_issues; activation_blockers often repeat the same text bare.
+  const liveGeneral = draft
+    ? generalConfigIssues(draft).map((m) => `Client Profile: ${m}`)
+    : generalIssuesFromDetail(detail).map((m) => `Client Profile: ${m}`);
+  const liveBranding = draft
+    ? brandingConfigIssues(draft).map((m) => `Branding & Channels: ${m}`)
+    : [];
+
+  const merged = [
+    ...liveGeneral,
+    ...liveBranding,
+    ...(detail.setup_issues || []),
+    ...(detail.activation_blockers || []),
+  ];
+
+  const byKey = new Map<string, string>();
+  for (const raw of merged) {
+    const t = (raw || "").trim();
+    if (!t) continue;
+    const key = setupIssueDedupeKey(t);
+    if (!key) continue;
+    const prev = byKey.get(key);
+    byKey.set(key, prev ? preferPrefixedIssue(prev, t) : t);
+  }
+
+  if (byKey.size > 0) return [...byKey.values()];
+  return missingSetupChips(detail).map((label) => `${label}: needs attention`);
 }
 
 export function isClientSettingUp(status?: string | null): boolean {
@@ -125,6 +229,11 @@ export function buildActivationChecks(detail: PayflowClientDetail): SetupCheck[]
   const brandingOk = stepIsComplete(
     detail.onboarding?.steps?.find((s) => s.key === "branding"),
   );
+  const generalIssues = generalIssuesFromDetail(detail);
+  const profileOk =
+    generalIssues.length === 0 &&
+    (stepIsComplete(detail.onboarding?.steps?.find((s) => s.key === "profile")) ||
+      Boolean(detail.name && detail.code));
   const brandLabel =
     detail.client_type_label === "Third Party"
       ? detail.brand_name || detail.name || "PayFlow branded"
@@ -133,8 +242,8 @@ export function buildActivationChecks(detail: PayflowClientDetail): SetupCheck[]
   return [
     {
       label: "Client profile",
-      done: stepIsComplete(detail.onboarding?.steps?.find((s) => s.key === "profile")),
-      detail: detail.code || "Client code missing",
+      done: profileOk,
+      detail: generalIssues[0] || detail.code || "Client code missing",
       required: true,
     },
     {
@@ -195,9 +304,10 @@ export function buildOnboardingStages(detail: PayflowClientDetail): OnboardingSt
   const sourceReady = checks.find((c) => c.label === "Data source connected")?.done ?? false;
   const portfolioCount = detail.portfolio_count ?? detail.portfolios?.length ?? 0;
 
-  const profileDone = byKey("profile")
-    ? stepIsComplete(byKey("profile"))
-    : Boolean(detail.name && detail.code);
+  const generalIssues = generalIssuesFromDetail(detail);
+  const profileDone =
+    generalIssues.length === 0 &&
+    (byKey("profile") ? stepIsComplete(byKey("profile")) : Boolean(detail.name && detail.code));
   const brandingDone = byKey("branding")
     ? stepIsComplete(byKey("branding"))
     : false;
@@ -266,11 +376,21 @@ export function buildOnboardingStages(detail: PayflowClientDetail): OnboardingSt
   ];
 }
 
-/** Sidebar hint for config sections. */
+/** Sidebar hint for config sections (optional live draft for unsaved General/Branding edits). */
 export function configSectionHint(
   section: string,
   detail: PayflowClientDetail,
+  draft?: ClientDraft | null,
 ): "Done" | "Needs attention" | null {
+  if (section === "General") {
+    const live = draft ? generalConfigIssues(draft) : generalIssuesFromDetail(detail);
+    return live.length === 0 ? "Done" : "Needs attention";
+  }
+  if (section === "Branding & Channels") {
+    if (draft) {
+      return brandingConfigIssues(draft).length === 0 ? "Done" : "Needs attention";
+    }
+  }
   const stages = buildOnboardingStages(detail);
   const map: Record<string, string> = {
     General: "profile",

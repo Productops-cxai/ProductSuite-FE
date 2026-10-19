@@ -111,7 +111,31 @@ export function isValidClientPostalCode(value: string): boolean {
 
 export function postalCodeConfigIssues(draft: ClientDraft): string[] {
   if (isValidClientPostalCode(draft.config.postalCode)) return [];
-  return ["Postal code must match format A1A 1A1"];
+  return [
+    "Postal code must match format A1A 1A1 (letter-number-letter space number-letter-number)",
+  ];
+}
+
+/** General tab issues — required profile/contact/address fields + postal format. */
+export function generalConfigIssues(draft: ClientDraft): string[] {
+  const c = draft.config;
+  const issues: string[] = [];
+  if (!draft.name.trim()) issues.push("Client name is required");
+  if (!c.code.trim()) issues.push("Client code is required");
+  if (!c.clientType.trim()) issues.push("Client type is required");
+  if (!c.useCase.trim()) issues.push("Business use case is required");
+  if (!c.contactName.trim()) issues.push("Primary contact name is required");
+  const email = c.contactEmail.trim();
+  if (!email) issues.push("Primary contact email is required");
+  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    issues.push("Enter a valid primary contact email");
+  }
+  if (!c.contactPhone.trim()) issues.push("Primary contact phone is required");
+  if (!c.country.trim()) issues.push("Country is required");
+  if (!c.correspondenceLanguage.trim()) issues.push("Language is required");
+  if (!c.currencyCode.trim()) issues.push("Currency is required");
+  issues.push(...postalCodeConfigIssues(draft));
+  return issues;
 }
 
 export function connectionTone(state: ConnectionLabel): Tone {

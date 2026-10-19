@@ -457,6 +457,8 @@ export interface PayflowClient {
   supervisors?: PayflowClientSupervisor[];
   /** Required config labels still incomplete (excludes portfolios / activation). */
   setup_incomplete?: string[];
+  /** Concrete remaining issues across config tabs (branding, supervisors, …). */
+  setup_issues?: string[];
   setup_steps_remaining?: number;
   onboarding?: PayflowOnboardingProgress;
   /** How the client was first created: add_client | file_upload */
@@ -635,6 +637,7 @@ export interface PayflowBulkUploadResult {
   errors: PayflowBulkUploadErrorRow[];
   import_id?: number | null;
   status?: string;
+  message?: string | null;
   summary?: PayflowImportPreviewSummary;
   preview?: PayflowImportPreviewRecord[];
 }
@@ -652,6 +655,7 @@ export interface PayflowImportPreviewRecord {
   current_balance?: number | null;
   incoming_balance?: number | null;
   note?: string | null;
+  setup_issues?: string[];
 }
 
 export interface PayflowImportPreviewSummary {

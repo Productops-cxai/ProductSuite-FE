@@ -238,7 +238,11 @@ export function ImportErrorTable({ errors }: { errors: ImportError[] }) {
           <Td>{e.field}</Td>
           <Td className="min-w-[280px] whitespace-normal">{e.error}</Td>
           <Td>
-            <StatusPill tone={e.status === "Rejected" ? "danger" : "warning"}>{e.status}</StatusPill>
+            <StatusPill
+              tone={e.status === "Rejected" ? "danger" : e.status === "Attention" ? "warning" : "warning"}
+            >
+              {e.status}
+            </StatusPill>
           </Td>
         </Tr>
       ))}
@@ -284,6 +288,9 @@ export function ImportResult({
                 No records were changed. Review the issue below, correct the file and upload it again.
               </p>
             )}
+            {run.message ? (
+              <p className="mt-2 text-[13px] text-foreground">{run.message}</p>
+            ) : null}
           </div>
           <StatusPill tone={importStatusTone(run.status)}>{run.status}</StatusPill>
         </div>
@@ -366,6 +373,15 @@ function ClientPreviewTable({ records }: { records: ImportRecord[] }) {
             <Td className="text-[12.5px] text-muted-foreground">
               {g.master?.action === "Error" ? (
                 <span className="text-destructive">{g.master.note}</span>
+              ) : g.master?.setupIssues && g.master.setupIssues.length > 0 ? (
+                <div className="space-y-1">
+                  <span className="font-medium text-warning">Setup incomplete</span>
+                  <ul className="list-disc pl-4 text-[11.5px] text-foreground">
+                    {g.master.setupIssues.map((issue) => (
+                      <li key={issue}>{issue}</li>
+                    ))}
+                  </ul>
+                </div>
               ) : g.master ? (
                 "Valid"
               ) : null}
@@ -482,6 +498,13 @@ function mapPreviewAction(action: string): ImportAction {
   return "Error";
 }
 
+function mapImportErrorStatus(status: string | undefined): ImportError["status"] {
+  const s = (status || "").toLowerCase();
+  if (s === "skipped") return "Skipped";
+  if (s === "attention") return "Attention";
+  return "Rejected";
+}
+
 function mapPreviewRecords(rows: PayflowImportPreviewResponse["preview"]): ImportRecord[] {
   return rows.map((r) => {
     const isSub =
@@ -498,6 +521,7 @@ function mapPreviewRecords(rows: PayflowImportPreviewResponse["preview"]): Impor
       currentBalance: r.current_balance,
       incomingBalance: r.incoming_balance ?? undefined,
       note: r.note ?? r.record_id,
+      setupIssues: r.setup_issues || [],
     };
   });
 }
@@ -529,7 +553,7 @@ function failedRunFromPreview(
       subClient: e.sub_client,
       field: e.field,
       error: e.error,
-      status: e.status === "Skipped" ? "Skipped" : "Rejected",
+      status: mapImportErrorStatus(e.status),
     })),
   };
 }
@@ -574,6 +598,7 @@ function bulkUploadToRun(file: File, result: PayflowBulkUploadResult, uploadedBy
       errors,
     ),
     errors,
+    message: result.message ?? null,
   };
 }
 
@@ -589,6 +614,7 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
   );
   const [previewRecords, setPreviewRecords] = useState<ImportRecord[]>([]);
   const [previewErrors, setPreviewErrors] = useState<ImportError[]>([]);
+  const [previewMessage, setPreviewMessage] = useState<string | null>(null);
 
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -634,9 +660,10 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
           subClient: e.sub_client,
           field: e.field,
           error: e.error,
-          status: e.status === "Skipped" ? "Skipped" : "Rejected",
+          status: mapImportErrorStatus(e.status),
         })),
       );
+      setPreviewMessage(preview.message?.trim() || null);
       setStage("preview");
     } catch (err) {
       setSubmitError(err instanceof ApiError ? err.detail : "Validation failed");
@@ -674,6 +701,7 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
     setPreviewSummary(null);
     setPreviewRecords([]);
     setPreviewErrors([]);
+    setPreviewMessage(null);
     setSubmitError(null);
     setFileError(null);
   };
@@ -784,11 +812,14 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
             <span className="font-medium text-foreground">{file?.name}</span>. Records with errors will be skipped;
             all others will be processed when you continue.
           </p>
+          {previewMessage ? (
+            <p className="text-[12.5px] font-medium text-foreground">{previewMessage}</p>
+          ) : null}
           {submitError ? <p className="text-[12.5px] font-medium text-destructive">{submitError}</p> : null}
           {previewErrors.length > 0 && (
             <Panel
-              title="Validation errors"
-              description={`${formatNumber(previewErrors.length)} record${previewErrors.length === 1 ? "" : "s"} need fixing before they can be imported.`}
+              title="Validation & setup issues"
+              description={`${formatNumber(previewErrors.length)} item${previewErrors.length === 1 ? "" : "s"} — Rejected rows are skipped; Attention means the client still imports as Draft with remaining setup.`}
             >
               <ImportErrorTable errors={previewErrors} />
             </Panel>
