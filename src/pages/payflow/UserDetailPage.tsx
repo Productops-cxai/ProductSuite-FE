@@ -21,6 +21,7 @@ import {
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { useAuth } from "../../context/AuthContext";
+import { SHOW_PAYFLOW_DELETE } from "../../lib/payflow-features";
 import type { PayflowUser } from "../../types";
 
 function statusTone(status: string) {
@@ -186,7 +187,7 @@ export function PayFlowUserDetailPage() {
                 Resend Invitation
               </Btn>
             ) : null}
-            {canManageTarget && me?.id !== user.id ? (
+            {SHOW_PAYFLOW_DELETE && canManageTarget && me?.id !== user.id ? (
               <Btn variant="danger" disabled={statusBusy} onClick={() => setConfirmDelete(true)}>
                 Delete
               </Btn>

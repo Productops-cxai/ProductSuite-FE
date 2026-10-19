@@ -150,8 +150,12 @@ export interface SmsLog {
   provider_id?: string | null;
   error?: string | null;
   account_id?: number | null;
+  account_reference?: string | null;
+  customer_name?: string | null;
   run_id?: number | null;
   client_id?: number | null;
+  client_name?: string | null;
+  client_code?: string | null;
   created_at: string;
 }
 
@@ -185,6 +189,76 @@ export interface PayflowWorkflowWorkerLog {
 
 export interface PayflowWorkflowWorkerLogsResponse {
   items: PayflowWorkflowWorkerLog[];
+}
+
+export type PayflowWorkflowUiStatus =
+  | "Pending"
+  | "Scheduled"
+  | "In Progress"
+  | "Completed"
+  | "Blocked"
+  | "Failed"
+  | "Cancelled"
+  | string;
+
+export interface PayflowWorkflowStepRun {
+  id: number;
+  step_id: string;
+  kind: string;
+  title?: string | null;
+  attempt: number;
+  status: string;
+  ui_status?: PayflowWorkflowUiStatus | null;
+  scheduled_at?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  error?: string | null;
+  block_reason?: string | null;
+  result_json?: Record<string, unknown> | null;
+  communication_id?: number | null;
+}
+
+export interface PayflowWorkflowActivityItem {
+  at?: string | null;
+  label: string;
+  kind?: string | null;
+  detail?: string | null;
+  ui_status?: PayflowWorkflowUiStatus | null;
+  step_id?: string | null;
+  step_run_id?: number | null;
+  communication_id?: number | null;
+  block_reason?: string | null;
+  error?: string | null;
+}
+
+export interface PayflowWorkflowRun {
+  id: number;
+  account_id: number;
+  strategy_id: number;
+  strategy_version?: number | null;
+  strategy_name?: string | null;
+  strategy_code?: string | null;
+  workflow_definition_path?: string | null;
+  client_id?: number | null;
+  portfolio_id?: number | null;
+  status: string;
+  current_step_id?: string | null;
+  current_step?: { id?: string | null; title?: string | null; kind?: string | null } | null;
+  next_step_id?: string | null;
+  next_step_title?: string | null;
+  next_scheduled_at?: string | null;
+  human_review_id?: number | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  last_error?: string | null;
+  block_reason?: string | null;
+  deactivate_policy?: string | null;
+  step_runs?: PayflowWorkflowStepRun[];
+  activity?: PayflowWorkflowActivityItem[];
+}
+
+export interface PayflowAccountWorkflowExecutionResponse {
+  execution: PayflowWorkflowRun | null;
 }
 
 export interface AiSuggestJob {
@@ -805,6 +879,52 @@ export interface PayflowReviewHistoryItem {
   by?: string | null;
 }
 
+export interface PayflowReviewExceptionStep {
+  id?: string | null;
+  title?: string | null;
+  kind?: string | null;
+  available?: boolean;
+  message?: string | null;
+}
+
+export interface PayflowReviewExecutionSummary {
+  run_id?: number | null;
+  status?: string | null;
+  strategy_id?: number | null;
+  strategy_name?: string | null;
+  strategy_version?: number | null;
+  current_step_id?: string | null;
+  current_step_title?: string | null;
+  current_step_kind?: string | null;
+  next_step_id?: string | null;
+  next_step_title?: string | null;
+  next_scheduled_at?: string | null;
+  block_reason?: string | null;
+  workflow_definition_path?: string | null;
+}
+
+export interface PayflowReviewMissingRef {
+  ref: string;
+  message: string;
+}
+
+export interface PayflowReviewWorkflowContext {
+  strategy_id?: number | null;
+  strategy_name?: string | null;
+  strategy_code?: string | null;
+  strategy_available?: boolean | null;
+  workflow_version?: number | null;
+  exception_step_id?: string | null;
+  exception_step?: PayflowReviewExceptionStep | null;
+  current_workflow?: string | null;
+  collection_status?: string | null;
+  last_action?: string | null;
+  next_action?: string | null;
+  action_blocked?: boolean;
+  execution?: PayflowReviewExecutionSummary | null;
+  workflow_definition_path?: string | null;
+}
+
 export interface PayflowReview {
   id: number;
   code: string;
@@ -841,8 +961,16 @@ export interface PayflowReview {
   rejection_reason?: string | null;
   hold_until?: string | null;
   history: PayflowReviewHistoryItem[];
+  workflow_context?: PayflowReviewWorkflowContext | null;
+  exception_step_id?: string | null;
+  exception_step?: PayflowReviewExceptionStep | null;
+  strategy_id?: number | null;
+  workflow_version?: number | null;
+  missing_refs?: PayflowReviewMissingRef[];
+  available_actions?: string[];
   can_decide?: boolean | null;
   can_modify?: boolean | null;
+  can_release?: boolean | null;
   created_at?: string | null;
   updated_at?: string | null;
 }

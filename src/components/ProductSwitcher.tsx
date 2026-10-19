@@ -129,7 +129,7 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
   const triggerClass =
     variant === "platform"
       ? "inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 py-1 pl-1 pr-3 text-[0.82rem] font-semibold text-blue-800 dark:border-blue-400/50 dark:bg-blue-950 dark:text-blue-100"
-      : "inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2.5 py-1.5 text-[0.88rem] font-semibold text-slate-900 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800";
+      : "inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] font-semibold text-slate-900 transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-500 dark:hover:bg-slate-800";
 
   const rowClass =
     "flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left text-[0.92rem] text-slate-900 hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-slate-800";
@@ -168,19 +168,37 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
           </>
         ) : (
           <>
-            <span className="grid size-3.5 grid-cols-2 gap-0.5" aria-hidden="true">
-              <span className="rounded-[1.5px] bg-slate-500" />
-              <span className="rounded-[1.5px] bg-slate-500" />
-              <span className="rounded-[1.5px] bg-slate-500" />
-              <span className="rounded-[1.5px] bg-slate-500" />
-            </span>
+            {/* LayoutGrid — matches Lovable product chip */}
+            <svg
+              viewBox="0 0 24 24"
+              className="size-3.5 shrink-0 text-slate-500 dark:text-slate-400"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <rect width="7" height="7" x="3" y="3" rx="1" />
+              <rect width="7" height="7" x="14" y="3" rx="1" />
+              <rect width="7" height="7" x="14" y="14" rx="1" />
+              <rect width="7" height="7" x="3" y="14" rx="1" />
+            </svg>
             <span>{currentLabel}</span>
-            <span className="ml-0.5 text-slate-400" aria-hidden="true">
-              <svg viewBox="0 0 12 16" width="10" height="14" fill="currentColor">
-                <path d="M6 2 L10 7 H2 Z" />
-                <path d="M6 14 L2 9 H10 Z" />
-              </svg>
-            </span>
+            {/* ChevronsUpDown — matches Lovable product chip */}
+            <svg
+              viewBox="0 0 24 24"
+              className="size-3 shrink-0 text-slate-400"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="m7 15 5 5 5-5" />
+              <path d="m7 9 5-5 5 5" />
+            </svg>
           </>
         )}
       </button>

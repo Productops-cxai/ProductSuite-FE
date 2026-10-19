@@ -1,3 +1,4 @@
+import { isHiddenDeletePermission, SHOW_PAYFLOW_DELETE } from "../../lib/payflow-features";
 import { cn } from "../../lib/utils";
 import type { PayflowPermissionGroup } from "../../types";
 
@@ -13,9 +14,18 @@ export function PermissionPicker({
   onToggle: (permissionCode: string) => void;
   disabled?: boolean;
 }) {
+  const visibleGroups = groups
+    .map((group) => ({
+      ...group,
+      permissions: SHOW_PAYFLOW_DELETE
+        ? group.permissions
+        : group.permissions.filter((perm) => !isHiddenDeletePermission(perm.code)),
+    }))
+    .filter((group) => group.permissions.length > 0);
+
   return (
     <div className="grid gap-3 sm:grid-cols-2">
-      {groups.map((group) => (
+      {visibleGroups.map((group) => (
         <div
           key={group.group_key}
           className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900"

@@ -18,6 +18,7 @@ import {
 import type { PayflowRule } from "../../types";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
+import { SHOW_PAYFLOW_DELETE } from "../../lib/payflow-features";
 
 function ruleStatusTone(status: string): Tone {
   if (status === "Active") return "success";
@@ -29,7 +30,7 @@ export function PayFlowRuleDetailPage() {
   const { ruleId } = useParams<{ ruleId: string }>();
   const navigate = useNavigate();
   const { hasPermission } = usePayFlowAccess();
-  const canDelete = hasPermission("delete_rules");
+  const canDelete = SHOW_PAYFLOW_DELETE && hasPermission("delete_rules");
   const [rule, setRule] = useState<PayflowRule | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
