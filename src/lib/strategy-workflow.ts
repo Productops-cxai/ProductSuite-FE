@@ -355,37 +355,92 @@ export function buildStepsFromDraft(steps: DraftStep[]): PayflowStrategyStep[] {
   return result;
 }
 
-export function suggestFromPrompt(prompt: string): DraftStep[] {
+/** Attach the best catalog template id for each Communication step (channel + purpose). */
+export function assignDraftTemplates(
+  steps: PayflowStrategyStep[],
+  templates: { id: string; channel: string; purpose: string }[],
+): PayflowStrategyStep[] {
+  if (!templates.length) return steps;
+  return steps.map((step) => {
+    if (step.kind !== "Communication") return step;
+    const cfg = step.config || {};
+    const exact = templates.filter(
+      (t) => t.channel === (cfg.channel || "") && t.purpose === (cfg.purpose || ""),
+    );
+    const pick = exact[0] || templates.find((t) => t.channel === cfg.channel) || templates[0];
+    if (!pick) return step;
+    return { ...step, config: { ...cfg, template_id: pick.id } };
+  });
+}
+
+/** Lovable-style tip list for the Ask PayFlow AI panel. */
+export function aiSuggestionsForSegment(segment: {
+  balance_band?: string;
+  delinquency?: string;
+  language?: string;
+  age_band?: string;
+}): string[] {
+  const tips: string[] = [];
+  tips.push(
+    segment.balance_band === "$5,000 and over"
+      ? "Larger balances respond better to a payment plan offer early in the flow."
+      : "Start with the cheapest contactable channel and confirm delivery before adding contact.",
+  );
+  if (segment.delinquency === "90+ days past due") {
+    tips.push("At 90+ days past due, confirm contactability first — reach is the main constraint.");
+  }
+  if (segment.language === "French" || segment.language === "English + French") {
+    tips.push("Send in the customer's preferred language to lift response rates.");
+  }
+  if (segment.age_band === "18 – 24" || segment.age_band === "25 – 34") {
+    tips.push("Younger age bands engage more with SMS payment links than with email.");
+  }
+  if (segment.age_band === "65 and over") {
+    tips.push("Allow longer observation windows between contacts for this age band.");
+  }
+  tips.push("Add a supervisor review step before any escalated treatment.");
+  return tips;
+}
+
+/** Deterministic local "AI" suggestions — stays on the create screen (lovable behaviour). */
+export function suggestFromPrompt(
+  prompt: string,
+  segment?: { delinquency?: string; balance_band?: string },
+): DraftStep[] {
   const p = prompt.toLowerCase();
   const gentle = /gentle|soft|early|gradual|remind/.test(p);
   const urgent = /urgent|fast|aggressive|escalat|final|late|overdue/.test(p);
   const smsFirst = /sms|text|mobile/.test(p);
   const wantsPlan = /plan|installment|instalment|arrangement|afford/.test(p);
   const wantsReview = /review|supervisor|approval|sensitive/.test(p);
+  const lateSegment = (segment?.delinquency || "").includes("90");
 
   const first = makeDraftStep("Communication");
   first.channel = smsFirst ? "SMS" : "Email";
   first.purpose = MESSAGE_PURPOSES[0];
   first.amount = urgent ? 0 : 1;
-  first.referenceEvent = "Case Received";
+  first.referenceEvent = "Previous Action";
 
   const wait = makeDraftStep("Wait");
   wait.amount = urgent ? 2 : gentle ? 5 : 3;
-  wait.referenceEvent = smsFirst ? "Previous SMS" : "Previous Email";
+  wait.referenceEvent = "Previous Action";
 
   const check = makeDraftStep("Condition");
 
   const second = makeDraftStep("Communication");
   second.channel = smsFirst ? "Email" : "SMS";
-  second.purpose = wantsPlan ? "Payment Plan Reminder" : "Promise-to-Pay Reminder";
+  second.purpose = wantsPlan
+    ? MESSAGE_PURPOSES.find((m) => /plan|arrangement/i.test(m)) || MESSAGE_PURPOSES[0]!
+    : MESSAGE_PURPOSES[1] || MESSAGE_PURPOSES[0]!;
   second.amount = urgent ? 1 : 3;
   second.referenceEvent = "Previous Action";
 
   const steps: DraftStep[] = [first, wait, check, second, makeDraftStep("AI Reassessment")];
-  if (urgent) {
+  if (lateSegment || urgent) {
     const finalNotice = makeDraftStep("Communication");
     finalNotice.channel = "Email";
-    finalNotice.purpose = "Firm Reminder";
+    finalNotice.purpose =
+      MESSAGE_PURPOSES.find((m) => /final|firm|notice/i.test(m)) || MESSAGE_PURPOSES[0]!;
     finalNotice.amount = 5;
     finalNotice.referenceEvent = "Previous Action";
     steps.push(finalNotice);

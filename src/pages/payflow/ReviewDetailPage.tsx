@@ -198,7 +198,19 @@ export function PayFlowReviewDetailPage() {
   const clientLabel = review.client_name || "Client";
   const customer = review.customer_name || "Customer";
   const reference = review.account_reference || review.case_reference || "—";
-  const workflow = review.current_workflow || "—";
+  const workflowCtx = review.workflow_context;
+  const execution = workflowCtx?.execution;
+  const exceptionStep = review.exception_step || workflowCtx?.exception_step;
+  const workflow =
+    workflowCtx?.strategy_name ||
+    review.current_workflow ||
+    execution?.strategy_name ||
+    "—";
+  const workflowPath =
+    workflowCtx?.workflow_definition_path ||
+    execution?.workflow_definition_path ||
+    (review.strategy_id ? `/payflow/workflows/${review.strategy_id}` : null);
+  const awaiting = review.status === "Awaiting Review";
   const canDecide = !!review.can_decide;
   const canModify = !!review.can_modify;
   const completed = COMPLETED_STATUSES.includes(review.status);
@@ -206,6 +218,7 @@ export function PayFlowReviewDetailPage() {
   const explanation = review.explanation || [];
   const timeline = review.timeline || [];
   const history = review.history || [];
+  const missingRefs = review.missing_refs || [];
   const close = () => setMode(null);
 
   return (
@@ -241,13 +254,28 @@ export function PayFlowReviewDetailPage() {
       ) : null}
       {error ? <p className="mb-3 text-sm text-destructive">{error}</p> : null}
 
+      {missingRefs.length > 0 ? (
+        <div className="mb-5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3">
+          <p className="text-[13px] font-semibold text-foreground">
+            Some linked references are unavailable
+          </p>
+          <ul className="mt-1.5 list-disc space-y-1 pl-4">
+            {missingRefs.map((m) => (
+              <li key={m.ref} className="text-[12px] text-muted-foreground">
+                {m.message}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       <div className="grid gap-5 lg:grid-cols-[1fr_330px]">
         <div className="space-y-5">
           <section className="rounded-lg border border-warning/40 bg-warning/8 px-5 py-4">
             <p className="text-eyebrow">Why this requires review</p>
             <dl className="mt-3 grid gap-3 sm:grid-cols-2">
               <Pair label="Triggered Rule">
-                {review.rule_id ? (
+                {review.rule_id && review.rule_name !== "Rule unavailable" ? (
                   <Link
                     to={`/payflow/rules/${review.rule_id}`}
                     className="text-[13px] font-semibold text-primary hover:underline"
@@ -264,10 +292,31 @@ export function PayFlowReviewDetailPage() {
               <Pair label="Observed Value">
                 <span className="text-[13px] font-medium">{review.observed_value || "—"}</span>
               </Pair>
+              <Pair label="Exception step">
+                <span className="text-[13px] font-medium">
+                  {exceptionStep?.title ||
+                    exceptionStep?.id ||
+                    review.exception_step_id ||
+                    "—"}
+                  {exceptionStep?.kind ? ` · ${exceptionStep.kind}` : ""}
+                </span>
+              </Pair>
+              <Pair label="Workflow version">
+                <span className="text-[13px] font-medium">
+                  {review.workflow_version != null
+                    ? `v${review.workflow_version}`
+                    : workflowCtx?.workflow_version != null
+                      ? `v${workflowCtx.workflow_version}`
+                      : "—"}
+                </span>
+              </Pair>
               <Pair label="Result">
                 <span className="text-[13px] font-medium">Require Human Review</span>
               </Pair>
             </dl>
+            {exceptionStep?.message ? (
+              <p className="mt-2 text-[12px] text-muted-foreground">{exceptionStep.message}</p>
+            ) : null}
           </section>
 
           <Panel
@@ -307,11 +356,63 @@ export function PayFlowReviewDetailPage() {
             ) : null}
           </Panel>
 
+          {execution ? (
+            <Panel
+              title="Live workflow execution"
+              description="Current run state for this collection case"
+              action={
+                workflowPath ? (
+                  <Link
+                    to={workflowPath}
+                    className="text-[12px] font-medium text-primary hover:underline"
+                  >
+                    Open workflow
+                  </Link>
+                ) : undefined
+              }
+            >
+              <dl className="divide-y divide-border">
+                <Row label="Run status">
+                  <span className="text-[12px] font-medium">{execution.status || "—"}</span>
+                </Row>
+                <Row label="Current step">
+                  <span className="text-[12px] font-medium">
+                    {execution.current_step_title || execution.current_step_id || "—"}
+                    {execution.current_step_kind ? ` · ${execution.current_step_kind}` : ""}
+                  </span>
+                </Row>
+                <Row label="Next scheduled">
+                  <span className="text-[12px] font-medium">
+                    {execution.next_step_title || execution.next_step_id || "—"}
+                    {execution.next_scheduled_at
+                      ? ` · ${new Date(execution.next_scheduled_at).toLocaleString()}`
+                      : ""}
+                  </span>
+                </Row>
+                {execution.block_reason ? (
+                  <Row label="Block / pause reason">
+                    <span className="text-[12px] font-medium text-amber-700 dark:text-amber-400">
+                      {execution.block_reason}
+                    </span>
+                  </Row>
+                ) : null}
+              </dl>
+              <Link
+                to={`/payflow/cases/${review.account_id}`}
+                className="mt-3 inline-block text-[12px] font-medium text-primary hover:underline"
+              >
+                Open collection case execution
+              </Link>
+            </Panel>
+          ) : null}
+
           <WorkflowFlowPanel
             clientId={review.client_id}
-            workflowName={review.current_workflow}
+            workflowName={
+              workflowCtx?.strategy_name || review.current_workflow || execution?.strategy_name
+            }
             title="Workflow Map"
-            description={`Where this exception sits in the ${review.current_workflow || "collection"} strategy. Click any step to review or adjust it.`}
+            description={`Where this exception sits in the ${workflow || "collection"} strategy. Click any step to review or adjust it.`}
           />
 
           <Panel title="Recent Activity" description="Events relevant to this decision">
@@ -496,6 +597,13 @@ export function PayFlowReviewDetailPage() {
               <Row label="Waiting">
                 <span className="tabular text-[12px] font-medium">
                   {review.waiting_label || `${review.waiting_minutes} min`}
+                </span>
+              </Row>
+              <Row label="Available actions">
+                <span className="text-[12px] font-medium">
+                  {(review.available_actions || []).length
+                    ? (review.available_actions || []).join(", ")
+                    : "—"}
                 </span>
               </Row>
               {review.hold_until ? (

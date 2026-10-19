@@ -67,8 +67,8 @@ function NotificationBell() {
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
 
-  const preview = items.filter((n) => !n.read).slice(0, 4);
-  const shown = preview.length > 0 ? preview : items.slice(0, 4);
+  // Show every loaded notification; panel scrolls so the header stays intact.
+  const shown = items;
 
   return (
     <div className="relative" ref={ref}>
@@ -94,14 +94,14 @@ function NotificationBell() {
       {open && (
         <div
           role="menu"
-          className="absolute right-0 z-40 mt-2 w-[300px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-panel dark:border-slate-700 dark:bg-slate-900"
+          className="absolute right-0 z-40 mt-2 flex w-[min(340px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-panel dark:border-slate-700 dark:bg-slate-900"
         >
-          <div className="border-b border-slate-100 px-3 py-2.5 dark:border-slate-800">
+          <div className="shrink-0 border-b border-slate-100 px-3 py-2.5 dark:border-slate-800">
             <p className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
               Needs your attention
             </p>
           </div>
-          <div className="max-h-[320px] overflow-y-auto py-1">
+          <div className="max-h-[min(420px,calc(100vh-9rem))] overflow-y-auto overscroll-contain py-1">
             {shown.length === 0 ? (
               <p className="px-3 py-4 text-[12px] text-slate-500">
                 Nothing needs a decision. Automation is running within governance.
@@ -112,7 +112,9 @@ function NotificationBell() {
                   key={n.id}
                   type="button"
                   role="menuitem"
-                  className="flex w-full flex-col items-start gap-0.5 px-3 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800"
+                  className={`flex w-full items-start gap-2 px-3 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800 ${
+                    n.read ? "opacity-75" : ""
+                  }`}
                   onClick={() => {
                     void (async () => {
                       if (!n.read) {
@@ -131,18 +133,30 @@ function NotificationBell() {
                     })();
                   }}
                 >
-                  <span className="text-[12px] font-medium text-slate-900 dark:text-slate-100">
-                    {n.title}
+                  <span
+                    className={`mt-1.5 size-1.5 shrink-0 rounded-full ${
+                      n.read ? "bg-transparent" : "bg-red-500"
+                    }`}
+                    aria-hidden
+                  />
+                  <span className="flex min-w-0 flex-col items-start gap-0.5">
+                    <span className="text-[12px] font-medium text-slate-900 dark:text-slate-100">
+                      {n.title}
+                    </span>
+                    {n.body && (
+                      <span className="line-clamp-2 text-[11px] text-slate-500">{n.body}</span>
+                    )}
                   </span>
-                  {n.body && (
-                    <span className="text-[11px] text-slate-500">{n.body}</span>
-                  )}
                 </button>
               ))
             )}
           </div>
-          <div className="flex items-center justify-between gap-2 border-t border-slate-100 px-3 py-2 dark:border-slate-800">
-            <span className="text-[11px] text-slate-400">Notifications</span>
+          <div className="flex shrink-0 items-center justify-between gap-2 border-t border-slate-100 px-3 py-2 dark:border-slate-800">
+            <span className="text-[11px] text-slate-400">
+              {shown.length > 0
+                ? `${shown.length} notification${shown.length === 1 ? "" : "s"}`
+                : "Notifications"}
+            </span>
             {unread > 0 && (
               <button
                 type="button"

@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { StatusPill } from "./lovable/payflow-ui";
 import { cn } from "../../lib/utils";
 import {
@@ -10,6 +11,19 @@ import {
   timingLabel,
 } from "../../lib/strategy-workflow";
 import type { PayflowStrategy, PayflowStrategyStep } from "../../types";
+
+const CANVAS_ZOOM_MIN = 0.5;
+const CANVAS_ZOOM_MAX = 1.75;
+const CANVAS_ZOOM_STEP = 0.1;
+
+function clampCanvasZoom(value: number) {
+  return Math.min(CANVAS_ZOOM_MAX, Math.max(CANVAS_ZOOM_MIN, Math.round(value * 100) / 100));
+}
+
+function isCanvasInteractiveTarget(target: EventTarget | null) {
+  if (!(target instanceof Element)) return false;
+  return Boolean(target.closest('[role="button"], button, a, input, textarea, select, label'));
+}
 
 function NodeIcon({ kind, channel }: { kind: string; channel?: string | null }) {
   const cls = "size-4";
@@ -325,16 +339,85 @@ export function StrategyCanvas({
   const nodes = stepsById(linked);
   const entry = entryNodeId(linked);
 
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const panRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    scrollLeft: number;
+    scrollTop: number;
+  } | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [panning, setPanning] = useState(false);
+
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+
+    const onWheel = (event: WheelEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      event.preventDefault();
+      const direction = event.deltaY > 0 ? -1 : 1;
+      setZoom((current) => clampCanvasZoom(current + direction * CANVAS_ZOOM_STEP));
+    };
+
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
+  const endPan = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (panRef.current?.pointerId !== event.pointerId) return;
+    panRef.current = null;
+    setPanning(false);
+    try {
+      viewportRef.current?.releasePointerCapture(event.pointerId);
+    } catch {
+      /* already released */
+    }
+  };
+
   return (
     <div
-      className="overflow-x-auto rounded-xl border border-border/70 bg-surface px-6 py-8"
+      ref={viewportRef}
+      className={cn(
+        "overflow-auto rounded-xl border border-border/70 bg-surface px-6 py-8",
+        panning ? "cursor-grabbing select-none" : "cursor-grab",
+      )}
       style={{
         backgroundImage:
           "radial-gradient(color-mix(in oklab, var(--color-border-strong) 60%, transparent) 1px, transparent 1px)",
         backgroundSize: "18px 18px",
       }}
+      title="Drag to pan · Ctrl + scroll to zoom"
+      onPointerDown={(event) => {
+        if (event.button !== 0 || isCanvasInteractiveTarget(event.target)) return;
+        const el = viewportRef.current;
+        if (!el) return;
+        panRef.current = {
+          pointerId: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          scrollLeft: el.scrollLeft,
+          scrollTop: el.scrollTop,
+        };
+        el.setPointerCapture(event.pointerId);
+        setPanning(true);
+      }}
+      onPointerMove={(event) => {
+        const pan = panRef.current;
+        const el = viewportRef.current;
+        if (!pan || !el || pan.pointerId !== event.pointerId) return;
+        el.scrollLeft = pan.scrollLeft - (event.clientX - pan.startX);
+        el.scrollTop = pan.scrollTop - (event.clientY - pan.startY);
+      }}
+      onPointerUp={endPan}
+      onPointerCancel={endPan}
+      onDoubleClick={(event) => {
+        if (isCanvasInteractiveTarget(event.target)) return;
+        setZoom(1);
+      }}
     >
-      <div className="flex min-w-max justify-center">
+      <div className="flex min-w-max justify-center" style={{ zoom } as CSSProperties}>
         <NodeBranch
           nodes={nodes}
           nodeId={entry}

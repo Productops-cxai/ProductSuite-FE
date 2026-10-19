@@ -18,6 +18,7 @@ import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { incompleteSetupSections, isClientSettingUp } from "../../lib/client-setup";
 import { invalidateCache } from "../../lib/dedupeAsync";
+import { SHOW_PAYFLOW_DELETE } from "../../lib/payflow-features";
 import type { PayflowClient } from "../../types";
 
 function clientStatusTone(status: string): Tone {
@@ -69,7 +70,7 @@ export function PayFlowClientsPage() {
   const { hasPermission } = usePayFlowAccess();
   const canCreate = hasPermission("create_client");
   const canEdit = hasPermission("edit_client");
-  const canDelete = hasPermission("delete_client");
+  const canDelete = SHOW_PAYFLOW_DELETE && hasPermission("delete_client");
   const canImport = hasPermission("import_clients");
   const [searchParams] = useSearchParams();
   const [clients, setClients] = useState<PayflowClient[]>([]);

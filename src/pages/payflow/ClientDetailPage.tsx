@@ -43,6 +43,7 @@ import {
 } from "../../components/payflow/lovable/payflow-ui";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
+import { SHOW_PAYFLOW_DELETE } from "../../lib/payflow-features";
 import {
   buildActivationChecks,
   buildOnboardingStages,
@@ -91,7 +92,7 @@ export function PayFlowClientDetailPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { hasPermission } = usePayFlowAccess();
   const canEdit = hasPermission("edit_client");
-  const canDelete = hasPermission("delete_client");
+  const canDelete = SHOW_PAYFLOW_DELETE && hasPermission("delete_client");
   const id = Number(clientId);
 
   const initialTab = (searchParams.get("tab") as MainTab) || "Overview";

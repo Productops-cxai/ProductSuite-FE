@@ -35,6 +35,8 @@ import type {
   PayflowStrategyStep,
   PayflowUser,
   PayflowUsersListResponse,
+  PayflowAccountWorkflowExecutionResponse,
+  PayflowWorkflowRun,
   PayflowWorkflowWorkerLogsResponse,
 } from "../types";
 
@@ -800,6 +802,16 @@ export function listPayflowWorkflowWorkerLogs(params?: {
   return apiRequest<PayflowWorkflowWorkerLogsResponse>(
     `/payflow/workflow-worker-logs${qs ? `?${qs}` : ""}`,
   );
+}
+
+export function getAccountWorkflowExecution(accountId: number) {
+  return apiRequest<PayflowAccountWorkflowExecutionResponse>(
+    `/payflow/accounts/${accountId}/workflow-execution`,
+  );
+}
+
+export function getPayflowWorkflowRun(runId: number) {
+  return apiRequest<PayflowWorkflowRun>(`/payflow/workflow-runs/${runId}`);
 }
 
 export function listPayflowComms(params?: {

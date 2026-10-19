@@ -12,6 +12,8 @@ type Props = {
   minLength?: number;
   hint?: string;
   placeholder?: string;
+  /** Prefill when the modal opens (e.g. Request regeneration panel note). */
+  initialNote?: string;
   onClose: () => void;
   onConfirm: (note: string) => void;
 };
@@ -26,14 +28,15 @@ export function WorkflowActionNoteModal({
   minLength = 0,
   hint = "Sent to PayFlow AI for reassessment and learning.",
   placeholder = "Explain why this action is being taken…",
+  initialNote = "",
   onClose,
   onConfirm,
 }: Props) {
   const [note, setNote] = useState("");
 
   useEffect(() => {
-    if (open) setNote("");
-  }, [open]);
+    if (open) setNote(initialNote);
+  }, [open, initialNote]);
 
   const trimmed = note.trim();
   const tooShort = required && trimmed.length < Math.max(minLength, 1);

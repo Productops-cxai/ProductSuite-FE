@@ -28,6 +28,7 @@ import {
   Tr,
 } from "../../components/payflow-ui";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
+import { SHOW_PAYFLOW_DELETE } from "../../lib/payflow-features";
 import type {
   PayflowPermissionGroup,
   PayflowRoleListItem,
@@ -465,7 +466,7 @@ function RolesPanel({
                       ? "Edit access"
                       : "View access"}
                 </Btn>
-                {canManageRoles ? (
+                {SHOW_PAYFLOW_DELETE && canManageRoles ? (
                   <Btn
                     variant="danger"
                     disabled={r.is_built_in || r.user_count > 0 || busy}
