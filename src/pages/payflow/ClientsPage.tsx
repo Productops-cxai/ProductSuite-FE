@@ -242,6 +242,24 @@ export function PayFlowClientsPage() {
                           {remainingSteps.length === 1 ? ` · ${remainingSteps[0]}` : ""}
                         </StatusPill>
                       ) : null}
+                      {(c.setup_issues || []).length > 0 ? (
+                        <ul className="max-w-[320px] list-disc space-y-0.5 pl-4 text-[11.5px] text-muted-foreground">
+                          {(c.setup_issues || []).slice(0, 4).map((issue) => (
+                            <li key={issue}>{issue}</li>
+                          ))}
+                          {(c.setup_issues || []).length > 4 ? (
+                            <li>+{(c.setup_issues || []).length - 4} more…</li>
+                          ) : null}
+                        </ul>
+                      ) : remainingSteps.length > 1 ? (
+                        <div className="flex max-w-[320px] flex-wrap gap-1">
+                          {remainingSteps.slice(0, 4).map((step) => (
+                            <StatusPill key={step} tone="warning">
+                              {step}
+                            </StatusPill>
+                          ))}
+                        </div>
+                      ) : null}
                       {canEdit ? (
                         <Link
                           to={
