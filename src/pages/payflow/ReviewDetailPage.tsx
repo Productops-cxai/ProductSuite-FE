@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import {
@@ -21,6 +21,7 @@ import {
   TextInput,
   type Tone,
 } from "../../components/payflow/lovable/payflow-ui";
+import { Modal } from "../../components/ui/Modal";
 import type { PayflowReview } from "../../types";
 
 function formatCurrency(value: number) {
@@ -75,6 +76,14 @@ const REJECTION_REASONS = [
 
 type DecisionMode = "approve" | "modify" | "reject" | "hold" | null;
 
+const COMPLETED_STATUSES = ["Approved", "Modified", "Rejected", "Completed"];
+
+type PendingDecision =
+  | { mode: "approve"; note: string }
+  | { mode: "modify"; action: string; guidance: string }
+  | { mode: "reject"; reason: string; comment: string }
+  | { mode: "hold"; until: string; reason: string };
+
 function ChevronDown({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
@@ -88,9 +97,12 @@ export function PayFlowReviewDetailPage() {
   const [review, setReview] = useState<PayflowReview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<DecisionMode>(null);
+  const [pending, setPending] = useState<PendingDecision | null>(null);
   const [showExplanation, setShowExplanation] = useState(false);
+  const submitting = useRef(false);
 
   useEffect(() => {
     const id = Number(reviewId);
@@ -119,16 +131,53 @@ export function PayFlowReviewDetailPage() {
     };
   }, [reviewId]);
 
-  async function applyDecision(task: () => Promise<PayflowReview>) {
+  function askConfirm(decision: PendingDecision) {
+    if (busy || submitting.current) return;
+    setError("");
+    setPending(decision);
+  }
+
+  async function submitPending() {
+    if (!review || !pending || submitting.current) return;
+    submitting.current = true;
     setBusy(true);
     setError("");
+    setNotice("");
     try {
-      const updated = await task();
-      setReview(updated);
+      let updated: PayflowReview;
+      if (pending.mode === "approve") {
+        updated = await approvePayflowReview(review.id, { note: pending.note || undefined });
+      } else if (pending.mode === "modify") {
+        updated = await modifyPayflowReview(review.id, {
+          action: pending.action,
+          guidance: pending.guidance,
+        });
+      } else if (pending.mode === "reject") {
+        updated = await rejectPayflowReview(review.id, {
+          reason: pending.reason,
+          comment: pending.comment,
+        });
+      } else {
+        updated = await holdPayflowReview(review.id, {
+          until: pending.until,
+          reason: pending.reason,
+        });
+      }
+      let fresh = updated;
+      try {
+        fresh = await getPayflowReview(review.id);
+      } catch {
+        fresh = updated;
+      }
+      setReview(fresh);
       setMode(null);
+      setPending(null);
+      setNotice(`Decision recorded. This review is now ${fresh.status}.`);
     } catch (err) {
+      setPending(null);
       setError(err instanceof ApiError ? err.detail : "Decision failed");
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   }
@@ -150,10 +199,10 @@ export function PayFlowReviewDetailPage() {
   const customer = review.customer_name || "Customer";
   const reference = review.account_reference || review.case_reference || "—";
   const workflow = review.current_workflow || "—";
-  const awaiting = review.status === "Awaiting Review";
   const canDecide = !!review.can_decide;
   const canModify = !!review.can_modify;
-  const decidable = awaiting && canDecide;
+  const completed = COMPLETED_STATUSES.includes(review.status);
+  const decidable = canDecide && !completed;
   const explanation = review.explanation || [];
   const timeline = review.timeline || [];
   const history = review.history || [];
@@ -185,6 +234,11 @@ export function PayFlowReviewDetailPage() {
         />
       </div>
 
+      {notice ? (
+        <p className="mb-3 rounded-lg border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
+          {notice}
+        </p>
+      ) : null}
       {error ? <p className="mb-3 text-sm text-destructive">{error}</p> : null}
 
       <div className="grid gap-5 lg:grid-cols-[1fr_330px]">
@@ -291,18 +345,18 @@ export function PayFlowReviewDetailPage() {
             ) : (
               <>
                 <div className="flex flex-wrap gap-2">
-                  <Btn variant="primary" onClick={() => setMode("approve")} disabled={busy}>
+                  <Btn variant="primary" onClick={() => setMode("approve")} disabled={busy || !!pending}>
                     Approve
                   </Btn>
                   {canModify ? (
-                    <Btn onClick={() => setMode("modify")} disabled={busy}>
+                    <Btn onClick={() => setMode("modify")} disabled={busy || !!pending}>
                       Modify / Guide
                     </Btn>
                   ) : null}
-                  <Btn variant="danger" onClick={() => setMode("reject")} disabled={busy}>
+                  <Btn variant="danger" onClick={() => setMode("reject")} disabled={busy || !!pending}>
                     Reject
                   </Btn>
-                  <Btn onClick={() => setMode("hold")} disabled={busy}>
+                  <Btn onClick={() => setMode("hold")} disabled={busy || !!pending}>
                     Hold
                   </Btn>
                 </div>
@@ -316,54 +370,31 @@ export function PayFlowReviewDetailPage() {
                 {mode === "approve" ? (
                   <ApprovePanel
                     review={review}
-                    busy={busy}
+                    busy={busy || !!pending}
                     onCancel={close}
-                    onConfirm={(note) =>
-                      applyDecision(() => approvePayflowReview(review.id, { note: note || undefined }))
-                    }
+                    onConfirm={(note) => askConfirm({ mode: "approve", note })}
                   />
                 ) : null}
                 {mode === "modify" ? (
                   <ModifyPanel
                     review={review}
-                    busy={busy}
+                    busy={busy || !!pending}
                     onCancel={close}
-                    onConfirm={(input) =>
-                      applyDecision(() =>
-                        modifyPayflowReview(review.id, {
-                          action: input.action,
-                          guidance: input.guidance || undefined,
-                        }),
-                      )
-                    }
+                    onConfirm={(input) => askConfirm({ mode: "modify", ...input })}
                   />
                 ) : null}
                 {mode === "reject" ? (
                   <RejectPanel
-                    busy={busy}
+                    busy={busy || !!pending}
                     onCancel={close}
-                    onConfirm={(input) =>
-                      applyDecision(() =>
-                        rejectPayflowReview(review.id, {
-                          reason: input.reason,
-                          comment: input.comment || undefined,
-                        }),
-                      )
-                    }
+                    onConfirm={(input) => askConfirm({ mode: "reject", ...input })}
                   />
                 ) : null}
                 {mode === "hold" ? (
                   <HoldPanel
-                    busy={busy}
+                    busy={busy || !!pending}
                     onCancel={close}
-                    onConfirm={(input) =>
-                      applyDecision(() =>
-                        holdPayflowReview(review.id, {
-                          until: input.until || undefined,
-                          reason: input.reason || undefined,
-                        }),
-                      )
-                    }
+                    onConfirm={(input) => askConfirm({ mode: "hold", ...input })}
                   />
                 ) : null}
               </>
@@ -480,6 +511,17 @@ export function PayFlowReviewDetailPage() {
           </Panel>
         </div>
       </div>
+
+      <DecisionConfirm
+        pending={pending}
+        busy={busy}
+        onClose={() => {
+          if (!busy) setPending(null);
+        }}
+        onConfirm={() => {
+          void submitPending();
+        }}
+      />
     </>
   );
 }
@@ -511,6 +553,86 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+function DecisionConfirm({
+  pending,
+  busy,
+  onClose,
+  onConfirm,
+}: {
+  pending: PendingDecision | null;
+  busy: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  if (!pending) return null;
+  const lines: [string, string][] =
+    pending.mode === "approve"
+      ? [["Decision", "Approve recommended action"], ...(pending.note ? [["Note", pending.note] as [string, string]] : [])]
+      : pending.mode === "modify"
+        ? [
+            ["Final action", pending.action],
+            ["Reason / remarks", pending.guidance],
+          ]
+        : pending.mode === "reject"
+          ? [
+              ["Rejection reason", pending.reason],
+              ["Reason / remarks", pending.comment],
+            ]
+          : [
+              ["Hold until", pending.until],
+              ["Reason / remarks", pending.reason],
+            ];
+  const title =
+    pending.mode === "approve"
+      ? "Confirm approval"
+      : pending.mode === "modify"
+        ? "Confirm modified treatment"
+        : pending.mode === "reject"
+          ? "Confirm rejection"
+          : "Confirm hold";
+  const confirmLabel =
+    pending.mode === "approve"
+      ? "Approve & Continue"
+      : pending.mode === "modify"
+        ? "Apply guidance"
+        : pending.mode === "reject"
+          ? "Reject action"
+          : "Place on hold";
+  return (
+    <Modal
+      open
+      title={title}
+      description="Check this decision before it is sent. The server will accept or reject it."
+      onClose={onClose}
+      showClose={!busy}
+      overlayClassName="z-[80]"
+      footer={
+        <div className="mt-2 flex justify-end gap-2.5">
+          <Btn variant="ghost" onClick={onClose} disabled={busy}>
+            Back
+          </Btn>
+          <Btn
+            variant={pending.mode === "reject" ? "danger" : "primary"}
+            onClick={onConfirm}
+            disabled={busy}
+          >
+            {busy ? "Saving…" : confirmLabel}
+          </Btn>
+        </div>
+      }
+    >
+      <dl className="space-y-2 text-[13px]">
+        {lines.map(([label, value]) => (
+          <div key={label}>
+            <dt className="text-[11px] text-slate-500">{label}</dt>
+            <dd className="font-medium text-slate-900">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </Modal>
+  );
+}
+
 function DecisionBox({ children }: { children: ReactNode }) {
   return <div className="mt-4 rounded-lg border border-border bg-surface px-4 py-4">{children}</div>;
 }
@@ -535,16 +657,17 @@ function ApprovePanel({
         proceeds on the collection case.
       </p>
       <div className="mt-3">
-        <Field label="Decision note (optional)" hint="Recorded with the decision.">
+        <Field label="Decision note (optional)" hint="Recorded with the decision. You will confirm before it is submitted.">
           <TextArea
             value={note}
             onChange={setNote}
             placeholder="Balance verified against the latest payment file."
+            disabled={busy}
           />
         </Field>
       </div>
       <div className="mt-3 flex gap-2">
-        <Btn variant="primary" disabled={busy} onClick={() => onConfirm(note)}>
+        <Btn variant="primary" disabled={busy} onClick={() => onConfirm(note.trim())}>
           {busy ? "Saving…" : "Approve & Continue"}
         </Btn>
         <Btn variant="ghost" onClick={onCancel} disabled={busy}>
@@ -572,24 +695,41 @@ function ModifyPanel({
       : PROPOSED_ACTIONS;
   const [action, setAction] = useState(review.proposed_action || options[0]);
   const [guidance, setGuidance] = useState("");
+  const [fieldError, setFieldError] = useState("");
   return (
     <DecisionBox>
       <p className="text-[13px] font-semibold text-foreground">Modify or guide the action</p>
       <p className="mt-1 text-[12px] text-muted-foreground">Recommended: {review.proposed_action}</p>
       <div className="mt-3 space-y-3">
-        <Field label="Final action">
-          <SelectInput value={action} options={options} onChange={setAction} />
+        <Field label="Final action" hint="Choose a permitted treatment. The server validates this choice.">
+          <SelectInput value={action} options={options} onChange={setAction} disabled={busy} />
         </Field>
-        <Field label="Guidance (optional)" hint="Recorded with the decision for future analysis.">
+        <Field label="Reason / remarks" hint="Required. Recorded with the decision.">
           <TextArea
             value={guidance}
-            onChange={setGuidance}
+            onChange={(value) => {
+              setGuidance(value);
+              if (value.trim()) setFieldError("");
+            }}
             placeholder="Customer made a recent partial payment. Maintain softer tone for the next communication."
+            disabled={busy}
           />
         </Field>
+        {fieldError ? <p className="text-[12px] text-destructive">{fieldError}</p> : null}
       </div>
       <div className="mt-3 flex gap-2">
-        <Btn variant="primary" disabled={busy} onClick={() => onConfirm({ action, guidance })}>
+        <Btn
+          variant="primary"
+          disabled={busy}
+          onClick={() => {
+            if (!guidance.trim()) {
+              setFieldError("Reason / remarks is required before this decision can be submitted.");
+              return;
+            }
+            setFieldError("");
+            onConfirm({ action, guidance: guidance.trim() });
+          }}
+        >
           {busy ? "Saving…" : "Apply Guidance & Continue"}
         </Btn>
         <Btn variant="ghost" onClick={onCancel} disabled={busy}>
@@ -611,6 +751,7 @@ function RejectPanel({
 }) {
   const [reason, setReason] = useState(REJECTION_REASONS[0]);
   const [comment, setComment] = useState("");
+  const [fieldError, setFieldError] = useState("");
   return (
     <DecisionBox>
       <p className="text-[13px] font-semibold text-foreground">Reject the proposed action</p>
@@ -620,14 +761,34 @@ function RejectPanel({
       </p>
       <div className="mt-3 space-y-3">
         <Field label="Rejection reason">
-          <SelectInput value={reason} options={REJECTION_REASONS} onChange={setReason} />
+          <SelectInput value={reason} options={REJECTION_REASONS} onChange={setReason} disabled={busy} />
         </Field>
-        <Field label="Comment (optional)">
-          <TextArea value={comment} onChange={setComment} placeholder="Additional context" />
+        <Field label="Reason / remarks" hint="Required. Recorded with the decision.">
+          <TextArea
+            value={comment}
+            onChange={(value) => {
+              setComment(value);
+              if (value.trim()) setFieldError("");
+            }}
+            placeholder="Additional context"
+            disabled={busy}
+          />
         </Field>
+        {fieldError ? <p className="text-[12px] text-destructive">{fieldError}</p> : null}
       </div>
       <div className="mt-3 flex gap-2">
-        <Btn variant="danger" disabled={busy} onClick={() => onConfirm({ reason, comment })}>
+        <Btn
+          variant="danger"
+          disabled={busy}
+          onClick={() => {
+            if (!comment.trim()) {
+              setFieldError("Reason / remarks is required before this decision can be submitted.");
+              return;
+            }
+            setFieldError("");
+            onConfirm({ reason, comment: comment.trim() });
+          }}
+        >
           {busy ? "Saving…" : "Reject Action"}
         </Btn>
         <Btn variant="ghost" onClick={onCancel} disabled={busy}>
@@ -650,6 +811,7 @@ function HoldPanel({
   const [until, setUntil] = useState("");
   const [reason, setReason] = useState("");
   const [furtherReview, setFurtherReview] = useState(false);
+  const [fieldError, setFieldError] = useState("");
   return (
     <DecisionBox>
       <p className="text-[13px] font-semibold text-foreground">Hold the proposed action</p>
@@ -674,20 +836,36 @@ function HoldPanel({
           />
           Hold until further review
         </label>
-        <Field label="Reason (optional)">
+        <Field label="Reason / remarks" hint="Required. Recorded with the decision.">
           <TextArea
             value={reason}
-            onChange={setReason}
+            onChange={(value) => {
+              setReason(value);
+              if (value.trim()) setFieldError("");
+            }}
             placeholder="Customer contacted support and requested 48 hours."
             disabled={busy}
           />
         </Field>
+        {fieldError ? <p className="text-[12px] text-destructive">{fieldError}</p> : null}
       </div>
       <div className="mt-3 flex gap-2">
         <Btn
           variant="primary"
           disabled={busy}
-          onClick={() => onConfirm({ until: furtherReview ? "Further review" : until, reason })}
+          onClick={() => {
+            const untilValue = furtherReview ? "Further review" : until.trim();
+            if (!untilValue) {
+              setFieldError("Enter when the hold ends, or choose hold until further review.");
+              return;
+            }
+            if (!reason.trim()) {
+              setFieldError("Reason / remarks is required before this decision can be submitted.");
+              return;
+            }
+            setFieldError("");
+            onConfirm({ until: untilValue, reason: reason.trim() });
+          }}
         >
           {busy ? "Saving…" : "Place On Hold"}
         </Btn>
@@ -700,16 +878,22 @@ function HoldPanel({
 }
 
 function ResolvedSummary({ review, canDecide }: { review: PayflowReview; canDecide: boolean }) {
-  if (review.status === "Awaiting Review" && !canDecide) {
+  const completed = COMPLETED_STATUSES.includes(review.status);
+  if (!canDecide && !completed) {
     return (
       <p className="text-[13px] text-muted-foreground">
         You have view-only access to human reviews for this client. Approving reviews requires the
-        “Approve Human Reviews” permission.
+        “Approve Human Reviews” permission. The server enforces that permission on every decision.
       </p>
     );
   }
   return (
     <div className="space-y-2">
+      {completed ? (
+        <p className="text-[13px] text-muted-foreground">
+          This review is complete and read-only.
+        </p>
+      ) : null}
       <div className="flex flex-wrap items-center gap-2">
         <StatusPill tone={reviewStatusTone(review.status)}>{review.status}</StatusPill>
         {review.assigned_supervisor ? <StatusPill>by {review.assigned_supervisor}</StatusPill> : null}
