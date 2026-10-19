@@ -20,6 +20,7 @@ import {
 } from "../../components/payflow/lovable/payflow-ui";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
+import { SHOW_PAYFLOW_DELETE } from "../../lib/payflow-features";
 import type { PayflowPortfolioDetail } from "../../types";
 
 const STATUS_OPTIONS = ["Onboarding", "Active", "Paused"] as const;
@@ -185,7 +186,7 @@ export function PayFlowPortfolioDetailPage() {
               {detail.status_label || labelFromStatus(detail.status)}
             </StatusPill>
             <StatusPill>{detail.code}</StatusPill>
-            {canEdit ? (
+            {SHOW_PAYFLOW_DELETE && canEdit ? (
               <Btn variant="danger" onClick={() => setConfirmDelete(true)}>
                 Delete
               </Btn>

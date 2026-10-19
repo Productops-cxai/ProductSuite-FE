@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import {
+  getAccountWorkflowExecution,
   getPayflowAccount,
   listPayflowComms,
   listPayflowReviews,
@@ -19,6 +20,8 @@ import type {
   PayflowAccount,
   PayflowCommunication,
   PayflowReview,
+  PayflowWorkflowRun,
+  PayflowWorkflowUiStatus,
 } from "../../types";
 
 function formatCurrency(value: number) {
@@ -82,6 +85,43 @@ function commStatusTone(status: string): Tone {
   }
 }
 
+function workflowUiTone(status?: PayflowWorkflowUiStatus | null): Tone {
+  switch (status) {
+    case "Completed":
+      return "success";
+    case "In Progress":
+      return "info";
+    case "Scheduled":
+    case "Pending":
+      return "neutral";
+    case "Blocked":
+      return "warning";
+    case "Failed":
+    case "Cancelled":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}
+
+function runStatusTone(status?: string | null): Tone {
+  switch ((status || "").toLowerCase()) {
+    case "completed":
+      return "success";
+    case "active":
+      return "info";
+    case "waiting":
+    case "pausedhumanreview":
+      return "warning";
+    case "failed":
+    case "cancelled":
+    case "superseded":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}
+
 function FactRows({ rows }: { rows: { label: string; value: string }[] }) {
   return (
     <dl className="divide-y divide-border">
@@ -115,6 +155,9 @@ type TimelineEvent = {
   label: string;
   detail: string;
   reviewId?: number;
+  communicationId?: number;
+  uiStatus?: PayflowWorkflowUiStatus;
+  href?: string;
 };
 
 export function PayFlowCaseDetailPage() {
@@ -122,6 +165,9 @@ export function PayFlowCaseDetailPage() {
   const [account, setAccount] = useState<PayflowAccount | null>(null);
   const [reviews, setReviews] = useState<PayflowReview[]>([]);
   const [comms, setComms] = useState<PayflowCommunication[]>([]);
+  const [execution, setExecution] = useState<PayflowWorkflowRun | null>(null);
+  const [executionLoading, setExecutionLoading] = useState(true);
+  const [executionError, setExecutionError] = useState("");
   const [loading, setLoading] = useState(true);
   const [sideLoading, setSideLoading] = useState(true);
   const [error, setError] = useState("");
@@ -160,33 +206,50 @@ export function PayFlowCaseDetailPage() {
     if (!account) {
       setReviews([]);
       setComms([]);
+      setExecution(null);
       setSideLoading(false);
+      setExecutionLoading(false);
       return;
     }
     let cancelled = false;
     setSideLoading(true);
+    setExecutionLoading(true);
+    setExecutionError("");
     Promise.all([
       listPayflowReviews({
         client_id: account.client_id,
         search: account.account_reference,
       }),
       listPayflowComms({ account_id: account.id }),
+      getAccountWorkflowExecution(account.id).catch((err) => {
+        if (!cancelled) {
+          setExecutionError(
+            err instanceof ApiError ? err.detail : "Failed to load workflow execution",
+          );
+        }
+        return { execution: null };
+      }),
     ])
-      .then(([reviewRes, commRes]) => {
+      .then(([reviewRes, commRes, execRes]) => {
         if (cancelled) return;
         setReviews(
           (reviewRes.reviews || []).filter((r) => r.account_id === account.id),
         );
         setComms(commRes.communications || []);
+        setExecution(execRes.execution || null);
       })
       .catch(() => {
         if (!cancelled) {
           setReviews([]);
           setComms([]);
+          setExecution(null);
         }
       })
       .finally(() => {
-        if (!cancelled) setSideLoading(false);
+        if (!cancelled) {
+          setSideLoading(false);
+          setExecutionLoading(false);
+        }
       });
     return () => {
       cancelled = true;
@@ -195,6 +258,19 @@ export function PayFlowCaseDetailPage() {
 
   const timeline = useMemo(() => {
     if (!account) return [] as TimelineEvent[];
+    const fromExecution: TimelineEvent[] = (execution?.activity || []).map((e) => ({
+      at: e.at ? formatStamp(e.at) : "—",
+      label: e.label,
+      detail: e.block_reason || e.error || e.detail || e.kind || "",
+      uiStatus: e.ui_status || undefined,
+      communicationId: e.communication_id || undefined,
+      reviewId: undefined,
+      href: e.communication_id
+        ? `/payflow/comms/${e.communication_id}`
+        : execution?.human_review_id && e.kind === "Human Review"
+          ? `/payflow/review/${execution.human_review_id}`
+          : undefined,
+    }));
     const base: TimelineEvent[] = (account.timeline || []).map((e) => ({
       at: e.at,
       label: e.label,
@@ -205,6 +281,8 @@ export function PayFlowCaseDetailPage() {
         at: e.at,
         label: e.label,
         detail: e.detail || `${c.channel} · ${c.purpose}`,
+        communicationId: c.id,
+        href: `/payflow/comms/${c.id}`,
       })),
     );
     const fromReviews: TimelineEvent[] = reviews.map((r) => ({
@@ -212,9 +290,12 @@ export function PayFlowCaseDetailPage() {
       label: r.reason,
       detail: `Rule: ${r.rule_name || "—"} · Proposed: ${r.proposed_action}`,
       reviewId: r.id,
+      href: `/payflow/review/${r.id}`,
+      uiStatus: r.status === "On Hold" ? "Blocked" : undefined,
     }));
-    return [...base, ...fromComms, ...fromReviews];
-  }, [account, comms, reviews]);
+    // Prefer execution activity first when present; still merge related records.
+    return [...fromExecution, ...base, ...fromComms, ...fromReviews];
+  }, [account, comms, reviews, execution]);
 
   if (loading) {
     return <p className="text-sm text-muted-foreground">Loading account…</p>;
@@ -370,38 +451,111 @@ export function PayFlowCaseDetailPage() {
             <DetailGrid rows={contactFacts} />
           </Panel>
 
-          {hasWorkflow ? (
-            <Panel
-              title="Current Workflow"
-              description="The collection strategy currently applied to this case"
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[14px] font-semibold text-foreground">
-                  {account.current_workflow}
-                </span>
-              </div>
-              <dl className="mt-3 divide-y divide-border border-t border-border">
-                <div className="flex items-center justify-between gap-4 py-2">
-                  <dt className="text-[13px] text-muted-foreground">Collection Status</dt>
-                  <dd className="text-[13px] font-medium text-foreground">
-                    {account.collection_status || "—"}
-                  </dd>
+          <Panel
+            title="Workflow Execution"
+            description="Assigned workflow version, run status, current step and next scheduled action"
+            action={
+              execution?.workflow_definition_path ? (
+                <Link
+                  to={execution.workflow_definition_path}
+                  className="text-[12px] font-medium text-primary hover:underline"
+                >
+                  Open workflow
+                </Link>
+              ) : hasWorkflow ? (
+                <Link
+                  to="/payflow/workflows"
+                  className="text-[12px] font-medium text-primary hover:underline"
+                >
+                  Workflows
+                </Link>
+              ) : null
+            }
+          >
+            {executionLoading ? (
+              <p className="text-[13px] text-muted-foreground">Loading execution…</p>
+            ) : null}
+            {!executionLoading && executionError ? (
+              <p className="text-[13px] text-destructive">{executionError}</p>
+            ) : null}
+            {!executionLoading && !executionError && !execution ? (
+              <EmptyState
+                title="No workflow execution"
+                description={
+                  hasWorkflow
+                    ? `Account shows “${account.current_workflow}” but no run is recorded yet.`
+                    : "No workflow is assigned to this collection case."
+                }
+              />
+            ) : null}
+            {!executionLoading && execution ? (
+              <>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[14px] font-semibold text-foreground">
+                    {execution.strategy_name || account.current_workflow || "Workflow"}
+                  </span>
+                  <StatusPill tone={runStatusTone(execution.status)}>
+                    {execution.status}
+                  </StatusPill>
+                  {execution.strategy_version != null ? (
+                    <StatusPill tone="neutral">v{execution.strategy_version}</StatusPill>
+                  ) : null}
                 </div>
-                <div className="flex items-center justify-between gap-4 py-2">
-                  <dt className="text-[13px] text-muted-foreground">Last Action</dt>
-                  <dd className="text-[13px] font-medium text-foreground">
-                    {account.last_action || "—"}
-                  </dd>
-                </div>
-                <div className="flex items-center justify-between gap-4 py-2">
-                  <dt className="text-[13px] text-muted-foreground">Next Planned Action</dt>
-                  <dd className="text-[13px] font-medium text-foreground">
-                    {account.next_action || "—"}
-                  </dd>
-                </div>
-              </dl>
-            </Panel>
-          ) : null}
+                {(execution.block_reason || execution.last_error) &&
+                ["Blocked", "Failed", "Waiting", "PausedHumanReview", "Cancelled"].some(
+                  (s) =>
+                    execution.status === s ||
+                    (execution.block_reason || "").length > 0,
+                ) ? (
+                  <p className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12px] text-foreground">
+                    {execution.block_reason || execution.last_error}
+                  </p>
+                ) : null}
+                <dl className="mt-3 divide-y divide-border border-t border-border">
+                  <div className="flex items-center justify-between gap-4 py-2">
+                    <dt className="text-[13px] text-muted-foreground">Current step</dt>
+                    <dd className="text-right text-[13px] font-medium text-foreground">
+                      {execution.current_step?.title ||
+                        execution.current_step_id ||
+                        "—"}
+                      {execution.current_step?.kind
+                        ? ` · ${execution.current_step.kind}`
+                        : ""}
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-4 py-2">
+                    <dt className="text-[13px] text-muted-foreground">Next scheduled</dt>
+                    <dd className="text-right text-[13px] font-medium text-foreground">
+                      {execution.next_step_title || execution.next_step_id || "—"}
+                      {execution.next_scheduled_at
+                        ? ` · ${formatStamp(execution.next_scheduled_at)}`
+                        : ""}
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-4 py-2">
+                    <dt className="text-[13px] text-muted-foreground">Last / next action</dt>
+                    <dd className="text-right text-[13px] font-medium text-foreground">
+                      {account.last_action || "—"}
+                      {account.next_action ? ` → ${account.next_action}` : ""}
+                    </dd>
+                  </div>
+                  {execution.human_review_id ? (
+                    <div className="flex items-center justify-between gap-4 py-2">
+                      <dt className="text-[13px] text-muted-foreground">Human review</dt>
+                      <dd className="text-right text-[13px] font-medium">
+                        <Link
+                          to={`/payflow/review/${execution.human_review_id}`}
+                          className="text-primary hover:underline"
+                        >
+                          Open review #{execution.human_review_id}
+                        </Link>
+                      </dd>
+                    </div>
+                  ) : null}
+                </dl>
+              </>
+            ) : null}
+          </Panel>
         </div>
 
         <div className="min-w-0 space-y-5">
@@ -462,32 +616,57 @@ export function PayFlowCaseDetailPage() {
             ) : null}
           </Panel>
 
-          <Panel title="Activity Timeline">
-            {visibleTimeline.length === 0 ? (
+          <Panel
+            title="Activity Timeline"
+            description="Triggered steps, communications, waits, decisions, payments and outcomes"
+          >
+            {sideLoading || executionLoading ? (
+              <p className="text-[13px] text-muted-foreground">Loading activity…</p>
+            ) : null}
+            {!sideLoading && !executionLoading && visibleTimeline.length === 0 ? (
               <p className="text-[13px] text-muted-foreground">No activity recorded yet.</p>
-            ) : (
+            ) : null}
+            {!sideLoading && !executionLoading && visibleTimeline.length > 0 ? (
               <ol className="relative space-y-4 pl-5">
                 <span className="absolute top-1.5 bottom-1.5 left-[5px] w-px bg-border" />
                 {visibleTimeline.map((event, index) => (
                   <li key={`${event.at}-${event.label}-${index}`} className="relative min-w-0">
                     <span className="absolute top-1.5 -left-5 size-[11px] rounded-full border-2 border-card bg-primary/70" />
-                    <p className="text-[13px] font-medium text-foreground">{event.label}</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-[13px] font-medium text-foreground">{event.label}</p>
+                      {event.uiStatus ? (
+                        <StatusPill tone={workflowUiTone(event.uiStatus)}>
+                          {event.uiStatus}
+                        </StatusPill>
+                      ) : null}
+                    </div>
                     <p className="mt-0.5 text-xs text-muted-foreground">{event.at}</p>
-                    <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-                      {event.detail}
-                    </p>
-                    {event.reviewId ? (
+                    {event.detail ? (
+                      <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                        {event.detail}
+                      </p>
+                    ) : null}
+                    {event.href || event.reviewId || event.communicationId ? (
                       <Link
-                        to={`/payflow/review/${event.reviewId}`}
+                        to={
+                          event.href ||
+                          (event.reviewId
+                            ? `/payflow/review/${event.reviewId}`
+                            : `/payflow/comms/${event.communicationId}`)
+                        }
                         className="mt-1 inline-block text-[11px] font-medium text-primary hover:underline"
                       >
-                        Open review
+                        {event.reviewId
+                          ? "Open review"
+                          : event.communicationId
+                            ? "Open communication"
+                            : "Open related record"}
                       </Link>
                     ) : null}
                   </li>
                 ))}
               </ol>
-            )}
+            ) : null}
             {hiddenCount > 0 ? (
               <button
                 type="button"
@@ -504,7 +683,7 @@ export function PayFlowCaseDetailPage() {
       <div className="mt-5 space-y-5">
         <WorkflowFlowPanel
           clientId={account.client_id}
-          workflowName={account.current_workflow}
+          workflowName={execution?.strategy_name || account.current_workflow}
           title="Workflow Map"
           description="The live visual strategy for this case. Click any step to review or adjust it."
         />
