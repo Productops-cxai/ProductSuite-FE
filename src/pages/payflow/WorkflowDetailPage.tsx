@@ -545,11 +545,11 @@ export function PayFlowWorkflowDetailPage() {
                 Deactivate
               </Btn>
             )}
-            {showDelete ? (
+            {/* {showDelete ? (
               <Btn variant="danger" disabled={busy} onClick={() => setConfirmDelete(true)}>
                 Delete
               </Btn>
-            ) : null}
+            ) : null} */}
           </div>
         }
       />
