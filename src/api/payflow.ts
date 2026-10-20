@@ -490,16 +490,24 @@ export function listPayflowReviews(params?: {
   status?: string;
   priority?: string;
   reason?: string;
+  rule_id?: number;
+  proposed_action?: string;
   search?: string;
   waiting_bucket?: string;
+  page?: number;
+  page_size?: number;
 }) {
   const q = new URLSearchParams();
   if (params?.client_id != null) q.set("client_id", String(params.client_id));
   if (params?.status) q.set("status", params.status);
   if (params?.priority) q.set("priority", params.priority);
   if (params?.reason) q.set("reason", params.reason);
+  if (params?.rule_id != null) q.set("rule_id", String(params.rule_id));
+  if (params?.proposed_action) q.set("proposed_action", params.proposed_action);
   if (params?.search) q.set("search", params.search);
   if (params?.waiting_bucket) q.set("waiting_bucket", params.waiting_bucket);
+  if (params?.page != null) q.set("page", String(params.page));
+  if (params?.page_size != null) q.set("page_size", String(params.page_size));
   const qs = q.toString();
   return apiRequest<PayflowReviewsListResponse>(`/payflow/reviews${qs ? `?${qs}` : ""}`);
 }
@@ -508,7 +516,10 @@ export function getPayflowReview(reviewId: number) {
   return apiRequest<PayflowReview>(`/payflow/reviews/${reviewId}`);
 }
 
-export async function approvePayflowReview(reviewId: number, payload?: { note?: string }) {
+export async function approvePayflowReview(
+  reviewId: number,
+  payload?: { note?: string; decision_version?: number },
+) {
   return apiRequest<PayflowReview>(`/payflow/reviews/${reviewId}/approve`, {
     method: "POST",
     body: payload || {},
@@ -517,7 +528,7 @@ export async function approvePayflowReview(reviewId: number, payload?: { note?: 
 
 export async function modifyPayflowReview(
   reviewId: number,
-  payload: { action: string; guidance?: string },
+  payload: { action: string; guidance?: string; decision_version?: number },
 ) {
   return apiRequest<PayflowReview>(`/payflow/reviews/${reviewId}/modify`, {
     method: "POST",
@@ -527,7 +538,7 @@ export async function modifyPayflowReview(
 
 export async function rejectPayflowReview(
   reviewId: number,
-  payload: { reason: string; comment?: string },
+  payload: { reason: string; comment?: string; decision_version?: number },
 ) {
   return apiRequest<PayflowReview>(`/payflow/reviews/${reviewId}/reject`, {
     method: "POST",
@@ -537,9 +548,19 @@ export async function rejectPayflowReview(
 
 export async function holdPayflowReview(
   reviewId: number,
-  payload?: { until?: string; reason?: string },
+  payload?: { until?: string; reason?: string; decision_version?: number },
 ) {
   return apiRequest<PayflowReview>(`/payflow/reviews/${reviewId}/hold`, {
+    method: "POST",
+    body: payload || {},
+  });
+}
+
+export async function releasePayflowReview(
+  reviewId: number,
+  payload?: { note?: string; decision_version?: number },
+) {
+  return apiRequest<PayflowReview>(`/payflow/reviews/${reviewId}/release`, {
     method: "POST",
     body: payload || {},
   });

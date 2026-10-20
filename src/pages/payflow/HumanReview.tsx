@@ -8,6 +8,7 @@ import {
   FilterSelect,
   KpiCard,
   PageHeader,
+  Panel,
   PrimaryCell,
   SearchInput,
   StatusPill,
@@ -15,6 +16,7 @@ import {
   Tr,
   type Tone,
 } from "../../components/payflow/lovable/payflow-ui";
+import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import type {
   PayflowClient,
   PayflowReview,
@@ -40,6 +42,8 @@ function reviewStatusTone(status: string): Tone {
       return "info";
     case "Rejected":
       return "danger";
+    case "On Hold":
+      return "warning";
     default:
       return "neutral";
   }
@@ -51,8 +55,13 @@ function priorityTone(priority: string): Tone {
   return "neutral";
 }
 
+function isAll(value: string, prefix: string) {
+  return !value || value === `All ${prefix}` || value.startsWith("All ");
+}
+
 export function PayFlowHumanReview() {
   const [searchParams] = useSearchParams();
+  const { isOperationsAdmin } = usePayFlowAccess();
   const [reviews, setReviews] = useState<PayflowReview[]>([]);
   const [clients, setClients] = useState<PayflowClient[]>([]);
   const [summary, setSummary] = useState<PayflowReviewsSummary>({
@@ -70,7 +79,9 @@ export function PayFlowHumanReview() {
   const [error, setError] = useState("");
 
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [client, setClient] = useState(searchParams.get("client") || "All Clients");
+  const [subClient, setSubClient] = useState("All Sub-Clients");
   const [status, setStatus] = useState(searchParams.get("status") || "All Statuses");
   const [priority, setPriority] = useState(searchParams.get("priority") || "All Priorities");
   const [reason, setReason] = useState("All Reasons");
@@ -88,11 +99,48 @@ export function PayFlowHumanReview() {
   }, [searchParams]);
 
   useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => window.clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => {
+    let cancelled = false;
+    listPayflowClients({})
+      .then((clientRes) => {
+        if (!cancelled) setClients(clientRes.clients || []);
+      })
+      .catch(() => {
+        /* catalog still loads with reviews */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const selectedClientId = useMemo(() => {
+    if (isAll(client, "Clients")) return undefined;
+    return clients.find((c) => c.name === client)?.id;
+  }, [client, clients]);
+
+  useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError("");
-    Promise.all([listPayflowReviews({}), listPayflowClients({})])
-      .then(([reviewRes, clientRes]) => {
+
+    const params: Parameters<typeof listPayflowReviews>[0] = {
+      page: 1,
+      page_size: 200,
+    };
+    if (selectedClientId != null) params.client_id = selectedClientId;
+    if (!isAll(status, "Statuses")) params.status = status;
+    if (!isAll(priority, "Priorities")) params.priority = priority;
+    if (!isAll(reason, "Reasons")) params.reason = reason;
+    if (!isAll(action, "Actions")) params.proposed_action = action;
+    if (debouncedSearch) params.search = debouncedSearch;
+    if (age && age !== "Any Age") params.waiting_bucket = age;
+
+    listPayflowReviews(params)
+      .then((reviewRes) => {
         if (cancelled) return;
         setReviews(reviewRes.reviews || []);
         setSummary(reviewRes.summary);
@@ -101,7 +149,6 @@ export function PayFlowHumanReview() {
         setReasons(reviewRes.reasons || []);
         setActions(reviewRes.proposed_actions || []);
         setWaitingBuckets(reviewRes.waiting_buckets || []);
-        setClients(clientRes.clients || []);
       })
       .catch((err) => {
         if (!cancelled) {
@@ -114,40 +161,12 @@ export function PayFlowHumanReview() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [selectedClientId, status, priority, reason, action, age, debouncedSearch]);
 
-  const rows = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    return reviews.filter((r) => {
-      if (client !== "All Clients" && r.client_name !== client) return false;
-      if (status !== "All Statuses" && r.status !== status) return false;
-      if (priority !== "All Priorities" && r.priority !== priority) return false;
-      if (reason !== "All Reasons" && r.reason !== reason) return false;
-      if (rule !== "All Rules" && r.rule_name !== rule) return false;
-      if (action !== "All Actions" && r.proposed_action !== action) return false;
-      if (age !== "Any Age") {
-        const m = r.waiting_minutes;
-        if (age === "Under 30 min" && !(m < 30)) return false;
-        if (age === "30 min – 2 hours" && !(m >= 30 && m < 120)) return false;
-        if (age === "2 – 24 hours" && !(m >= 120 && m < 1440)) return false;
-        if (age === "Over 24 hours" && !(m >= 1440)) return false;
-      }
-      if (term) {
-        const hay = [
-          r.customer_name,
-          r.account_reference,
-          r.reason,
-          r.rule_name,
-          r.proposed_action,
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-        if (!hay.includes(term)) return false;
-      }
-      return true;
-    });
-  }, [reviews, client, status, priority, reason, rule, action, age, search]);
+  // Reset sub-client when client changes.
+  useEffect(() => {
+    setSubClient("All Sub-Clients");
+  }, [client]);
 
   const ruleOptions = useMemo(() => {
     const names = reviews.map((r) => r.rule_name).filter((name): name is string => !!name);
@@ -161,6 +180,34 @@ export function PayFlowHumanReview() {
       .filter((name): name is string => !!name);
     return Array.from(new Set(fromReviews)).sort();
   }, [actions, reviews]);
+
+  const subClientOptions = useMemo(() => {
+    if (isAll(client, "Clients")) return ["All Sub-Clients"];
+    const names = new Set<string>();
+    for (const r of reviews) {
+      if (r.client_name !== client) continue;
+      if (r.portfolio_name) names.add(r.portfolio_name);
+    }
+    return ["All Sub-Clients", ...[...names].sort()];
+  }, [reviews, client]);
+
+  // Rule + sub-client (and client-name fallback) stay client-side.
+  const rows = useMemo(() => {
+    return reviews.filter((r) => {
+      if (
+        !isAll(client, "Clients") &&
+        selectedClientId == null &&
+        r.client_name !== client
+      ) {
+        return false;
+      }
+      if (!isAll(rule, "Rules") && r.rule_name !== rule) return false;
+      if (!isAll(subClient, "Sub-Clients") && (r.portfolio_name || "") !== subClient) return false;
+      return true;
+    });
+  }, [reviews, client, selectedClientId, rule, subClient]);
+
+  const showSubClient = !isAll(client, "Clients") && subClientOptions.length > 1;
 
   return (
     <>
@@ -188,6 +235,14 @@ export function PayFlowHumanReview() {
           onChange={setClient}
           options={["All Clients", ...clients.map((c) => c.name)]}
         />
+        {showSubClient ? (
+          <FilterSelect
+            label="Sub-Client"
+            value={subClient}
+            onChange={setSubClient}
+            options={subClientOptions}
+          />
+        ) : null}
         <FilterSelect
           label="Priority"
           value={priority}
@@ -200,12 +255,7 @@ export function PayFlowHumanReview() {
           onChange={setReason}
           options={["All Reasons", ...reasons]}
         />
-        <FilterSelect
-          label="Rule"
-          value={rule}
-          onChange={setRule}
-          options={ruleOptions}
-        />
+        <FilterSelect label="Rule" value={rule} onChange={setRule} options={ruleOptions} />
         <FilterSelect
           label="Action"
           value={action}
@@ -237,68 +287,80 @@ export function PayFlowHumanReview() {
               description="Human review is an exception queue — an empty queue means automation is operating within governance."
             />
           ) : (
-          <DataTable
-            minWidth={980}
-            head={[
-              "Priority",
-              "Client",
-              "Customer",
-              "Outstanding",
-              "Review Reason",
-              "Triggered Rule",
-              "Proposed Action",
-              "Waiting",
-              "Status",
-            ]}
-          >
-            {rows.map((r) => (
-              <Tr key={r.id}>
-                <Td>
-                  <StatusPill tone={priorityTone(r.priority)}>{r.priority}</StatusPill>
-                </Td>
-                <Td>
-                  <Link
-                    to={`/payflow/clients/${r.client_id}`}
-                    className="text-muted-foreground hover:underline"
-                  >
-                    {r.client_name}
-                  </Link>
-                </Td>
-                <Td>
-                  <Link to={`/payflow/review/${r.id}`}>
-                    <PrimaryCell
-                      title={r.customer_name || "—"}
-                      subtitle={r.account_reference || undefined}
-                    />
-                  </Link>
-                </Td>
-                <Td className="tabular font-medium">
-                  {formatCurrency(r.outstanding_balance)}
-                </Td>
-                <Td className="text-muted-foreground">{r.reason}</Td>
-                <Td>
-                  {r.rule_id ? (
+            <DataTable
+              minWidth={980}
+              head={[
+                "Priority",
+                "Client",
+                "Customer",
+                "Outstanding",
+                "Review Reason",
+                "Triggered Rule",
+                "Proposed Action",
+                "Waiting",
+                "Status",
+              ]}
+            >
+              {rows.map((r) => (
+                <Tr key={r.id}>
+                  <Td>
+                    <StatusPill tone={priorityTone(r.priority)}>{r.priority}</StatusPill>
+                  </Td>
+                  <Td>
                     <Link
-                      to={`/payflow/rules/${r.rule_id}`}
-                      className="text-primary hover:underline"
+                      to={`/payflow/clients/${r.client_id}`}
+                      className="text-muted-foreground hover:underline"
                     >
-                      {r.rule_name}
+                      {r.client_name}
                     </Link>
-                  ) : (
-                    <span className="text-muted-foreground">{r.rule_name || "—"}</span>
-                  )}
-                </Td>
-                <Td className="text-muted-foreground">{r.proposed_action}</Td>
-                <Td className="tabular text-muted-foreground">
-                  {r.waiting_label || `${r.waiting_minutes} min`}
-                </Td>
-                <Td>
-                  <StatusPill tone={reviewStatusTone(r.status)}>{r.status}</StatusPill>
-                </Td>
-              </Tr>
-            ))}
-          </DataTable>
+                  </Td>
+                  <Td>
+                    <Link to={`/payflow/review/${r.id}`}>
+                      <PrimaryCell
+                        title={r.customer_name || "—"}
+                        subtitle={r.account_reference || undefined}
+                      />
+                    </Link>
+                  </Td>
+                  <Td className="tabular font-medium">
+                    {formatCurrency(r.outstanding_balance)}
+                  </Td>
+                  <Td className="text-muted-foreground">{r.reason}</Td>
+                  <Td>
+                    {r.rule_id ? (
+                      <Link
+                        to={`/payflow/rules/${r.rule_id}`}
+                        className="text-primary hover:underline"
+                      >
+                        {r.rule_name}
+                      </Link>
+                    ) : (
+                      <span className="text-muted-foreground">{r.rule_name || "—"}</span>
+                    )}
+                  </Td>
+                  <Td className="text-muted-foreground">{r.proposed_action}</Td>
+                  <Td className="tabular text-muted-foreground">
+                    {r.waiting_label || `${r.waiting_minutes} min`}
+                  </Td>
+                  <Td>
+                    <StatusPill tone={reviewStatusTone(r.status)}>{r.status}</StatusPill>
+                  </Td>
+                </Tr>
+              ))}
+            </DataTable>
           )}
+
+          <Panel className="mt-5">
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Human review is an exception workspace, not the normal workflow. Routine outcomes —
+              partial payments, successful installments, no response, failed payments and
+              communication failures — update the customer context and trigger reassessment. A
+              review is created only when an evaluated governance rule requires human judgement.
+              {!isOperationsAdmin
+                ? " You only see reviews for the clients assigned to you."
+                : null}
+            </p>
+          </Panel>
         </>
       ) : null}
     </>

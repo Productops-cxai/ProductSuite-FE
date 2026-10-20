@@ -154,12 +154,14 @@ function Connector({ label, tone }: { label?: string; tone?: "success" | "danger
 function NodeCard({
   node,
   selected,
+  highlighted,
   onSelect,
   onExpand,
   templateSnippet,
 }: {
   node: PayflowStrategyStep;
   selected: boolean;
+  highlighted?: boolean;
   onSelect: () => void;
   onExpand?: () => void;
   templateSnippet?: string | null;
@@ -185,9 +187,12 @@ function NodeCard({
         "group relative w-[248px] cursor-pointer rounded-xl border bg-card px-3.5 py-3 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-panel",
         selected
           ? "border-primary ring-2 ring-primary/25 shadow-panel"
-          : "border-border shadow-subtle hover:border-primary/40",
+          : highlighted
+            ? "border-warning ring-2 ring-warning/35 shadow-panel"
+            : "border-border shadow-subtle hover:border-primary/40",
         node.disabled && "opacity-55",
       )}
+      title={highlighted && !selected ? "Exception step for this human review" : undefined}
     >
       <span className={cn("absolute inset-x-0 top-0 h-[3px] rounded-t-xl", topBar(node.kind))} aria-hidden />
       <div className="flex items-center gap-2">
@@ -240,6 +245,7 @@ function NodeBranch({
   nodes,
   nodeId,
   selectedId,
+  highlightId,
   onSelect,
   onExpand,
   templateSnippetFor,
@@ -248,6 +254,7 @@ function NodeBranch({
   nodes: Record<string, PayflowStrategyStep>;
   nodeId: string | null | undefined;
   selectedId: string | null;
+  highlightId?: string | null;
   onSelect: (id: string) => void;
   onExpand?: (id: string) => void;
   templateSnippetFor?: (node: PayflowStrategyStep) => string | null | undefined;
@@ -262,6 +269,7 @@ function NodeBranch({
       <NodeCard
         node={node}
         selected={selectedId === node.id}
+        highlighted={Boolean(highlightId && node.id === highlightId)}
         onSelect={() => onSelect(node.id!)}
         onExpand={onExpand ? () => onExpand(node.id!) : undefined}
         templateSnippet={templateSnippetFor?.(node)}
@@ -293,6 +301,7 @@ function NodeBranch({
                       nodes={nodes}
                       nodeId={node[path]}
                       selectedId={selectedId}
+                      highlightId={highlightId}
                       onSelect={onSelect}
                       onExpand={onExpand}
                       templateSnippetFor={templateSnippetFor}
@@ -311,6 +320,7 @@ function NodeBranch({
             nodes={nodes}
             nodeId={node.next}
             selectedId={selectedId}
+            highlightId={highlightId}
             onSelect={onSelect}
             onExpand={onExpand}
             templateSnippetFor={templateSnippetFor}
@@ -325,12 +335,15 @@ function NodeBranch({
 export function StrategyCanvas({
   strategy,
   selectedId,
+  highlightId,
   onSelect,
   onExpand,
   templateSnippetFor,
 }: {
   strategy: PayflowStrategy;
   selectedId: string | null;
+  /** Step id to visually mark (e.g. human-review exception site). */
+  highlightId?: string | null;
   onSelect: (id: string) => void;
   onExpand?: (id: string) => void;
   templateSnippetFor?: (node: PayflowStrategyStep) => string | null | undefined;
@@ -380,7 +393,7 @@ export function StrategyCanvas({
     <div
       ref={viewportRef}
       className={cn(
-        "overflow-auto rounded-xl border border-border/70 bg-surface px-6 py-8",
+        "max-h-[min(70vh,720px)] min-w-0 overflow-auto rounded-xl border border-border/70 bg-surface px-6 py-8",
         panning ? "cursor-grabbing select-none" : "cursor-grab",
       )}
       style={{
@@ -422,6 +435,7 @@ export function StrategyCanvas({
           nodes={nodes}
           nodeId={entry}
           selectedId={selectedId}
+          highlightId={highlightId}
           onSelect={onSelect}
           onExpand={onExpand}
           templateSnippetFor={templateSnippetFor}

@@ -632,11 +632,12 @@ export function PayFlowWorkflowDetailPage() {
         </Panel>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-[1fr_310px]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_310px]">
         <Panel
           title="Strategy flow"
           description="Click a step to review it, or use the expand icon to edit it in a popup."
-          bodyClassName="p-3"
+          bodyClassName="min-w-0 p-3"
+          className="min-w-0"
         >
           <StrategyCanvas
             strategy={displayStrategy}

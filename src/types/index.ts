@@ -944,6 +944,16 @@ export interface PayflowReviewCommunication {
   subject?: string | null;
 }
 
+export interface PayflowReviewAuditItem {
+  id: number;
+  event: string;
+  detail?: string | null;
+  actor_name?: string | null;
+  before_status?: string | null;
+  after_status?: string | null;
+  created_at?: string | null;
+}
+
 export interface PayflowReview {
   id: number;
   code: string;
@@ -954,6 +964,8 @@ export interface PayflowReview {
   customer_name?: string | null;
   account_reference?: string | null;
   case_reference?: string | null;
+  portfolio_id?: number | null;
+  portfolio_name?: string | null;
   original_balance: number;
   outstanding_balance: number;
   recovered_balance: number;
@@ -980,12 +992,14 @@ export interface PayflowReview {
   rejection_reason?: string | null;
   hold_until?: string | null;
   history: PayflowReviewHistoryItem[];
+  audit_trail?: PayflowReviewAuditItem[];
   communications?: PayflowReviewCommunication[];
   workflow_context?: PayflowReviewWorkflowContext | null;
   exception_step_id?: string | null;
   exception_step?: PayflowReviewExceptionStep | null;
   strategy_id?: number | null;
   workflow_version?: number | null;
+  decision_version?: number | null;
   missing_refs?: PayflowReviewMissingRef[];
   available_actions?: string[];
   can_decide?: boolean | null;

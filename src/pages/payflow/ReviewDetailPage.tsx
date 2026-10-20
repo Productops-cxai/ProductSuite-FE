@@ -7,6 +7,7 @@ import {
   holdPayflowReview,
   modifyPayflowReview,
   rejectPayflowReview,
+  releasePayflowReview,
 } from "../../api/payflow";
 import { WorkflowFlowPanel } from "../../components/payflow/WorkflowFlowPanel";
 import {
@@ -74,7 +75,7 @@ const REJECTION_REASONS = [
   "Other",
 ];
 
-type DecisionMode = "approve" | "modify" | "reject" | "hold" | null;
+type DecisionMode = "approve" | "modify" | "reject" | "hold" | "release" | null;
 
 const COMPLETED_STATUSES = ["Approved", "Modified", "Rejected", "Completed"];
 
@@ -82,7 +83,8 @@ type PendingDecision =
   | { mode: "approve"; note: string }
   | { mode: "modify"; action: string; guidance: string }
   | { mode: "reject"; reason: string; comment: string }
-  | { mode: "hold"; until: string; reason: string };
+  | { mode: "hold"; until: string; reason: string }
+  | { mode: "release"; note: string };
 
 function ChevronDown({ className }: { className?: string }) {
   return (
@@ -144,23 +146,35 @@ export function PayFlowReviewDetailPage() {
     setError("");
     setNotice("");
     try {
+      const version = review.decision_version ?? undefined;
       let updated: PayflowReview;
       if (pending.mode === "approve") {
-        updated = await approvePayflowReview(review.id, { note: pending.note || undefined });
+        updated = await approvePayflowReview(review.id, {
+          note: pending.note || undefined,
+          decision_version: version,
+        });
       } else if (pending.mode === "modify") {
         updated = await modifyPayflowReview(review.id, {
           action: pending.action,
           guidance: pending.guidance,
+          decision_version: version,
         });
       } else if (pending.mode === "reject") {
         updated = await rejectPayflowReview(review.id, {
           reason: pending.reason,
           comment: pending.comment,
+          decision_version: version,
         });
-      } else {
+      } else if (pending.mode === "hold") {
         updated = await holdPayflowReview(review.id, {
           until: pending.until,
           reason: pending.reason,
+          decision_version: version,
+        });
+      } else {
+        updated = await releasePayflowReview(review.id, {
+          note: pending.note || undefined,
+          decision_version: version,
         });
       }
       let fresh = updated;
@@ -211,13 +225,18 @@ export function PayFlowReviewDetailPage() {
     execution?.workflow_definition_path ||
     (review.strategy_id ? `/payflow/workflows/${review.strategy_id}` : null);
   const awaiting = review.status === "Awaiting Review";
+  const onHold = review.status === "On Hold";
   const canDecide = !!review.can_decide;
   const canModify = !!review.can_modify;
-  const completed = COMPLETED_STATUSES.includes(review.status);
-  const decidable = canDecide && !completed;
+  const canRelease =
+    !!review.can_release || (review.available_actions || []).includes("release");
+  // Lovable: decision buttons only while awaiting review (not while held / completed).
+  const decidable = canDecide && awaiting;
+  const releasable = onHold && canRelease;
   const explanation = review.explanation || [];
   const timeline = review.timeline || [];
   const history = review.history || [];
+  const auditTrail = review.audit_trail || [];
   const missingRefs = review.missing_refs || [];
   const close = () => setMode(null);
 
@@ -240,7 +259,7 @@ export function PayFlowReviewDetailPage() {
 
       <div className="panel mb-5 grid gap-4 px-5 py-4 sm:grid-cols-3">
         <HeaderFact label="Outstanding Balance" value={formatCurrency(review.outstanding_balance)} />
-        <HeaderFact label="Current Workflow" value={workflow} />
+        <HeaderFact label="Current Workflow" value={workflow} wrap />
         <HeaderFact
           label="Review Created"
           value={`${review.waiting_label || `${review.waiting_minutes} min`} ago`}
@@ -269,8 +288,8 @@ export function PayFlowReviewDetailPage() {
         </div>
       ) : null}
 
-      <div className="grid gap-5 lg:grid-cols-[1fr_330px]">
-        <div className="space-y-5">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_330px]">
+        <div className="min-w-0 space-y-5">
           <section className="rounded-lg border border-warning/40 bg-warning/8 px-5 py-4">
             <p className="text-eyebrow">Why this requires review</p>
             <dl className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -408,11 +427,16 @@ export function PayFlowReviewDetailPage() {
 
           <WorkflowFlowPanel
             clientId={review.client_id}
+            strategyId={review.strategy_id || workflowCtx?.strategy_id || execution?.strategy_id}
             workflowName={
               workflowCtx?.strategy_name || review.current_workflow || execution?.strategy_name
             }
+            exceptionStepId={
+              exceptionStep?.id || review.exception_step_id || workflowCtx?.exception_step_id
+            }
             title="Workflow Map"
             description={`Where this exception sits in the ${workflow || "collection"} strategy. Click any step to review or adjust it.`}
+            className="min-w-0"
           />
 
           <Panel title="Recent Activity" description="Events relevant to this decision">
@@ -479,9 +503,7 @@ export function PayFlowReviewDetailPage() {
           </Panel>
 
           <Panel title="Decision" description="Each decision has a distinct operational outcome">
-            {!decidable ? (
-              <ResolvedSummary review={review} canDecide={canDecide} />
-            ) : (
+            {decidable ? (
               <>
                 <div className="flex flex-wrap gap-2">
                   <Btn variant="primary" onClick={() => setMode("approve")} disabled={busy || !!pending}>
@@ -537,18 +559,39 @@ export function PayFlowReviewDetailPage() {
                   />
                 ) : null}
               </>
+            ) : releasable ? (
+              <>
+                <ResolvedSummary review={review} canDecide={canDecide} />
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Btn variant="primary" onClick={() => setMode("release")} disabled={busy || !!pending}>
+                    Release hold
+                  </Btn>
+                </div>
+                <p className="mt-2 text-[11px] text-muted-foreground">
+                  Release returns this review to Awaiting Review so a supervisor can decide.
+                </p>
+                {mode === "release" ? (
+                  <ReleasePanel
+                    busy={busy || !!pending}
+                    onCancel={close}
+                    onConfirm={(note) => askConfirm({ mode: "release", note })}
+                  />
+                ) : null}
+              </>
+            ) : (
+              <ResolvedSummary review={review} canDecide={canDecide} />
             )}
           </Panel>
 
           <div>
             <SectionHeading title="Review History" description="Full audit trail for this decision" />
             <Panel>
-              {history.length === 0 ? (
+              {history.length === 0 && auditTrail.length === 0 ? (
                 <p className="text-[13px] text-muted-foreground">No audit events recorded yet.</p>
               ) : (
                 <ol className="space-y-3">
                   {history.map((entry, i) => (
-                    <li key={`${entry.at}-${i}`} className="flex gap-3">
+                    <li key={`h-${entry.at}-${i}`} className="flex gap-3">
                       <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary/60" />
                       <span className="leading-tight">
                         <span className="block text-[12px] font-medium text-foreground">{entry.event}</span>
@@ -560,13 +603,34 @@ export function PayFlowReviewDetailPage() {
                       </span>
                     </li>
                   ))}
+                  {auditTrail.length > 0 && history.length > 0 ? (
+                    <li className="pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      System audit
+                    </li>
+                  ) : null}
+                  {auditTrail.map((a) => (
+                    <li key={`a-${a.id}`} className="flex gap-3">
+                      <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
+                      <span className="leading-tight">
+                        <span className="block text-[12px] font-medium text-foreground">{a.event}</span>
+                        <span className="block text-[11px] text-muted-foreground">
+                          {a.created_at ? new Date(a.created_at).toLocaleString() : ""}
+                          {a.actor_name ? ` · ${a.actor_name}` : ""}
+                          {a.before_status && a.after_status
+                            ? ` · ${a.before_status} → ${a.after_status}`
+                            : ""}
+                          {a.detail ? ` · ${a.detail}` : ""}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
                 </ol>
               )}
             </Panel>
           </div>
         </div>
 
-        <div className="space-y-5">
+        <div className="min-w-0 space-y-5">
           <Panel title="Customer & Account" bodyClassName="px-5 pb-4">
             <dl className="divide-y divide-border">
               {(
@@ -672,11 +736,28 @@ export function PayFlowReviewDetailPage() {
   );
 }
 
-function HeaderFact({ label, value }: { label: string; value: string }) {
+function HeaderFact({
+  label,
+  value,
+  wrap = false,
+}: {
+  label: string;
+  value: string;
+  wrap?: boolean;
+}) {
   return (
-    <div>
+    <div className="min-w-0">
       <p className="text-eyebrow">{label}</p>
-      <p className="tabular mt-1 text-[15px] font-semibold text-foreground">{value}</p>
+      <p
+        className={
+          wrap
+            ? "mt-1 break-words text-[15px] font-semibold leading-snug text-foreground"
+            : "tabular mt-1 truncate text-[15px] font-semibold text-foreground"
+        }
+        title={value}
+      >
+        {value}
+      </p>
     </div>
   );
 }
@@ -724,10 +805,15 @@ function DecisionConfirm({
               ["Rejection reason", pending.reason],
               ["Reason / remarks", pending.comment],
             ]
-          : [
-              ["Hold until", pending.until],
-              ["Reason / remarks", pending.reason],
-            ];
+          : pending.mode === "hold"
+            ? [
+                ["Hold until", pending.until],
+                ["Reason / remarks", pending.reason],
+              ]
+            : [
+                ["Decision", "Release hold — return to awaiting review"],
+                ...(pending.note ? [["Note", pending.note] as [string, string]] : []),
+              ];
   const title =
     pending.mode === "approve"
       ? "Confirm approval"
@@ -735,7 +821,9 @@ function DecisionConfirm({
         ? "Confirm modified treatment"
         : pending.mode === "reject"
           ? "Confirm rejection"
-          : "Confirm hold";
+          : pending.mode === "hold"
+            ? "Confirm hold"
+            : "Confirm release";
   const confirmLabel =
     pending.mode === "approve"
       ? "Approve & Continue"
@@ -743,7 +831,9 @@ function DecisionConfirm({
         ? "Apply guidance"
         : pending.mode === "reject"
           ? "Reject action"
-          : "Place on hold";
+          : pending.mode === "hold"
+            ? "Place on hold"
+            : "Release hold";
   return (
     <Modal
       open
@@ -1023,9 +1113,43 @@ function HoldPanel({
   );
 }
 
+function ReleasePanel({
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: (note: string) => void;
+}) {
+  const [note, setNote] = useState("");
+  return (
+    <DecisionBox>
+      <Field label="Release note (optional)">
+        <TextArea
+          value={note}
+          onChange={setNote}
+          rows={3}
+          disabled={busy}
+          placeholder="Hold period ended — ready for supervisor decision."
+        />
+      </Field>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Btn variant="primary" disabled={busy} onClick={() => onConfirm(note.trim())}>
+          {busy ? "Saving…" : "Release Hold"}
+        </Btn>
+        <Btn variant="ghost" onClick={onCancel} disabled={busy}>
+          Cancel
+        </Btn>
+      </div>
+    </DecisionBox>
+  );
+}
+
 function ResolvedSummary({ review, canDecide }: { review: PayflowReview; canDecide: boolean }) {
   const completed = COMPLETED_STATUSES.includes(review.status);
-  if (!canDecide && !completed) {
+  const onHold = review.status === "On Hold";
+  if (!canDecide && !completed && !onHold) {
     return (
       <p className="text-[13px] text-muted-foreground">
         You have view-only access to human reviews for this client. Approving reviews requires the
@@ -1038,6 +1162,11 @@ function ResolvedSummary({ review, canDecide }: { review: PayflowReview; canDeci
       {completed ? (
         <p className="text-[13px] text-muted-foreground">
           This review is complete and read-only.
+        </p>
+      ) : null}
+      {onHold ? (
+        <p className="text-[13px] text-muted-foreground">
+          Collection activity is on hold. Release the hold to return this item to the decision queue.
         </p>
       ) : null}
       <div className="flex flex-wrap items-center gap-2">
