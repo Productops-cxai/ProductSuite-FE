@@ -439,8 +439,8 @@ export function PayFlowCommDetailPage() {
                       )}
                     </div>
                     <p className="mt-1.5 text-[11px] text-muted-foreground">
-                      Unique secure payment link · opens the {brandName}-branded customer payment
-                      experience
+                      Unique secure payment link · opens the branded customer payment portal at
+                      /pay/…
                     </p>
                   </div>
                 ) : null}

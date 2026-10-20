@@ -1396,6 +1396,67 @@ export interface PayflowPaymentLinksListResponse {
   active_count: number;
 }
 
+export interface PayflowPaymentPortalOption {
+  id: string;
+  type: string;
+  label: string;
+  description?: string;
+  amount?: number | null;
+  currency_code: string;
+  amount_editable?: boolean;
+  min_amount?: number;
+  max_amount?: number;
+  installments?: number;
+  plan_id?: string;
+}
+
+export interface PayflowPaymentPortalResolve {
+  usable: boolean;
+  status: string;
+  block_reason?: string | null;
+  expires_at?: string | null;
+  token?: string;
+  link_ref?: string | null;
+  customer: { display_name?: string };
+  case: {
+    account_reference?: string;
+    outstanding_balance: number;
+    currency_code: string;
+    collection_status?: string;
+  };
+  brand: {
+    mode?: string;
+    name: string;
+    logo_url?: string | null;
+    on_behalf_of?: string | null;
+  };
+  payment_options: PayflowPaymentPortalOption[];
+  provider: {
+    name?: string;
+    ready?: boolean;
+    message?: string | null;
+  };
+}
+
+export interface PayflowPaymentAttempt {
+  id: string;
+  status: string;
+  option_type: string;
+  plan_id?: string | null;
+  amount: number;
+  currency_code: string;
+  provider: string;
+  checkout_url?: string | null;
+  error_message?: string | null;
+  balance_at_initiation?: number | null;
+  stripe_session_id?: string | null;
+  reference?: string | null;
+  confirmed: boolean;
+  events?: { at?: string; label?: string; detail?: string | null }[];
+  created_at?: string | null;
+  completed_at?: string | null;
+}
+
 export interface PayflowOperationalException {
   id: number;
   exception_type: string;
