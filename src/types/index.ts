@@ -1358,6 +1358,44 @@ export interface PayflowCommunicationEligibility {
   communication_id?: number | null;
 }
 
+export interface PayflowPaymentLinkEvent {
+  at?: string | null;
+  label?: string | null;
+  detail?: string | null;
+}
+
+export interface PayflowPaymentLink {
+  id: number;
+  token: string;
+  url: string;
+  status: string;
+  client_id: number;
+  account_id: number;
+  account_reference?: string | null;
+  customer_name?: string | null;
+  communication_id?: number | null;
+  communication_code?: string | null;
+  communication_channel?: string | null;
+  expires_at?: string | null;
+  revoked_at?: string | null;
+  revoked_by?: string | null;
+  completed_at?: string | null;
+  access_count: number;
+  clicks_count: number;
+  last_accessed_at?: string | null;
+  last_clicked_at?: string | null;
+  events: PayflowPaymentLinkEvent[];
+  created_at?: string | null;
+  updated_at?: string | null;
+  is_usable: boolean;
+}
+
+export interface PayflowPaymentLinksListResponse {
+  payment_links: PayflowPaymentLink[];
+  total: number;
+  active_count: number;
+}
+
 export interface PayflowOperationalException {
   id: number;
   exception_type: string;

@@ -105,6 +105,7 @@ export function PayFlowCommDetailPage() {
   const [resending, setResending] = useState(false);
   const [resendMsg, setResendMsg] = useState("");
   const [reloadTick, setReloadTick] = useState(0);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   useEffect(() => {
     const id = Number(communicationId);
@@ -407,17 +408,36 @@ export function PayFlowCommDetailPage() {
                 </div>
                 {comm.payment_link ? (
                   <div>
-                    <a
-                      href={payLink || "#"}
-                      target="_blank"
-                      rel="noreferrer"
-                      className={cn(
-                        "inline-flex items-center rounded-md bg-primary px-3.5 py-2 text-[13px] font-semibold text-primary-foreground",
-                        !payLink && "pointer-events-none opacity-60",
+                    <div className="flex flex-wrap items-center gap-2">
+                      <a
+                        href={payLink || "#"}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={cn(
+                          "inline-flex items-center rounded-md bg-primary px-3.5 py-2 text-[13px] font-semibold text-primary-foreground",
+                          !payLink && "pointer-events-none opacity-60",
+                        )}
+                      >
+                        Pay Now
+                      </a>
+                      {payLink ? (
+                        <Btn
+                          variant="secondary"
+                          onClick={() => {
+                            void navigator.clipboard.writeText(payLink).then(() => {
+                              setCopiedLink(true);
+                              window.setTimeout(() => setCopiedLink(false), 1600);
+                            });
+                          }}
+                        >
+                          {copiedLink ? "Copied" : "Copy link"}
+                        </Btn>
+                      ) : (
+                        <span className="text-[11px] text-muted-foreground">
+                          Link unavailable (expired or revoked)
+                        </span>
                       )}
-                    >
-                      Pay Now
-                    </a>
+                    </div>
                     <p className="mt-1.5 text-[11px] text-muted-foreground">
                       Unique secure payment link · opens the {brandName}-branded customer payment
                       experience

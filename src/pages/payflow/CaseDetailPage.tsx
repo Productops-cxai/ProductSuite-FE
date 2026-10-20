@@ -5,8 +5,10 @@ import {
   getAccountWorkflowExecution,
   getPayflowAccount,
   getPayflowAccountCommunicationEligibility,
+  listPayflowAccountPaymentLinks,
   listPayflowComms,
   listPayflowReviews,
+  revokePayflowPaymentLink,
   sendPayflowManualEmail,
   sendPayflowManualSms,
 } from "../../api/payflow";
@@ -25,6 +27,7 @@ import type {
   PayflowAccount,
   PayflowCommunication,
   PayflowCommunicationEligibility,
+  PayflowPaymentLink,
   PayflowReview,
   PayflowWorkflowRun,
   PayflowWorkflowUiStatus,
@@ -66,6 +69,21 @@ function reviewStatusTone(status: string): Tone {
     case "Modified":
       return "info";
     case "Rejected":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}
+
+function paymentLinkTone(status: string): Tone {
+  switch (status) {
+    case "Active":
+      return "success";
+    case "Completed":
+      return "info";
+    case "Expired":
+      return "warning";
+    case "Revoked":
       return "danger";
     default:
       return "neutral";
@@ -263,6 +281,11 @@ export function PayFlowCaseDetailPage() {
   const [emailMessage, setEmailMessage] = useState("");
   const [emailError, setEmailError] = useState("");
   const [commsRefresh, setCommsRefresh] = useState(0);
+  const [paymentLinks, setPaymentLinks] = useState<PayflowPaymentLink[]>([]);
+  const [paymentLinksLoading, setPaymentLinksLoading] = useState(false);
+  const [paymentLinksError, setPaymentLinksError] = useState("");
+  const [copyFlashId, setCopyFlashId] = useState<number | null>(null);
+  const [revokingId, setRevokingId] = useState<number | null>(null);
 
   useEffect(() => {
     const id = Number(accountId);
@@ -299,14 +322,19 @@ export function PayFlowCaseDetailPage() {
       setComms([]);
       setEligibility(null);
       setExecution(null);
+      setPaymentLinks([]);
+      setPaymentLinksError("");
       setSideLoading(false);
       setExecutionLoading(false);
+      setPaymentLinksLoading(false);
       return;
     }
     let cancelled = false;
     setSideLoading(true);
     setExecutionLoading(true);
+    setPaymentLinksLoading(true);
     setExecutionError("");
+    setPaymentLinksError("");
     Promise.all([
       listPayflowReviews({
         client_id: account.client_id,
@@ -322,8 +350,16 @@ export function PayFlowCaseDetailPage() {
         }
         return { execution: null };
       }),
+      listPayflowAccountPaymentLinks(account.id).catch((err) => {
+        if (!cancelled) {
+          setPaymentLinksError(
+            err instanceof ApiError ? err.detail : "Failed to load payment links",
+          );
+        }
+        return { payment_links: [] as PayflowPaymentLink[], total: 0, active_count: 0 };
+      }),
     ])
-      .then(([reviewRes, commRes, eligibilityRes, execRes]) => {
+      .then(([reviewRes, commRes, eligibilityRes, execRes, linksRes]) => {
         if (cancelled) return;
         setReviews(
           (reviewRes.reviews || []).filter((r) => r.account_id === account.id),
@@ -331,6 +367,7 @@ export function PayFlowCaseDetailPage() {
         setComms(commRes.communications || []);
         setEligibility(eligibilityRes);
         setExecution(execRes.execution || null);
+        setPaymentLinks(linksRes.payment_links || []);
       })
       .catch(() => {
         if (!cancelled) {
@@ -338,12 +375,14 @@ export function PayFlowCaseDetailPage() {
           setComms([]);
           setEligibility(null);
           setExecution(null);
+          setPaymentLinks([]);
         }
       })
       .finally(() => {
         if (!cancelled) {
           setSideLoading(false);
           setExecutionLoading(false);
+          setPaymentLinksLoading(false);
         }
       });
     return () => {
@@ -360,6 +399,33 @@ export function PayFlowCaseDetailPage() {
     hasPermission("send_communications") &&
     eligibility?.email?.ok !== false &&
     eligibility?.email?.eligibility_status !== "Blocked";
+
+  const canRevokeLink = hasPermission("send_communications");
+
+  async function handleCopyPaymentLink(link: PayflowPaymentLink) {
+    if (!link.is_usable || !link.url) return;
+    try {
+      await navigator.clipboard.writeText(link.url);
+      setCopyFlashId(link.id);
+      window.setTimeout(() => setCopyFlashId((cur) => (cur === link.id ? null : cur)), 1600);
+    } catch {
+      /* ignore clipboard failures */
+    }
+  }
+
+  async function handleRevokePaymentLink(link: PayflowPaymentLink) {
+    if (!canRevokeLink || !link.is_usable || revokingId != null) return;
+    setRevokingId(link.id);
+    setPaymentLinksError("");
+    try {
+      const updated = await revokePayflowPaymentLink(link.id);
+      setPaymentLinks((rows) => rows.map((r) => (r.id === updated.id ? updated : r)));
+    } catch (err) {
+      setPaymentLinksError(err instanceof ApiError ? err.detail : "Failed to revoke link");
+    } finally {
+      setRevokingId(null);
+    }
+  }
 
   async function handleSendSms() {
     if (!account || !canSendSms || smsSending) return;
@@ -1018,6 +1084,92 @@ export function PayFlowCaseDetailPage() {
             ) : null}
           </Panel>
         )}
+
+        <Panel
+          title="Payment links"
+          description="Secure account-linked payment URLs for this case"
+          bodyClassName={paymentLinks.length > 0 ? "p-0" : undefined}
+        >
+          {paymentLinksError ? (
+            <p className="px-4 py-2.5 text-[13px] text-destructive">{paymentLinksError}</p>
+          ) : null}
+          {paymentLinksLoading ? (
+            <p className="px-4 py-2.5 text-[13px] text-muted-foreground">Loading payment links…</p>
+          ) : null}
+          {!paymentLinksLoading && !paymentLinksError && paymentLinks.length === 0 ? (
+            <EmptyState
+              title="No payment links yet"
+              description="Links are created when a communication includes a payment opportunity. Active links can be copied; expired or revoked links cannot be used."
+            />
+          ) : null}
+          {!paymentLinksLoading && paymentLinks.length > 0 ? (
+            <ul className="divide-y divide-border">
+              {paymentLinks.map((link) => (
+                <li key={link.id} className="px-4 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusPill tone={paymentLinkTone(link.status)}>{link.status}</StatusPill>
+                      <span className="text-[12px] text-muted-foreground tabular">
+                        ···{link.token.slice(-8)}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {link.is_usable ? (
+                        <Btn
+                          variant="secondary"
+                          onClick={() => void handleCopyPaymentLink(link)}
+                        >
+                          {copyFlashId === link.id ? "Copied" : "Copy link"}
+                        </Btn>
+                      ) : (
+                        <span className="text-[11px] text-muted-foreground">
+                          Unavailable
+                        </span>
+                      )}
+                      {canRevokeLink && link.is_usable ? (
+                        <Btn
+                          variant="secondary"
+                          disabled={revokingId === link.id}
+                          onClick={() => void handleRevokePaymentLink(link)}
+                        >
+                          {revokingId === link.id ? "Revoking…" : "Revoke"}
+                        </Btn>
+                      ) : null}
+                    </div>
+                  </div>
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    Created {formatStamp(link.created_at)}
+                    {" · "}Expires {formatStamp(link.expires_at)}
+                    {link.communication_id ? (
+                      <>
+                        {" · "}
+                        <Link
+                          to={`/payflow/comms/${link.communication_id}`}
+                          className="font-medium text-primary hover:underline"
+                        >
+                          {link.communication_code || `Comm #${link.communication_id}`}
+                          {link.communication_channel
+                            ? ` · ${link.communication_channel}`
+                            : ""}
+                        </Link>
+                      </>
+                    ) : null}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Accesses {link.access_count ?? 0}
+                    {" · "}Clicks {link.clicks_count ?? 0}
+                    {link.last_accessed_at
+                      ? ` · Last access ${formatStamp(link.last_accessed_at)}`
+                      : ""}
+                    {link.last_clicked_at
+                      ? ` · Last click ${formatStamp(link.last_clicked_at)}`
+                      : ""}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </Panel>
 
         <Panel
           title="Communications"

@@ -19,6 +19,8 @@ import type {
   ManualSmsSendResponse,
   PayflowOperationalException,
   PayflowOperationalExceptionsListResponse,
+  PayflowPaymentLink,
+  PayflowPaymentLinksListResponse,
   PayflowDashboardResponse,
   PayflowIntegration,
   PayflowIntegrationsListResponse,
@@ -912,6 +914,23 @@ export function resendPayflowCommunication(
   return apiRequest<ManualSmsSendResponse>(`/payflow/comms/${communicationId}/resend`, {
     method: "POST",
     body: payload || {},
+  });
+}
+
+export function listPayflowAccountPaymentLinks(accountId: number) {
+  return apiRequest<PayflowPaymentLinksListResponse>(
+    `/payflow/accounts/${accountId}/payment-links`,
+  );
+}
+
+export function getPayflowPaymentLink(linkId: number) {
+  return apiRequest<PayflowPaymentLink>(`/payflow/payment-links/${linkId}`);
+}
+
+export function revokePayflowPaymentLink(linkId: number) {
+  return apiRequest<PayflowPaymentLink>(`/payflow/payment-links/${linkId}/revoke`, {
+    method: "POST",
+    body: {},
   });
 }
 
