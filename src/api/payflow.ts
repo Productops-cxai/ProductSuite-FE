@@ -16,6 +16,9 @@ import type {
   PayflowCommunication,
   PayflowCommunicationEligibility,
   PayflowCommunicationsListResponse,
+  ManualSmsSendResponse,
+  PayflowOperationalException,
+  PayflowOperationalExceptionsListResponse,
   PayflowDashboardResponse,
   PayflowIntegration,
   PayflowIntegrationsListResponse,
@@ -868,6 +871,61 @@ export function listPayflowComms(params?: {
 export function getPayflowAccountCommunicationEligibility(accountId: number) {
   return apiRequest<PayflowCommunicationEligibility>(
     `/payflow/accounts/${accountId}/communication-eligibility`,
+  );
+}
+
+export function sendPayflowManualSms(
+  accountId: number,
+  payload: {
+    body: string;
+    purpose?: string;
+    include_payment_link?: boolean;
+    idempotency_key?: string;
+  },
+) {
+  return apiRequest<ManualSmsSendResponse>(
+    `/payflow/accounts/${accountId}/communications/sms/send`,
+    { method: "POST", body: payload },
+  );
+}
+
+export function listPayflowOperationalExceptions(params?: {
+  status?: string;
+  exception_type?: string;
+  client_id?: number;
+  limit?: number;
+  offset?: number;
+}) {
+  const q = new URLSearchParams();
+  if (params?.status) q.set("status", params.status);
+  if (params?.exception_type) q.set("exception_type", params.exception_type);
+  if (params?.client_id != null) q.set("client_id", String(params.client_id));
+  if (params?.limit != null) q.set("limit", String(params.limit));
+  if (params?.offset != null) q.set("offset", String(params.offset));
+  const qs = q.toString();
+  return apiRequest<PayflowOperationalExceptionsListResponse>(
+    `/payflow/exceptions${qs ? `?${qs}` : ""}`,
+  );
+}
+
+export function getPayflowOperationalException(exceptionId: number) {
+  return apiRequest<PayflowOperationalException>(`/payflow/exceptions/${exceptionId}`);
+}
+
+export function acknowledgePayflowOperationalException(exceptionId: number) {
+  return apiRequest<PayflowOperationalException>(
+    `/payflow/exceptions/${exceptionId}/acknowledge`,
+    { method: "POST", body: {} },
+  );
+}
+
+export function resolvePayflowOperationalException(
+  exceptionId: number,
+  payload?: { note?: string },
+) {
+  return apiRequest<PayflowOperationalException>(
+    `/payflow/exceptions/${exceptionId}/resolve`,
+    { method: "POST", body: payload || {} },
   );
 }
 

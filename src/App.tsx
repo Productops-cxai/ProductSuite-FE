@@ -47,6 +47,7 @@ import { PayFlowWorkflowDetailPage } from "./pages/payflow/WorkflowDetailPage";
 import { PayFlowReviewDetailPage } from "./pages/payflow/ReviewDetailPage";
 import { PayFlowCommsPage } from "./pages/payflow/CommsPage";
 import { PayFlowCommDetailPage } from "./pages/payflow/CommDetailPage";
+import { PayFlowExceptionsPage } from "./pages/payflow/ExceptionsPage";
 
 function HomeRedirect() {
   const { loading, user, nextStep, products } = useAuth();
@@ -112,6 +113,7 @@ export default function App() {
         <Route path="workflows/:strategyId" element={<PayFlowWorkflowDetailPage />} />
         <Route path="comms" element={<PayFlowCommsPage />} />
         <Route path="comms/:communicationId" element={<PayFlowCommDetailPage />} />
+        <Route path="exceptions" element={<PayFlowExceptionsPage />} />
       </Route>
 
       <Route path="/insightiq" element={<InsightIqPlaceholderPage />} />

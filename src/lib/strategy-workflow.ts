@@ -74,6 +74,16 @@ export const OUTCOMES = [
   "Case Closed",
 ];
 
+/** Lovable Human Review reason catalog — separate from Triggered Rule name. */
+export const REVIEW_REASONS = [
+  "Repeated unsuccessful attempts",
+  "Low decision confidence",
+  "Payment arrangement exception",
+  "High balance treatment",
+  "Customer dispute raised",
+  "Hardship signal detected",
+];
+
 export type DraftStepKind =
   | "Communication"
   | "Wait"
@@ -339,6 +349,7 @@ export function buildStepsFromDraft(steps: DraftStep[]): PayflowStrategyStep[] {
     }
     if (step.kind === "Human Review") {
       config.note = step.note;
+      config.review_reason = REVIEW_REASONS[2]; // Payment arrangement exception
     }
     result.push({
       id: step.id,
@@ -568,6 +579,7 @@ function defaultStepForKind(kind: AddableStepKind): PayflowStrategyStep {
       origin: "Human Modified",
       config: {
         note: "Supervisor review required before continuing",
+        review_reason: REVIEW_REASONS[2], // Payment arrangement exception
         reference_event: "Previous Action",
         amount: 0,
         unit: "Days",

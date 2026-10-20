@@ -42,6 +42,7 @@ function commStatusTone(status: string): Tone {
     case "Delivered":
     case "Sent":
       return "neutral";
+    case "Queued":
     case "Awaiting Governance":
     case "Scheduled":
     case "Prepared":
@@ -148,9 +149,15 @@ export function PayFlowCommDetailPage() {
   const senderName = comm.sender_name || brandName;
   const payLink = comm.payment_link ? comm.payment_link_url : null;
   const sentLabel =
-    comm.status === "Prepared" || comm.status === "Awaiting Governance" || comm.status === "Scheduled"
+    comm.status === "Prepared" ||
+    comm.status === "Awaiting Governance" ||
+    comm.status === "Scheduled"
       ? "Not sent"
-      : [comm.date_label, comm.time_label].filter(Boolean).join(" ") || formatStamp(comm.created_at);
+      : comm.status === "Queued"
+        ? [comm.date_label, comm.time_label].filter(Boolean).join(" ") ||
+          formatStamp(comm.sent_at || comm.created_at)
+        : [comm.date_label, comm.time_label].filter(Boolean).join(" ") ||
+          formatStamp(comm.sent_at || comm.created_at);
 
   const facts = [
     { label: "Client", value: comm.client_name || "—" },
@@ -158,6 +165,7 @@ export function PayFlowCommDetailPage() {
     { label: "Account Reference", value: comm.account_reference || "—" },
     { label: "Collection Case", value: comm.case_status || "—" },
     { label: "Channel", value: comm.channel },
+    { label: "Recipient", value: comm.recipient || "—" },
     { label: "Purpose", value: comm.purpose },
     { label: "Workflow", value: comm.workflow_name || "—" },
     { label: "Status", value: comm.status },
@@ -165,6 +173,9 @@ export function PayFlowCommDetailPage() {
     { label: "Sent", value: sentLabel },
     { label: "Delivered", value: formatStamp(comm.delivered_at) },
     { label: "Engagement", value: engagementLabel(comm) },
+    ...(comm.provider_error
+      ? [{ label: "Failure reason", value: comm.provider_error }]
+      : []),
   ];
 
   const engagementFacts = [

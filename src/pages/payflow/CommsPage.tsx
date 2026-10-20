@@ -78,6 +78,7 @@ function commStatusTone(status: string): Tone {
     case "Delivered":
     case "Sent":
       return "neutral";
+    case "Queued":
     case "Awaiting Governance":
     case "Scheduled":
     case "Prepared":

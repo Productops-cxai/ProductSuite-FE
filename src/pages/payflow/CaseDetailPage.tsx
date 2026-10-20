@@ -7,9 +7,11 @@ import {
   getPayflowAccountCommunicationEligibility,
   listPayflowComms,
   listPayflowReviews,
+  sendPayflowManualSms,
 } from "../../api/payflow";
 import { WorkflowFlowPanel } from "../../components/payflow/WorkflowFlowPanel";
 import {
+  Btn,
   EmptyState,
   PageHeader,
   Panel,
@@ -17,6 +19,7 @@ import {
   statusTone,
   type Tone,
 } from "../../components/payflow/lovable/payflow-ui";
+import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import type {
   PayflowAccount,
   PayflowCommunication,
@@ -77,6 +80,7 @@ function commStatusTone(status: string): Tone {
     case "Delivered":
     case "Sent":
       return "neutral";
+    case "Queued":
     case "Awaiting Governance":
       return "warning";
     case "Failed":
@@ -238,6 +242,7 @@ type TimelineEvent = {
 
 export function PayFlowCaseDetailPage() {
   const { accountId } = useParams<{ accountId: string }>();
+  const { hasPermission } = usePayFlowAccess();
   const [account, setAccount] = useState<PayflowAccount | null>(null);
   const [reviews, setReviews] = useState<PayflowReview[]>([]);
   const [comms, setComms] = useState<PayflowCommunication[]>([]);
@@ -249,6 +254,10 @@ export function PayFlowCaseDetailPage() {
   const [sideLoading, setSideLoading] = useState(true);
   const [error, setError] = useState("");
   const [showAllTimeline, setShowAllTimeline] = useState(false);
+  const [smsSending, setSmsSending] = useState(false);
+  const [smsMessage, setSmsMessage] = useState("");
+  const [smsError, setSmsError] = useState("");
+  const [commsRefresh, setCommsRefresh] = useState(0);
 
   useEffect(() => {
     const id = Number(accountId);
@@ -335,7 +344,41 @@ export function PayFlowCaseDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [account]);
+  }, [account, commsRefresh]);
+
+  const canSendSms =
+    hasPermission("send_communications") &&
+    eligibility?.sms?.ok !== false &&
+    eligibility?.sms?.eligibility_status !== "Blocked";
+
+  async function handleSendSms() {
+    if (!account || !canSendSms || smsSending) return;
+    const body = (
+      smsMessage.trim() ||
+      `Payment reminder for account ${account.account_reference || account.id}. Reply STOP to opt out.`
+    ).slice(0, 1600);
+    setSmsSending(true);
+    setSmsError("");
+    try {
+      const res = await sendPayflowManualSms(account.id, {
+        body,
+        purpose: "Payment Reminder",
+        include_payment_link: true,
+        idempotency_key: `case-${account.id}-${Date.now()}`,
+      });
+      if (res.skipped === "eligibility" || res.restriction_reason) {
+        setSmsError(res.restriction_reason || "SMS was blocked by eligibility checks");
+      } else if (res.provider_error) {
+        setSmsError(res.provider_error);
+      }
+      setCommsRefresh((n) => n + 1);
+      setSmsMessage("");
+    } catch (err) {
+      setSmsError(err instanceof ApiError ? err.detail : "Failed to send SMS");
+    } finally {
+      setSmsSending(false);
+    }
+  }
 
   const timeline = useMemo(() => {
     if (!account) return [] as TimelineEvent[];
@@ -935,10 +978,30 @@ export function PayFlowCaseDetailPage() {
         <Panel
           title="Communications"
           description="Actions executed as part of the current strategy"
+          action={
+            canSendSms ? (
+              <Btn variant="primary" disabled={smsSending} onClick={() => void handleSendSms()}>
+                {smsSending ? "Sending…" : "Send SMS"}
+              </Btn>
+            ) : null
+          }
           bodyClassName={comms.length > 0 ? "p-0" : undefined}
         >
+          {canSendSms ? (
+            <div className={`space-y-2 ${comms.length > 0 ? "border-b border-border px-4 py-3" : "mb-3"}`}>
+              <textarea
+                value={smsMessage}
+                onChange={(e) => setSmsMessage(e.target.value)}
+                rows={2}
+                maxLength={1600}
+                placeholder="Optional SMS body (defaults to a payment reminder). Reply STOP to opt out is appended by policy templates."
+                className="w-full rounded-md border border-border bg-surface px-3 py-2 text-[13px] text-foreground"
+              />
+              {smsError ? <p className="text-[12px] text-destructive">{smsError}</p> : null}
+            </div>
+          ) : null}
           {sideLoading ? (
-            <p className="text-[13px] text-muted-foreground">Loading communications…</p>
+            <p className="px-4 py-2.5 text-[13px] text-muted-foreground">Loading communications…</p>
           ) : null}
           {!sideLoading && comms.length === 0 ? (
             <EmptyState
@@ -948,28 +1011,40 @@ export function PayFlowCaseDetailPage() {
           ) : null}
           {!sideLoading && comms.length > 0 ? (
             <ul className="divide-y divide-border">
-              {comms.map((c) => (
-                <li key={c.id} className="px-4 py-2.5">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <Link
-                      to={`/payflow/comms/${c.id}`}
-                      className="text-[13px] font-semibold text-primary hover:underline"
-                    >
-                      {c.channel} · {c.purpose}
-                    </Link>
-                    <StatusPill tone={commStatusTone(c.status)}>{c.status}</StatusPill>
-                  </div>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    {[c.date_label, c.time_label].filter(Boolean).join(" · ") || "—"}
-                    {c.workflow_name ? ` · ${c.workflow_name}` : ""}
-                    {c.engagement_tracking === "not_available"
-                      ? " · Not available"
-                      : c.engagement
-                        ? ` · ${c.engagement}`
-                        : " · Not trackable"}
-                  </p>
-                </li>
-              ))}
+              {comms.map((c) => {
+                const preview = (c.body_lines || []).filter(Boolean).join(" ").slice(0, 120);
+                return (
+                  <li key={c.id} className="px-4 py-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <Link
+                        to={`/payflow/comms/${c.id}`}
+                        className="text-[13px] font-semibold text-primary hover:underline"
+                      >
+                        {c.channel} · {c.purpose}
+                      </Link>
+                      <StatusPill tone={commStatusTone(c.status)}>{c.status}</StatusPill>
+                    </div>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {[c.date_label, c.time_label].filter(Boolean).join(" · ") || "—"}
+                      {c.recipient ? ` · ${c.recipient}` : ""}
+                      {c.payment_link ? " · Payment link" : ""}
+                      {c.engagement_tracking === "not_available"
+                        ? " · Not available"
+                        : c.engagement
+                          ? ` · ${c.engagement}`
+                          : ""}
+                    </p>
+                    {preview ? (
+                      <p className="mt-1 text-[12px] text-foreground/80 line-clamp-2">{preview}</p>
+                    ) : null}
+                    {c.status === "Failed" && (c.provider_error || c.restriction_reason) ? (
+                      <p className="mt-1 text-[12px] text-destructive">
+                        {c.provider_error || c.restriction_reason}
+                      </p>
+                    ) : null}
+                  </li>
+                );
+              })}
             </ul>
           ) : null}
         </Panel>

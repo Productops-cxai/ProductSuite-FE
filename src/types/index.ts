@@ -1115,6 +1115,8 @@ export interface PayflowStrategyStepConfig {
   action?: string | null;
   outcome?: string | null;
   note?: string | null;
+  /** Lovable catalog reason shown in Human Review queue (not the step title). */
+  review_reason?: string | null;
   template_id?: string | null;
 }
 
@@ -1295,6 +1297,8 @@ export interface PayflowCommunication {
   sms_sender_id?: string | null;
   provider?: string | null;
   provider_message_id?: string | null;
+  recipient?: string | null;
+  provider_error?: string | null;
   sent_at?: string | null;
   delivered_at?: string | null;
   opens_count?: number;
@@ -1352,6 +1356,51 @@ export interface PayflowCommunicationEligibility {
   rule_code?: string | null;
   can_view_rule?: boolean;
   communication_id?: number | null;
+}
+
+export interface PayflowOperationalException {
+  id: number;
+  exception_type: string;
+  severity: string;
+  status: string;
+  retriable: boolean;
+  client_id?: number | null;
+  client_name?: string | null;
+  account_id?: number | null;
+  account_reference?: string | null;
+  customer_name?: string | null;
+  case_reference?: string | null;
+  source_entity_type?: string | null;
+  source_entity_id?: string | null;
+  reason: string;
+  diagnostic_ref?: string | null;
+  link?: string | null;
+  dedupe_key: string;
+  acknowledged_by?: string | null;
+  acknowledged_at?: string | null;
+  resolved_by?: string | null;
+  resolved_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface PayflowOperationalExceptionsListResponse {
+  exceptions: PayflowOperationalException[];
+  total: number;
+  open_count: number;
+  acknowledged_count: number;
+  resolved_count: number;
+}
+
+export interface ManualSmsSendResponse {
+  skipped?: string | null;
+  communication_id?: number | null;
+  code?: string | null;
+  status?: string | null;
+  comm_status?: string | null;
+  recipient?: string | null;
+  provider_error?: string | null;
+  restriction_reason?: string | null;
 }
 
 export interface PayflowDashboardKpi {
