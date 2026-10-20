@@ -19,6 +19,7 @@ import type {
   ManualSmsSendResponse,
   PayflowOperationalException,
   PayflowOperationalExceptionsListResponse,
+  PayflowAccountPaymentsResponse,
   PayflowPaymentLink,
   PayflowPaymentLinksListResponse,
   PayflowDashboardResponse,
@@ -920,6 +921,12 @@ export function resendPayflowCommunication(
 export function listPayflowAccountPaymentLinks(accountId: number) {
   return apiRequest<PayflowPaymentLinksListResponse>(
     `/payflow/accounts/${accountId}/payment-links`,
+  );
+}
+
+export function listPayflowAccountPayments(accountId: number) {
+  return apiRequest<PayflowAccountPaymentsResponse>(
+    `/payflow/accounts/${accountId}/payments`,
   );
 }
 

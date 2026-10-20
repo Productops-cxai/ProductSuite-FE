@@ -6,6 +6,7 @@ import {
   getPayflowAccount,
   getPayflowAccountCommunicationEligibility,
   listPayflowAccountPaymentLinks,
+  listPayflowAccountPayments,
   listPayflowComms,
   listPayflowReviews,
   revokePayflowPaymentLink,
@@ -25,6 +26,7 @@ import {
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import type {
   PayflowAccount,
+  PayflowAccountPaymentsResponse,
   PayflowCommunication,
   PayflowCommunicationEligibility,
   PayflowPaymentLink,
@@ -87,6 +89,38 @@ function paymentLinkTone(status: string): Tone {
       return "danger";
     default:
       return "neutral";
+  }
+}
+
+function paymentTxnTone(status: string, direction?: string): Tone {
+  if (direction === "refund" || direction === "reversal" || status === "Refunded" || status === "Reversed") {
+    return "warning";
+  }
+  switch (status) {
+    case "Succeeded":
+      return "success";
+    case "Failed":
+    case "Cancelled":
+      return "danger";
+    case "Pending":
+    case "Processing":
+    case "Initiated":
+      return "warning";
+    default:
+      return "neutral";
+  }
+}
+
+function optionTypeLabel(value?: string | null) {
+  switch (value) {
+    case "pay_in_full":
+      return "Pay in full";
+    case "partial":
+      return "Partial";
+    case "payment_plan":
+      return "Payment plan";
+    default:
+      return value || "—";
   }
 }
 
@@ -284,6 +318,9 @@ export function PayFlowCaseDetailPage() {
   const [paymentLinks, setPaymentLinks] = useState<PayflowPaymentLink[]>([]);
   const [paymentLinksLoading, setPaymentLinksLoading] = useState(false);
   const [paymentLinksError, setPaymentLinksError] = useState("");
+  const [payments, setPayments] = useState<PayflowAccountPaymentsResponse | null>(null);
+  const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const [paymentsError, setPaymentsError] = useState("");
   const [copyFlashId, setCopyFlashId] = useState<number | null>(null);
   const [revokingId, setRevokingId] = useState<number | null>(null);
 
@@ -324,17 +361,22 @@ export function PayFlowCaseDetailPage() {
       setExecution(null);
       setPaymentLinks([]);
       setPaymentLinksError("");
+      setPayments(null);
+      setPaymentsError("");
       setSideLoading(false);
       setExecutionLoading(false);
       setPaymentLinksLoading(false);
+      setPaymentsLoading(false);
       return;
     }
     let cancelled = false;
     setSideLoading(true);
     setExecutionLoading(true);
     setPaymentLinksLoading(true);
+    setPaymentsLoading(true);
     setExecutionError("");
     setPaymentLinksError("");
+    setPaymentsError("");
     Promise.all([
       listPayflowReviews({
         client_id: account.client_id,
@@ -358,8 +400,16 @@ export function PayFlowCaseDetailPage() {
         }
         return { payment_links: [] as PayflowPaymentLink[], total: 0, active_count: 0 };
       }),
+      listPayflowAccountPayments(account.id).catch((err) => {
+        if (!cancelled) {
+          setPaymentsError(
+            err instanceof ApiError ? err.detail : "Failed to load payments",
+          );
+        }
+        return null;
+      }),
     ])
-      .then(([reviewRes, commRes, eligibilityRes, execRes, linksRes]) => {
+      .then(([reviewRes, commRes, eligibilityRes, execRes, linksRes, paymentsRes]) => {
         if (cancelled) return;
         setReviews(
           (reviewRes.reviews || []).filter((r) => r.account_id === account.id),
@@ -368,6 +418,7 @@ export function PayFlowCaseDetailPage() {
         setEligibility(eligibilityRes);
         setExecution(execRes.execution || null);
         setPaymentLinks(linksRes.payment_links || []);
+        setPayments(paymentsRes);
       })
       .catch(() => {
         if (!cancelled) {
@@ -376,6 +427,7 @@ export function PayFlowCaseDetailPage() {
           setEligibility(null);
           setExecution(null);
           setPaymentLinks([]);
+          setPayments(null);
         }
       })
       .finally(() => {
@@ -383,6 +435,7 @@ export function PayFlowCaseDetailPage() {
           setSideLoading(false);
           setExecutionLoading(false);
           setPaymentLinksLoading(false);
+          setPaymentsLoading(false);
         }
       });
     return () => {
@@ -1084,6 +1137,151 @@ export function PayFlowCaseDetailPage() {
             ) : null}
           </Panel>
         )}
+
+        <Panel
+          title="Payments"
+          description="Backend-confirmed transactions only — initiation alone is never shown as paid"
+          bodyClassName={
+            (payments?.transactions?.length || 0) > 0 || (payments?.payment_plans?.length || 0) > 0
+              ? "p-0"
+              : undefined
+          }
+        >
+          {paymentsError ? (
+            <p className="px-4 py-2.5 text-[13px] text-destructive">{paymentsError}</p>
+          ) : null}
+          {paymentsLoading ? (
+            <p className="px-4 py-2.5 text-[13px] text-muted-foreground">Loading payments…</p>
+          ) : null}
+          {!paymentsLoading && payments ? (
+            <div className={`${(payments.transactions?.length || 0) > 0 ? "border-b border-border" : ""} px-4 py-3`}>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <div>
+                  <p className="text-[11px] text-muted-foreground">Original</p>
+                  <p className="text-[14px] font-semibold tabular text-foreground">
+                    {formatCurrency(payments.balances.original_balance)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-muted-foreground">Outstanding</p>
+                  <p className="text-[14px] font-semibold tabular text-foreground">
+                    {formatCurrency(payments.balances.outstanding_balance)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-muted-foreground">Recovered</p>
+                  <p className="text-[14px] font-semibold tabular text-foreground">
+                    {formatCurrency(payments.balances.recovered_balance)}
+                  </p>
+                </div>
+              </div>
+              <p className="mt-2 text-[12px] text-muted-foreground">
+                Case status · {payments.balances.collection_status || account.collection_status || "—"}
+                {" · "}
+                {payments.balances.currency_code || "USD"}
+              </p>
+            </div>
+          ) : null}
+          {!paymentsLoading && !paymentsError && !(payments?.transactions?.length) ? (
+            <EmptyState
+              title="No confirmed payments yet"
+              description="Verified Stripe or portal payments will appear here with references and balance impact."
+            />
+          ) : null}
+          {!paymentsLoading && (payments?.transactions?.length || 0) > 0 ? (
+            <ul className="divide-y divide-border">
+              {payments!.transactions.map((txn) => (
+                <li key={txn.id} className="px-4 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusPill tone={paymentTxnTone(txn.status, txn.direction)}>
+                        {txn.direction !== "payment" ? `${txn.direction} · ${txn.status}` : txn.status}
+                      </StatusPill>
+                      <span className="text-[13px] font-semibold tabular text-foreground">
+                        {formatCurrency(txn.amount)}
+                      </span>
+                      <span className="text-[12px] text-muted-foreground">
+                        {optionTypeLabel(txn.option_type)}
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-muted-foreground">
+                      {formatStamp(txn.completed_at || txn.created_at)}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Ref {txn.reference || txn.id}
+                    {txn.provider_ref ? ` · Provider ${txn.provider_ref}` : ""}
+                    {txn.method ? ` · ${txn.method}` : ""}
+                    {txn.balance_after != null
+                      ? ` · Balance after ${formatCurrency(txn.balance_after)}`
+                      : ""}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {!paymentsLoading && (payments?.attempts || []).some((a) => a.status !== "Succeeded") ? (
+            <div className="border-t border-border px-4 py-3">
+              <p className="mb-2 text-[12px] font-medium text-foreground">
+                Pending / failed attempts (not applied to balance)
+              </p>
+              <ul className="space-y-2">
+                {payments!.attempts
+                  .filter((a) => a.status !== "Succeeded")
+                  .slice(0, 8)
+                  .map((a) => (
+                    <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 text-[12px]">
+                      <span className="flex items-center gap-2">
+                        <StatusPill tone={paymentTxnTone(a.status)}>{a.status}</StatusPill>
+                        <span className="tabular">{formatCurrency(a.amount)}</span>
+                        <span className="text-muted-foreground">{optionTypeLabel(a.option_type)}</span>
+                      </span>
+                      <span className="text-muted-foreground">{formatStamp(a.created_at)}</span>
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          ) : null}
+          {!paymentsLoading && (payments?.payment_plans?.length || 0) > 0 ? (
+            <div className="border-t border-border px-4 py-3">
+              <p className="mb-2 text-[12px] font-medium text-foreground">Payment plans</p>
+              <ul className="space-y-3">
+                {payments!.payment_plans.map((plan) => (
+                  <li key={plan.id} className="rounded-md border border-border bg-surface px-3 py-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[13px] font-medium text-foreground">
+                        {plan.label || plan.id}
+                      </span>
+                      <StatusPill tone={paymentTxnTone(plan.status)}>{plan.status}</StatusPill>
+                    </div>
+                    <p className="mt-1 text-[12px] text-muted-foreground">
+                      {plan.installments_total} × {formatCurrency(plan.installment_amount)} ·{" "}
+                      {plan.frequency} · paid {formatCurrency(plan.amount_paid)} of{" "}
+                      {formatCurrency(plan.total_payable)}
+                      {plan.next_due_date ? ` · next due ${plan.next_due_date}` : ""}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      Auto-charge off — future instalments are scheduled only
+                    </p>
+                    <ul className="mt-2 space-y-1">
+                      {(plan.installments || []).map((inst) => (
+                        <li
+                          key={`${plan.id}-${inst.sequence}`}
+                          className="flex justify-between gap-2 text-[11px] text-muted-foreground"
+                        >
+                          <span>
+                            #{inst.sequence} · {formatCurrency(inst.amount)} · due {inst.due_date || "—"}
+                          </span>
+                          <span>{inst.status}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </Panel>
 
         <Panel
           title="Payment links"

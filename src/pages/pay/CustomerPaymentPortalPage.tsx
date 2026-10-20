@@ -257,6 +257,31 @@ export function CustomerPaymentPortalPage() {
                           {opt.description}
                         </p>
                       ) : null}
+                      {active && opt.type === "payment_plan" && opt.schedule?.length ? (
+                        <ul className="mt-2 space-y-1 border-t border-border/60 pt-2">
+                          {opt.schedule.map((row) => (
+                            <li
+                              key={row.sequence}
+                              className="flex justify-between gap-2 text-[11px] text-muted-foreground"
+                            >
+                              <span>
+                                #{row.sequence}
+                                {row.sequence === 1 ? " (today)" : ""} · due {row.due_date}
+                              </span>
+                              <span className="tabular">
+                                {formatMoney(row.amount, opt.currency_code)}
+                              </span>
+                            </li>
+                          ))}
+                          <li className="pt-1 text-[11px] font-medium text-foreground">
+                            Total payable{" "}
+                            {formatMoney(
+                              opt.total_payable ?? portal.case.outstanding_balance,
+                              opt.currency_code,
+                            )}
+                          </li>
+                        </ul>
+                      ) : null}
                     </div>
                     {!opt.amount_editable && opt.amount != null ? (
                       <p className="shrink-0 text-[14px] font-semibold tabular text-foreground">
@@ -269,6 +294,23 @@ export function CustomerPaymentPortalPage() {
             })
           )}
         </div>
+
+        {(portal.active_payment_plans?.length || 0) > 0 ? (
+          <div className="rounded-xl border border-border bg-card px-4 py-3">
+            <p className="text-[13px] font-medium text-foreground">Your active payment plan</p>
+            {portal.active_payment_plans!.map((plan) => (
+              <div key={plan.id} className="mt-2 text-[12px] text-muted-foreground">
+                <p>
+                  {plan.label || plan.id} · {plan.status} · paid{" "}
+                  {formatMoney(plan.amount_paid, plan.currency_code)} of{" "}
+                  {formatMoney(plan.total_payable, plan.currency_code)}
+                </p>
+                {plan.next_due_date ? <p className="mt-0.5">Next due {plan.next_due_date}</p> : null}
+                <p className="mt-0.5">Future instalments are not charged automatically.</p>
+              </div>
+            ))}
+          </div>
+        ) : null}
 
         {selected?.amount_editable ? (
           <div className="rounded-xl border border-border bg-card px-4 py-3">
@@ -314,11 +356,22 @@ export function CustomerPaymentPortalPage() {
                 <dd className="font-medium text-foreground">{selected?.label}</dd>
               </div>
               <div className="flex justify-between gap-3">
-                <dt className="text-muted-foreground">Amount</dt>
+                <dt className="text-muted-foreground">Amount due now</dt>
                 <dd className="font-semibold tabular text-foreground">
                   {formatMoney(chargeAmount || 0, portal.case.currency_code)}
                 </dd>
               </div>
+              {selected?.type === "payment_plan" && selected.total_payable != null ? (
+                <div className="flex justify-between gap-3">
+                  <dt className="text-muted-foreground">Plan total</dt>
+                  <dd className="tabular text-foreground">
+                    {formatMoney(selected.total_payable, portal.case.currency_code)}
+                    {selected.installments
+                      ? ` · ${selected.installments} ${selected.frequency || "monthly"}`
+                      : ""}
+                  </dd>
+                </div>
+              ) : null}
               <div className="flex justify-between gap-3">
                 <dt className="text-muted-foreground">Account</dt>
                 <dd className="text-foreground">{portal.case.account_reference}</dd>

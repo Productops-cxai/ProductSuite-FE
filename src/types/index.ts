@@ -1408,6 +1408,15 @@ export interface PayflowPaymentPortalOption {
   max_amount?: number;
   installments?: number;
   plan_id?: string;
+  frequency?: string;
+  total_payable?: number;
+  installment_amount?: number;
+  schedule?: {
+    sequence: number;
+    amount: number;
+    due_date: string;
+    frequency?: string;
+  }[];
 }
 
 export interface PayflowPaymentPortalResolve {
@@ -1420,7 +1429,9 @@ export interface PayflowPaymentPortalResolve {
   customer: { display_name?: string };
   case: {
     account_reference?: string;
+    original_balance?: number;
     outstanding_balance: number;
+    recovered_balance?: number;
     currency_code: string;
     collection_status?: string;
   };
@@ -1431,11 +1442,77 @@ export interface PayflowPaymentPortalResolve {
     on_behalf_of?: string | null;
   };
   payment_options: PayflowPaymentPortalOption[];
+  active_payment_plans?: PayflowPaymentPlanSummary[];
   provider: {
     name?: string;
     ready?: boolean;
     message?: string | null;
   };
+}
+
+export interface PayflowPaymentPlanInstallment {
+  sequence: number;
+  amount: number;
+  due_date?: string | null;
+  status: string;
+  paid_at?: string | null;
+  transaction_id?: string | null;
+}
+
+export interface PayflowPaymentPlanSummary {
+  id: string;
+  status: string;
+  label?: string | null;
+  plan_option_id?: string | null;
+  installments_total: number;
+  installment_amount: number;
+  frequency: string;
+  currency_code: string;
+  total_payable: number;
+  amount_paid: number;
+  amount_remaining?: number;
+  start_date?: string | null;
+  next_due_date?: string | null;
+  auto_charge_enabled?: boolean;
+  installments: PayflowPaymentPlanInstallment[];
+  created_at?: string | null;
+  completed_at?: string | null;
+}
+
+export interface PayflowPaymentTransaction {
+  id: string;
+  status: string;
+  direction: string;
+  option_type?: string | null;
+  amount: number;
+  currency_code: string;
+  provider?: string | null;
+  provider_ref?: string | null;
+  method?: string | null;
+  reference?: string | null;
+  balance_before?: number | null;
+  balance_after?: number | null;
+  recovered_delta?: number | null;
+  related_transaction_id?: string | null;
+  notes?: string | null;
+  completed_at?: string | null;
+  created_at?: string | null;
+  is_confirmed?: boolean;
+}
+
+export interface PayflowAccountPaymentsResponse {
+  account_id: number;
+  balances: {
+    original_balance: number;
+    outstanding_balance: number;
+    recovered_balance: number;
+    currency_code: string;
+    collection_status?: string;
+  };
+  transactions: PayflowPaymentTransaction[];
+  attempts: PayflowPaymentAttempt[];
+  payment_plans: PayflowPaymentPlanSummary[];
+  total_transactions: number;
 }
 
 export interface PayflowPaymentAttempt {

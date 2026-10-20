@@ -81,8 +81,10 @@ export function PayFlowExceptionsPage() {
   );
 
   useEffect(() => {
-    const next = searchParams.get("status");
-    if (next) setStatus(next);
+    const nextStatus = searchParams.get("status");
+    if (nextStatus) setStatus(nextStatus);
+    const nextType = searchParams.get("type");
+    if (nextType) setExceptionType(nextType);
   }, [searchParams]);
 
   function reload() {
