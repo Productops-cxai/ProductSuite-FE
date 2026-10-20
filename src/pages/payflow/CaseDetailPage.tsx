@@ -7,6 +7,7 @@ import {
   getPayflowAccountCommunicationEligibility,
   listPayflowComms,
   listPayflowReviews,
+  sendPayflowManualEmail,
   sendPayflowManualSms,
 } from "../../api/payflow";
 import { WorkflowFlowPanel } from "../../components/payflow/WorkflowFlowPanel";
@@ -257,6 +258,10 @@ export function PayFlowCaseDetailPage() {
   const [smsSending, setSmsSending] = useState(false);
   const [smsMessage, setSmsMessage] = useState("");
   const [smsError, setSmsError] = useState("");
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailMessage, setEmailMessage] = useState("");
+  const [emailError, setEmailError] = useState("");
   const [commsRefresh, setCommsRefresh] = useState(0);
 
   useEffect(() => {
@@ -351,6 +356,11 @@ export function PayFlowCaseDetailPage() {
     eligibility?.sms?.ok !== false &&
     eligibility?.sms?.eligibility_status !== "Blocked";
 
+  const canSendEmail =
+    hasPermission("send_communications") &&
+    eligibility?.email?.ok !== false &&
+    eligibility?.email?.eligibility_status !== "Blocked";
+
   async function handleSendSms() {
     if (!account || !canSendSms || smsSending) return;
     const body = (
@@ -364,7 +374,7 @@ export function PayFlowCaseDetailPage() {
         body,
         purpose: "Payment Reminder",
         include_payment_link: true,
-        idempotency_key: `case-${account.id}-${Date.now()}`,
+        idempotency_key: `case-sms-${account.id}-${Date.now()}`,
       });
       if (res.skipped === "eligibility" || res.restriction_reason) {
         setSmsError(res.restriction_reason || "SMS was blocked by eligibility checks");
@@ -377,6 +387,40 @@ export function PayFlowCaseDetailPage() {
       setSmsError(err instanceof ApiError ? err.detail : "Failed to send SMS");
     } finally {
       setSmsSending(false);
+    }
+  }
+
+  async function handleSendEmail() {
+    if (!account || !canSendEmail || emailSending) return;
+    const subject = (
+      emailSubject.trim() || `Payment reminder · ${account.account_reference || account.id}`
+    ).slice(0, 500);
+    const body = (
+      emailMessage.trim() ||
+      `Hello,\n\nThis is a payment reminder for account ${account.account_reference || account.id}.\n\nThank you.`
+    ).slice(0, 20000);
+    setEmailSending(true);
+    setEmailError("");
+    try {
+      const res = await sendPayflowManualEmail(account.id, {
+        subject,
+        body,
+        purpose: "Payment Reminder",
+        include_payment_link: true,
+        idempotency_key: `case-email-${account.id}-${Date.now()}`,
+      });
+      if (res.skipped === "eligibility" || res.restriction_reason) {
+        setEmailError(res.restriction_reason || "Email was blocked by eligibility checks");
+      } else if (res.provider_error) {
+        setEmailError(res.provider_error);
+      }
+      setCommsRefresh((n) => n + 1);
+      setEmailSubject("");
+      setEmailMessage("");
+    } catch (err) {
+      setEmailError(err instanceof ApiError ? err.detail : "Failed to send email");
+    } finally {
+      setEmailSending(false);
     }
   }
 
@@ -979,27 +1023,64 @@ export function PayFlowCaseDetailPage() {
           title="Communications"
           description="Actions executed as part of the current strategy"
           action={
-            canSendSms ? (
-              <Btn variant="primary" disabled={smsSending} onClick={() => void handleSendSms()}>
-                {smsSending ? "Sending…" : "Send SMS"}
-              </Btn>
-            ) : null
+            <div className="flex flex-wrap gap-2">
+              {canSendEmail ? (
+                <Btn
+                  variant="secondary"
+                  disabled={emailSending}
+                  onClick={() => void handleSendEmail()}
+                >
+                  {emailSending ? "Sending…" : "Send Email"}
+                </Btn>
+              ) : null}
+              {canSendSms ? (
+                <Btn variant="primary" disabled={smsSending} onClick={() => void handleSendSms()}>
+                  {smsSending ? "Sending…" : "Send SMS"}
+                </Btn>
+              ) : null}
+            </div>
           }
           bodyClassName={comms.length > 0 ? "p-0" : undefined}
         >
-          {canSendSms ? (
-            <div className={`space-y-2 ${comms.length > 0 ? "border-b border-border px-4 py-3" : "mb-3"}`}>
-              <textarea
-                value={smsMessage}
-                onChange={(e) => setSmsMessage(e.target.value)}
-                rows={2}
-                maxLength={1600}
-                placeholder="Optional SMS body (defaults to a payment reminder). Reply STOP to opt out is appended by policy templates."
-                className="w-full rounded-md border border-border bg-surface px-3 py-2 text-[13px] text-foreground"
-              />
-              {smsError ? <p className="text-[12px] text-destructive">{smsError}</p> : null}
+          {(canSendEmail || canSendSms) && (
+            <div
+              className={`space-y-3 ${comms.length > 0 ? "border-b border-border px-4 py-3" : "mb-3"}`}
+            >
+              {canSendEmail ? (
+                <div className="space-y-2">
+                  <input
+                    value={emailSubject}
+                    onChange={(e) => setEmailSubject(e.target.value)}
+                    maxLength={500}
+                    placeholder="Email subject (optional)"
+                    className="w-full rounded-md border border-border bg-surface px-3 py-2 text-[13px] text-foreground"
+                  />
+                  <textarea
+                    value={emailMessage}
+                    onChange={(e) => setEmailMessage(e.target.value)}
+                    rows={3}
+                    maxLength={20000}
+                    placeholder="Optional email body (defaults to a payment reminder). Client branding / From applied on send."
+                    className="w-full rounded-md border border-border bg-surface px-3 py-2 text-[13px] text-foreground"
+                  />
+                  {emailError ? <p className="text-[12px] text-destructive">{emailError}</p> : null}
+                </div>
+              ) : null}
+              {canSendSms ? (
+                <div className="space-y-2">
+                  <textarea
+                    value={smsMessage}
+                    onChange={(e) => setSmsMessage(e.target.value)}
+                    rows={2}
+                    maxLength={1600}
+                    placeholder="Optional SMS body (defaults to a payment reminder)."
+                    className="w-full rounded-md border border-border bg-surface px-3 py-2 text-[13px] text-foreground"
+                  />
+                  {smsError ? <p className="text-[12px] text-destructive">{smsError}</p> : null}
+                </div>
+              ) : null}
             </div>
-          ) : null}
+          )}
           {sideLoading ? (
             <p className="px-4 py-2.5 text-[13px] text-muted-foreground">Loading communications…</p>
           ) : null}

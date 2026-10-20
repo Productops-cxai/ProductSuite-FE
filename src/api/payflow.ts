@@ -889,6 +889,32 @@ export function sendPayflowManualSms(
   );
 }
 
+export function sendPayflowManualEmail(
+  accountId: number,
+  payload: {
+    subject: string;
+    body: string;
+    purpose?: string;
+    include_payment_link?: boolean;
+    idempotency_key?: string;
+  },
+) {
+  return apiRequest<ManualSmsSendResponse>(
+    `/payflow/accounts/${accountId}/communications/email/send`,
+    { method: "POST", body: payload },
+  );
+}
+
+export function resendPayflowCommunication(
+  communicationId: number,
+  payload?: { idempotency_key?: string },
+) {
+  return apiRequest<ManualSmsSendResponse>(`/payflow/comms/${communicationId}/resend`, {
+    method: "POST",
+    body: payload || {},
+  });
+}
+
 export function listPayflowOperationalExceptions(params?: {
   status?: string;
   exception_type?: string;

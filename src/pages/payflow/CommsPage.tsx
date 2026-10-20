@@ -342,43 +342,52 @@ export function PayFlowCommsPage() {
                 "Engagement",
               ]}
             >
-              {rows.map((c) => (
-                <Tr key={c.id}>
-                  <Td>
-                    <Link to={`/payflow/comms/${c.id}`}>
-                      <PrimaryCell
-                        title={
-                          <span className="tabular text-primary hover:underline">
-                            {c.time_label || "—"}
-                          </span>
-                        }
-                        subtitle={c.date_label || c.code}
-                      />
-                    </Link>
-                  </Td>
-                  <Td>{c.client_name || "—"}</Td>
-                  <Td className="font-medium">{c.customer_name || "—"}</Td>
-                  <Td className="tabular">
-                    <Link
-                      to={`/payflow/cases/${c.account_id}`}
-                      className="text-primary hover:underline"
-                    >
-                      {c.account_reference || c.case_reference || "—"}
-                    </Link>
-                  </Td>
-                  <Td>
-                    <StatusPill tone={c.channel === "SMS" ? "info" : "neutral"}>
-                      {c.channel}
-                    </StatusPill>
-                  </Td>
-                  <Td>{c.purpose}</Td>
-                  <Td className="text-muted-foreground">{c.workflow_name || "—"}</Td>
-                  <Td>
-                    <StatusPill tone={commStatusTone(c.status)}>{c.status}</StatusPill>
-                  </Td>
-                  <Td className="text-muted-foreground">{engagementLabel(c)}</Td>
-                </Tr>
-              ))}
+              {rows.map((c) => {
+                const preview = (c.body_lines || []).filter(Boolean).join(" ").slice(0, 80);
+                const subtitleParts = [
+                  c.date_label || c.code,
+                  c.recipient || null,
+                  c.channel === "Email" && c.subject ? c.subject : null,
+                  preview || null,
+                ].filter(Boolean);
+                return (
+                  <Tr key={c.id}>
+                    <Td>
+                      <Link to={`/payflow/comms/${c.id}`}>
+                        <PrimaryCell
+                          title={
+                            <span className="tabular text-primary hover:underline">
+                              {c.time_label || "—"}
+                            </span>
+                          }
+                          subtitle={subtitleParts.join(" · ")}
+                        />
+                      </Link>
+                    </Td>
+                    <Td>{c.client_name || "—"}</Td>
+                    <Td className="font-medium">{c.customer_name || "—"}</Td>
+                    <Td className="tabular">
+                      <Link
+                        to={`/payflow/cases/${c.account_id}`}
+                        className="text-primary hover:underline"
+                      >
+                        {c.account_reference || c.case_reference || "—"}
+                      </Link>
+                    </Td>
+                    <Td>
+                      <StatusPill tone={c.channel === "SMS" ? "info" : "neutral"}>
+                        {c.channel}
+                      </StatusPill>
+                    </Td>
+                    <Td>{c.purpose}</Td>
+                    <Td className="text-muted-foreground">{c.workflow_name || "—"}</Td>
+                    <Td>
+                      <StatusPill tone={commStatusTone(c.status)}>{c.status}</StatusPill>
+                    </Td>
+                    <Td className="text-muted-foreground">{engagementLabel(c)}</Td>
+                  </Tr>
+                );
+              })}
             </DataTable>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
               <p className="text-[12px] text-muted-foreground">

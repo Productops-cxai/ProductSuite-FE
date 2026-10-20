@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
-import { getPayflowComm } from "../../api/payflow";
+import { getPayflowComm, resendPayflowCommunication } from "../../api/payflow";
 import {
   Btn,
   PageHeader,
@@ -9,6 +9,7 @@ import {
   StatusPill,
   type Tone,
 } from "../../components/payflow/lovable/payflow-ui";
+import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { cn } from "../../lib/utils";
 import type { PayflowCommunication } from "../../types";
 
@@ -97,9 +98,13 @@ function Expandable({ title, children }: { title: string; children: ReactNode })
 
 export function PayFlowCommDetailPage() {
   const { communicationId } = useParams<{ communicationId: string }>();
+  const { hasPermission } = usePayFlowAccess();
   const [comm, setComm] = useState<PayflowCommunication | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [resending, setResending] = useState(false);
+  const [resendMsg, setResendMsg] = useState("");
+  const [reloadTick, setReloadTick] = useState(0);
 
   useEffect(() => {
     const id = Number(communicationId);
@@ -126,7 +131,7 @@ export function PayFlowCommDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [communicationId]);
+  }, [communicationId, reloadTick]);
 
   if (loading) {
     return <p className="text-sm text-muted-foreground">Loading communication…</p>;
@@ -210,6 +215,32 @@ export function PayFlowCommDetailPage() {
     Boolean(comm.rule_id) ||
     ["Awaiting Governance", "Suppressed", "Failed", "Scheduled"].includes(comm.status);
 
+  const canResend =
+    hasPermission("send_communications") && comm.status === "Failed";
+
+  async function handleResend() {
+    if (!comm || !canResend || resending) return;
+    setResending(true);
+    setResendMsg("");
+    try {
+      const res = await resendPayflowCommunication(comm.id, {
+        idempotency_key: `resend-${comm.id}-${Date.now()}`,
+      });
+      if (res.restriction_reason) {
+        setResendMsg(res.restriction_reason);
+      } else if (res.provider_error) {
+        setResendMsg(res.provider_error);
+      } else if (res.communication_id) {
+        setResendMsg(`Resent as ${res.code || `#${res.communication_id}`}`);
+      }
+      setReloadTick((n) => n + 1);
+    } catch (err) {
+      setResendMsg(err instanceof ApiError ? err.detail : "Resend failed");
+    } finally {
+      setResending(false);
+    }
+  }
+
   return (
     <>
       <PageHeader
@@ -224,6 +255,11 @@ export function PayFlowCommDetailPage() {
           <div className="flex flex-wrap items-center gap-2">
             <StatusPill tone={commStatusTone(comm.status)}>{comm.status}</StatusPill>
             <StatusPill>{comm.code}</StatusPill>
+            {canResend ? (
+              <Btn variant="secondary" disabled={resending} onClick={() => void handleResend()}>
+                {resending ? "Resending…" : "Resend"}
+              </Btn>
+            ) : null}
             {payLink ? (
               <a href={payLink} target="_blank" rel="noreferrer">
                 <Btn variant="primary">Preview Payment Experience</Btn>
@@ -232,6 +268,10 @@ export function PayFlowCommDetailPage() {
           </div>
         }
       />
+
+      {resendMsg ? (
+        <p className="mb-4 text-[13px] text-muted-foreground">{resendMsg}</p>
+      ) : null}
 
       {comm.review_id ? (
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-warning/30 bg-warning/10 px-4 py-3">
