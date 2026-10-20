@@ -440,6 +440,44 @@ export function PayFlowReviewDetailPage() {
             </Link>
           </Panel>
 
+          <Panel
+            title="Recent Communications"
+            description="Customer outreach for this collection case"
+            bodyClassName={(review.communications || []).length > 0 ? "p-0" : undefined}
+            action={
+              <Link
+                to="/payflow/comms"
+                className="text-[12.5px] font-semibold text-primary hover:underline"
+              >
+                Full log
+              </Link>
+            }
+          >
+            {(review.communications || []).length === 0 ? (
+              <p className="text-[13px] text-muted-foreground">No communications recorded yet.</p>
+            ) : (
+              <ul className="divide-y divide-border">
+                {(review.communications || []).map((c) => (
+                  <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
+                    <div>
+                      <Link
+                        to={`/payflow/comms/${c.id}`}
+                        className="text-[13px] font-semibold text-primary hover:underline"
+                      >
+                        {c.channel} · {c.purpose}
+                      </Link>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {[c.date_label, c.time_label].filter(Boolean).join(" · ") || c.code}
+                        {c.engagement ? ` · ${c.engagement}` : " · Not trackable"}
+                      </p>
+                    </div>
+                    <StatusPill tone={reviewStatusTone(c.status)}>{c.status}</StatusPill>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Panel>
+
           <Panel title="Decision" description="Each decision has a distinct operational outcome">
             {!decidable ? (
               <ResolvedSummary review={review} canDecide={canDecide} />

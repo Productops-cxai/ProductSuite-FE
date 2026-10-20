@@ -252,7 +252,10 @@ export function ClientCommunicationsTab({
       title="Communications"
       description={`Customer communications sent for ${clientName} accounts`}
       action={
-        <Link to="/payflow/comms" className="text-[12.5px] font-semibold text-primary hover:underline">
+        <Link
+          to={`/payflow/comms?client=${encodeURIComponent(clientName)}`}
+          className="text-[12.5px] font-semibold text-primary hover:underline"
+        >
           Full communication log
         </Link>
       }

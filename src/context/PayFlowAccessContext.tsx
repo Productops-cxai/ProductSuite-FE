@@ -149,6 +149,7 @@ export const PAYFLOW_ROUTE_PERMISSIONS: Array<{ prefix: string; anyOf: string[] 
   { prefix: "/payflow/workflows", anyOf: ["view_workflows"] },
   { prefix: "/payflow/review", anyOf: ["view_human_reviews"] },
   { prefix: "/payflow/rules", anyOf: ["view_rules"] },
+  { prefix: "/payflow/comms", anyOf: ["view_communications"] },
 ];
 
 export function permissionsForPath(pathname: string): string[] | null {

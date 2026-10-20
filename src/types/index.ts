@@ -227,6 +227,7 @@ export interface PayflowWorkflowActivityItem {
   step_id?: string | null;
   step_run_id?: number | null;
   communication_id?: number | null;
+  human_review_id?: number | null;
   block_reason?: string | null;
   error?: string | null;
 }
@@ -693,6 +694,8 @@ export interface PayflowAccountTimelineEvent {
   label: string;
   detail: string;
   at: string;
+  review_id?: number | null;
+  source?: string | null;
 }
 
 export interface PayflowAccount {
@@ -929,6 +932,18 @@ export interface PayflowReviewWorkflowContext {
   workflow_definition_path?: string | null;
 }
 
+export interface PayflowReviewCommunication {
+  id: number;
+  code: string;
+  channel: string;
+  purpose: string;
+  status: string;
+  engagement?: string | null;
+  date_label?: string | null;
+  time_label?: string | null;
+  subject?: string | null;
+}
+
 export interface PayflowReview {
   id: number;
   code: string;
@@ -965,6 +980,7 @@ export interface PayflowReview {
   rejection_reason?: string | null;
   hold_until?: string | null;
   history: PayflowReviewHistoryItem[];
+  communications?: PayflowReviewCommunication[];
   workflow_context?: PayflowReviewWorkflowContext | null;
   exception_step_id?: string | null;
   exception_step?: PayflowReviewExceptionStep | null;
@@ -1238,6 +1254,7 @@ export interface PayflowCommunication {
   customer_name?: string | null;
   account_reference?: string | null;
   case_reference?: string | null;
+  case_status?: string | null;
   channel: string;
   purpose: string;
   status: string;
@@ -1249,6 +1266,7 @@ export interface PayflowCommunication {
   subject?: string | null;
   body_lines: string[];
   payment_link: boolean;
+  payment_link_url?: string | null;
   why_message?: string | null;
   why_channel?: string | null;
   why_timing?: string | null;
@@ -1310,6 +1328,7 @@ export interface PayflowDashboardFunnelStep {
   drop?: string | null;
   bar: number;
   paid: boolean;
+  href?: string | null;
 }
 
 export interface PayflowDashboardOutcome {

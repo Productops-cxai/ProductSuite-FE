@@ -95,6 +95,7 @@ function workflowUiTone(status?: PayflowWorkflowUiStatus | null): Tone {
     case "Pending":
       return "neutral";
     case "Blocked":
+    case "Awaiting Review":
       return "warning";
     case "Failed":
     case "Cancelled":
@@ -102,6 +103,78 @@ function workflowUiTone(status?: PayflowWorkflowUiStatus | null): Tone {
     default:
       return "neutral";
   }
+}
+
+function stampMs(value?: string | null): number {
+  if (!value) return 0;
+  const t = Date.parse(value);
+  return Number.isNaN(t) ? 0 : t;
+}
+
+function normLabel(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function cleanUiStatus(raw?: string | null): PayflowWorkflowUiStatus | undefined {
+  if (!raw) return undefined;
+  const key = raw.toLowerCase().replace(/[_\s-]+/g, "");
+  if (key === "pausedhumanreview") return "Awaiting Review";
+  return raw;
+}
+
+function isRedundantHumanReviewLabel(label: string): boolean {
+  const key = normLabel(label);
+  return (
+    key === "human review" ||
+    key === "human review created" ||
+    key === "human review required" ||
+    key === "flagged for human review"
+  );
+}
+
+function isHumanReviewDecisionLabel(label: string): boolean {
+  const key = normLabel(label);
+  return (
+    key.startsWith("human review approved") ||
+    key.startsWith("human review rejected") ||
+    key.startsWith("human review held") ||
+    key.startsWith("human review modify") ||
+    key.startsWith("human review modified")
+  );
+}
+
+/** File intake / account birth must lead the story even if stamp clocks disagree. */
+function lifecycleRank(label: string): number {
+  const key = normLabel(label);
+  if (
+    key === "crm import" ||
+    key === "created from file upload" ||
+    key === "created" ||
+    key.startsWith("account created") ||
+    key.includes("created from")
+  ) {
+    return 0;
+  }
+  if (key === "case received" || key === "trigger") return 1;
+  return 2;
+}
+
+/** Normalize legacy intake labels for display. */
+function displayTimelineLabel(label: string, source?: string | null): string {
+  const key = normLabel(label);
+  if (key === "crm refresh" || key === "updated from file upload") {
+    return "Updated from file upload";
+  }
+  if (
+    source === "file_upload" ||
+    key === "crm import" ||
+    key === "created from file upload" ||
+    key === "created from crm daily file"
+  ) {
+    return "Created from file upload";
+  }
+  if (key === "created" || key.startsWith("account created")) return "Created";
+  return label;
 }
 
 function runStatusTone(status?: string | null): Tone {
@@ -152,6 +225,7 @@ function DetailGrid({ rows }: { rows: { label: string; value: string }[] }) {
 
 type TimelineEvent = {
   at: string;
+  atMs: number;
   label: string;
   detail: string;
   reviewId?: number;
@@ -258,43 +332,147 @@ export function PayFlowCaseDetailPage() {
 
   const timeline = useMemo(() => {
     if (!account) return [] as TimelineEvent[];
-    const fromExecution: TimelineEvent[] = (execution?.activity || []).map((e) => ({
-      at: e.at ? formatStamp(e.at) : "—",
-      label: e.label,
-      detail: e.block_reason || e.error || e.detail || e.kind || "",
-      uiStatus: e.ui_status || undefined,
-      communicationId: e.communication_id || undefined,
-      reviewId: undefined,
-      href: e.communication_id
-        ? `/payflow/comms/${e.communication_id}`
-        : execution?.human_review_id && e.kind === "Human Review"
-          ? `/payflow/review/${execution.human_review_id}`
-          : undefined,
-    }));
-    const base: TimelineEvent[] = (account.timeline || []).map((e) => ({
-      at: e.at,
-      label: e.label,
-      detail: e.detail,
-    }));
-    const fromComms: TimelineEvent[] = comms.flatMap((c) =>
-      (c.events || []).map((e) => ({
-        at: e.at,
-        label: e.label,
-        detail: e.detail || `${c.channel} · ${c.purpose}`,
+
+    const coveredCommIds = new Set<number>();
+    const events: TimelineEvent[] = [];
+
+    // 1) Workflow execution is the spine (step status + links).
+    for (const e of execution?.activity || []) {
+      const communicationId = e.communication_id || undefined;
+      const reviewId =
+        e.human_review_id ||
+        (e.kind === "Human Review" ? execution?.human_review_id || undefined : undefined);
+      if (communicationId) coveredCommIds.add(communicationId);
+      const rawAt = e.at || "";
+      events.push({
+        at: rawAt ? formatStamp(rawAt) : "—",
+        atMs: stampMs(rawAt),
+        label: e.label || e.kind || "Workflow step",
+        detail: e.block_reason || e.error || e.detail || "",
+        uiStatus: cleanUiStatus(e.ui_status),
+        communicationId,
+        reviewId,
+        href: communicationId
+          ? `/payflow/comms/${communicationId}`
+          : reviewId
+            ? `/payflow/review/${reviewId}`
+            : undefined,
+      });
+    }
+
+    const hasExecutionHumanReview = events.some(
+      (ev) =>
+        normLabel(ev.label).includes("human review") ||
+        ev.uiStatus === "Awaiting Review" ||
+        !!ev.reviewId,
+    );
+
+    // 2) Account timeline — keep CRM / decisions; drop HR create duplicates.
+    for (const e of account.timeline || []) {
+      const label = e.label || "";
+      if (hasExecutionHumanReview && isRedundantHumanReviewLabel(label)) continue;
+      if (!isHumanReviewDecisionLabel(label) && isRedundantHumanReviewLabel(label) && reviews.length > 0) {
+        continue;
+      }
+      const rawAt = e.at || "";
+      const reviewId = e.review_id || undefined;
+      events.push({
+        at: rawAt ? formatStamp(rawAt) : rawAt || "—",
+        atMs: stampMs(rawAt),
+        label: displayTimelineLabel(label, e.source),
+        detail: e.detail || "",
+        reviewId,
+        href: reviewId ? `/payflow/review/${reviewId}` : undefined,
+      });
+    }
+
+    // 3) Communication events — only if this send is not already on the spine.
+    for (const c of comms) {
+      if (coveredCommIds.has(c.id)) continue;
+      coveredCommIds.add(c.id);
+      const rawAt = c.created_at || c.events?.[0]?.at || "";
+      events.push({
+        at: rawAt ? formatStamp(rawAt) : [c.date_label, c.time_label].filter(Boolean).join(" ") || "—",
+        atMs: stampMs(rawAt),
+        label: `${c.channel} · ${c.purpose}`,
+        detail: c.status,
         communicationId: c.id,
         href: `/payflow/comms/${c.id}`,
-      })),
-    );
-    const fromReviews: TimelineEvent[] = reviews.map((r) => ({
-      at: r.created_at ? formatStamp(r.created_at) : r.waiting_label || "—",
-      label: r.reason,
-      detail: `Rule: ${r.rule_name || "—"} · Proposed: ${r.proposed_action}`,
-      reviewId: r.id,
-      href: `/payflow/review/${r.id}`,
-      uiStatus: r.status === "On Hold" ? "Blocked" : undefined,
-    }));
-    // Prefer execution activity first when present; still merge related records.
-    return [...fromExecution, ...base, ...fromComms, ...fromReviews];
+        uiStatus: c.status === "Failed" ? "Failed" : undefined,
+      });
+    }
+
+    // 4) Reviews — merge into existing HR spine row; otherwise add one clean row each.
+    for (const r of reviews) {
+      const existing = events.find(
+        (ev) =>
+          ev.reviewId === r.id ||
+          (!ev.reviewId &&
+            (normLabel(ev.label).includes("human review") || ev.uiStatus === "Awaiting Review")),
+      );
+      if (existing) {
+        existing.reviewId = r.id;
+        existing.href = `/payflow/review/${r.id}`;
+        if (!existing.detail) {
+          existing.detail = [r.reason, r.proposed_action].filter(Boolean).join(" · ");
+        } else if (r.reason && !existing.detail.toLowerCase().includes(r.reason.toLowerCase())) {
+          existing.detail = `${existing.detail} · ${r.reason}`;
+        }
+        if (!existing.uiStatus && r.status === "Awaiting Review") {
+          existing.uiStatus = "Awaiting Review";
+        }
+        if (normLabel(existing.label) === "human review created") {
+          existing.label = "Human review";
+        }
+        continue;
+      }
+      const rawAt = r.created_at || "";
+      events.push({
+        at: rawAt ? formatStamp(rawAt) : r.waiting_label || "—",
+        atMs: stampMs(rawAt),
+        label: "Human review",
+        detail: [r.reason, r.rule_name ? `Rule: ${r.rule_name}` : "", r.proposed_action]
+          .filter(Boolean)
+          .join(" · "),
+        reviewId: r.id,
+        href: `/payflow/review/${r.id}`,
+        uiStatus:
+          r.status === "Awaiting Review"
+            ? "Awaiting Review"
+            : r.status === "On Hold"
+              ? "Blocked"
+              : undefined,
+      });
+    }
+
+    // Origin (file upload / created) first, then chronological for the rest.
+    events.sort((a, b) => {
+      const rankDiff = lifecycleRank(a.label) - lifecycleRank(b.label);
+      if (rankDiff !== 0) return rankDiff;
+      if (a.atMs !== b.atMs) return a.atMs - b.atMs;
+      return a.label.localeCompare(b.label);
+    });
+
+    // Final pass: collapse near-duplicate HR rows that slipped through.
+    const merged: TimelineEvent[] = [];
+    for (const ev of events) {
+      const prev = merged[merged.length - 1];
+      const sameHrCluster =
+        prev &&
+        Math.abs((prev.atMs || 0) - (ev.atMs || 0)) < 5 * 60 * 1000 &&
+        isRedundantHumanReviewLabel(prev.label) &&
+        isRedundantHumanReviewLabel(ev.label);
+      if (sameHrCluster && prev) {
+        prev.reviewId = prev.reviewId || ev.reviewId;
+        prev.href = prev.href || ev.href;
+        prev.uiStatus = prev.uiStatus || ev.uiStatus;
+        if (ev.detail && !prev.detail) prev.detail = ev.detail;
+        if (normLabel(prev.label) === "human review created") prev.label = "Human review";
+        continue;
+      }
+      merged.push(ev);
+    }
+    return merged;
   }, [account, comms, reviews, execution]);
 
   if (loading) {
@@ -417,7 +595,8 @@ export function PayFlowCaseDetailPage() {
             <StatusPill tone={statusTone(account.collection_status)}>
               {account.collection_status}
             </StatusPill>
-            {account.human_review || reviews.length > 0 ? (
+            {(account.human_review || reviews.length > 0) &&
+            (account.collection_status || "").toLowerCase() !== "human review" ? (
               <StatusPill tone="danger">Human review</StatusPill>
             ) : null}
           </div>
@@ -660,7 +839,7 @@ export function PayFlowCaseDetailPage() {
                           ? "Open review"
                           : event.communicationId
                             ? "Open communication"
-                            : "Open related record"}
+                            : "Open"}
                       </Link>
                     ) : null}
                   </li>
@@ -707,9 +886,12 @@ export function PayFlowCaseDetailPage() {
               {comms.map((c) => (
                 <li key={c.id} className="px-4 py-2.5">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-[13px] font-semibold text-foreground">
+                    <Link
+                      to={`/payflow/comms/${c.id}`}
+                      className="text-[13px] font-semibold text-primary hover:underline"
+                    >
                       {c.channel} · {c.purpose}
-                    </p>
+                    </Link>
                     <StatusPill tone={commStatusTone(c.status)}>{c.status}</StatusPill>
                   </div>
                   <p className="mt-0.5 text-xs text-muted-foreground">

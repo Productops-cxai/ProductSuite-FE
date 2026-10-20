@@ -121,7 +121,7 @@ export function PayFlowClientsPage() {
         if (phase1StatusLabel(c.status, c.status_label) !== status) return false;
       }
       if (addedThrough !== "All Sources") {
-        const label = c.added_through_label || "Add Client";
+        const label = c.added_through_label || "Created";
         if (label !== addedThrough) return false;
       }
       return true;
@@ -226,7 +226,7 @@ export function PayFlowClientsPage() {
               remainingSteps.length,
             );
             const showSetupHint = settingUp || remaining > 0;
-            const addedLabel = c.added_through_label || "Add Client";
+            const addedLabel = c.added_through_label || "Created";
 
             return (
               <Tr key={c.id}>
@@ -292,7 +292,13 @@ export function PayFlowClientsPage() {
                 <Td className="text-muted-foreground">{formatDate(c.created_at)}</Td>
                 <Td className="text-muted-foreground">{formatDateTime(c.updated_at)}</Td>
                 <Td>
-                  <StatusPill tone={addedLabel === "File Upload" ? "info" : "neutral"}>
+                  <StatusPill
+                    tone={
+                      addedLabel === "Created from file upload" || addedLabel === "File Upload"
+                        ? "info"
+                        : "neutral"
+                    }
+                  >
                     {addedLabel}
                   </StatusPill>
                 </Td>
