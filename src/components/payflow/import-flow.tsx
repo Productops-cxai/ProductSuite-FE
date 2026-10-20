@@ -413,7 +413,14 @@ function AccountPreviewTable({ records }: { records: ImportRecord[] }) {
   return (
     <DataTable
       minWidth={880}
-      head={["Account ID", "Client → Sub-Client", "Current Balance", "Incoming Balance", "Action", "Status"]}
+      head={[
+        "Account ID",
+        "Client → Sub-Client",
+        "In PayFlow",
+        "Outstanding Balance",
+        "Action",
+        "Status",
+      ]}
     >
       {records.map((r) => (
         <Tr key={r.id}>
@@ -429,7 +436,7 @@ function AccountPreviewTable({ records }: { records: ImportRecord[] }) {
             />
           </Td>
           <Td className="tabular text-muted-foreground">
-            {r.currentBalance == null ? "New account" : formatCurrency(r.currentBalance)}
+            {r.currentBalance == null ? "—" : formatCurrency(r.currentBalance)}
           </Td>
           <Td className="tabular font-medium">
             {formatCurrency(r.incomingBalance ?? 0)}
@@ -482,7 +489,7 @@ const formatInfo: Record<ImportKind, { required: string[]; note: string }> = {
       "phone_mobile (or phone_number / dn_debtorcasephonenumber_phone_number) — for SMS",
       "client_code + sub_client_code — or CRM client_number",
     ],
-    note: "Daily CRM account file (CSV or XLSX), including Debtor Summary dumps. Account email/phone are the debtor contact channels used for collection Email/SMS — not the client's ops contact_email. Native CRM columns (account_number, first_name, email_address, phone fields, client_number, …) map automatically. Clients must already exist in PayFlow. Defaults: country CA, currency CAD, product P4 when missing.",
+    note: "Daily CRM account file (CSV or XLSX), including Debtor Summary dumps. outstanding_balance is the live balance shown everywhere as Outstanding Balance. principle_amount maps to Original Balance. Address columns (dn_debtorcaseaddress_*) map to Contact. Account email/phone are debtor channels for Email/SMS — not the client's ops contact_email. Clients must already exist in PayFlow. Defaults: country CA, currency CAD, product P4 when missing.",
   },
 };
 
