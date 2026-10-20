@@ -33,14 +33,11 @@ import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { SHOW_PAYFLOW_DELETE } from "../../lib/payflow-features";
 import {
   addStepAfter,
-  assignDraftTemplates,
-  buildStepsFromDraft,
   ensureStepLinks,
   originTone,
   removeStep,
   stepConfig,
   strategyStatusTone,
-  suggestFromPrompt,
   templateById,
   type AddableStepKind,
 } from "../../lib/strategy-workflow";
@@ -56,6 +53,22 @@ type NoteAction = "update" | "approve" | "activate" | "reject";
 function findStep(strategy: PayflowStrategy, id: string | null): PayflowStrategyStep | null {
   if (!id) return null;
   return (strategy.steps || []).find((s, i) => (s.id || `s${i + 1}`) === id) || null;
+}
+
+/** Lovable: human-created is origin only (not source). */
+function isHumanCreatedWorkflow(row: PayflowStrategy) {
+  return row.origin === "Human Created";
+}
+
+/** AI / Human Modified / Human Created workflows regenerate on reject with remarks. */
+function regeneratesOnReject(row: PayflowStrategy) {
+  return (
+    row.source === "AI Generated" ||
+    row.source === "Human Created" ||
+    row.origin === "AI Proposed" ||
+    row.origin === "Human Modified" ||
+    row.origin === "Human Created"
+  );
 }
 
 function SparklesIcon({ className }: { className?: string }) {
@@ -89,7 +102,6 @@ export function PayFlowWorkflowDetailPage() {
   const [expandOpen, setExpandOpen] = useState(false);
   const [noteAction, setNoteAction] = useState<NoteAction | null>(null);
   const [rejectNote, setRejectNote] = useState("");
-  const [resuggestPrompt, setResuggestPrompt] = useState("");
   const [segmentDraft, setSegmentDraft] = useState<Record<string, string>>({});
   const [segmentDirty, setSegmentDirty] = useState(false);
 
@@ -268,6 +280,40 @@ export function PayFlowWorkflowDetailPage() {
     }
   }
 
+  /** Reject / regenerate using the sidebar note (Lovable: panel note feeds this action). */
+  async function runReject(note: string) {
+    if (!strategy) return;
+    const shouldRegen = regeneratesOnReject(strategy);
+    if (shouldRegen && note.trim().length < 3) {
+      setError("Remarks of at least 3 characters are required to regenerate.");
+      setNoteAction(null);
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      await rejectPayflowWorkflow(strategy.id, { note: note || undefined });
+      setRejectNote("");
+      if (shouldRegen) {
+        const regenerated = ensureStepLinks(
+          await regeneratePayflowWorkflow(strategy.id, { remarks: note.trim() }),
+        );
+        setNotice("Regeneration requested. PayFlow will propose a revised strategy.");
+        navigate(`/payflow/workflows/${regenerated.id}`);
+        return;
+      }
+      const refreshed = ensureStepLinks(await getPayflowWorkflow(strategy.id));
+      setStrategy(refreshed);
+      setPendingSteps(null);
+      setNotice("Returned for changes. Status reset; history is retained.");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail : "Reject / regenerate failed");
+    } finally {
+      setBusy(false);
+      setNoteAction(null);
+    }
+  }
+
   async function onNoteConfirm(note: string) {
     if (!strategy || !noteAction) return;
     if (noteAction === "update") {
@@ -290,35 +336,7 @@ export function PayFlowWorkflowDetailPage() {
       return;
     }
     if (noteAction === "reject") {
-      const isAi = strategy.source === "AI Generated";
-      if (isAi && note.trim().length < 3) {
-        setError("Remarks of at least 3 characters are required to regenerate.");
-        setNoteAction(null);
-        return;
-      }
-      setBusy(true);
-      setError("");
-      try {
-        await rejectPayflowWorkflow(strategy.id, { note: note || undefined });
-        setRejectNote("");
-        if (isAi) {
-          const regenerated = ensureStepLinks(
-            await regeneratePayflowWorkflow(strategy.id, { remarks: note.trim() }),
-          );
-          setNotice("Rejected and regenerated. Opening the new AI-proposed workflow.");
-          navigate(`/payflow/workflows/${regenerated.id}`);
-          return;
-        }
-        const refreshed = ensureStepLinks(await getPayflowWorkflow(strategy.id));
-        setStrategy(refreshed);
-        setPendingSteps(null);
-        setNotice("Returned for changes. Status reset; history is retained.");
-      } catch (err) {
-        setError(err instanceof ApiError ? err.detail : "Reject / regenerate failed");
-      } finally {
-        setBusy(false);
-        setNoteAction(null);
-      }
+      await runReject(note);
     }
   }
 
@@ -333,48 +351,6 @@ export function PayFlowWorkflowDetailPage() {
       setBusy(false);
       setConfirmDelete(false);
     }
-  }
-
-  /** AI workflow: create a new AI Proposed revision from remarks (original kept). */
-  async function onResuggestAi() {
-    if (!strategy) return;
-    const remarks = rejectNote.trim();
-    if (remarks.length < 3) {
-      setError("Add a short note (at least 3 characters) describing what to change, then Re-suggest.");
-      return;
-    }
-    setBusy(true);
-    setError("");
-    setNotice("");
-    try {
-      const regenerated = ensureStepLinks(
-        await regeneratePayflowWorkflow(strategy.id, { remarks }),
-      );
-      setRejectNote("");
-      setNotice("New AI-proposed steps ready. Opening the re-suggested workflow.");
-      navigate(`/payflow/workflows/${regenerated.id}`);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Re-suggest failed");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  /** Human-created workflow: local re-suggest into the builder (same screen). */
-  function onResuggestHuman() {
-    if (!strategy) return;
-    const draft = suggestFromPrompt(resuggestPrompt, segmentDraft);
-    const built = assignDraftTemplates(
-      buildStepsFromDraft(draft),
-      catalog?.message_templates || [],
-    );
-    applyLocalSteps(built, built.find((s) => s.kind !== "Trigger")?.id || null);
-    setSelectedId(null);
-    setDraftStep(null);
-    setNotice(
-      "Steps re-suggested on this screen. Review the flow, then Apply step changes to save.",
-    );
-    setError("");
   }
 
   if (loading) return <p className="text-sm text-muted-foreground">Loading workflow…</p>;
@@ -399,15 +375,10 @@ export function PayFlowWorkflowDetailPage() {
   const isApproved = strategy.status === "Approved";
   const isActive = strategy.status === "Active";
   const isInactive = strategy.status === "Inactive";
-  // Lovable: humanCreated = origin Human Created (Human Modified AI workflows still get Reject + regen).
-  const isHumanCreated =
-    strategy.origin === "Human Created" || strategy.source === "Human Created";
-  const isAiGenerated = !isHumanCreated && (
-    strategy.source === "AI Generated" ||
-    strategy.origin === "AI Proposed" ||
-    strategy.origin === "Human Modified"
-  );
-  const humanModifiedCount = (strategy.steps || []).filter(
+  // Lovable: humanCreated = origin === "Human Created" (Human Modified still gets Reject + regen).
+  const isHumanCreated = isHumanCreatedWorkflow(strategy);
+  const isAiGenerated = regeneratesOnReject(strategy);
+  const humanModifiedCount = (displayStrategy.steps || []).filter(
     (s) => s.origin === "Human Modified",
   ).length;
   const segmentLabelRows: { label: string; value: string }[] = (
@@ -425,24 +396,22 @@ export function PayFlowWorkflowDetailPage() {
       value: String(strategy.segment?.[key] || segmentDraft[key] || ""),
     }))
     .filter((row) => !!row.value);
-  // Editable while still in the review pipeline; Approved/Active match lovable read-only chips.
-  const canMutateGraph = canEdit && (isAiProposed || isDraft || isUnderReview);
-  const canApprove = canEdit && (isAiProposed || isUnderReview);
-  // Lovable: Reject only for AI (not human-created).
-  const canReject =
-    canEdit && isAiGenerated && (isAiProposed || isUnderReview || isApproved);
-  const canActivate = canEdit && (isApproved || (isInactive && !!strategy.approved_by));
+  const hasSegment = !!strategy.segment && Object.keys(strategy.segment).length > 0;
+  // Lovable: step edits always available to reviewers (BE demotes Active → Under Review).
+  const canMutateGraph = canEdit;
+  // Lovable: Save Draft + Approve always for reviewers; Approve→Activate after approval (AC1).
+  const canSaveDraft = canEdit;
+  const showPrimaryAction = canEdit && !isActive;
+  const primaryIsActivate = isApproved || (isInactive && !!strategy.approved_by);
+  // Delete only for human-created (soft-gated). Reject / regen is available for all origins.
+  const showDelete = canDelete && isHumanCreated && !isActive;
+  const showReject = canEdit;
   const canDeactivate = canEdit && isActive;
   const canSubmitReview = canEdit && isDraft;
-  const canSaveDraft = canEdit && !isActive && !isApproved;
-  // Lovable: Delete only for human-created.
-  const showDelete = canDelete && isHumanCreated && !isActive;
   // Lovable: AI banner only while origin is still "AI Proposed".
   const showAiBanner = strategy.origin === "AI Proposed" && strategy.status !== "Active";
-  // Lovable: Request regeneration for every non-human-created workflow (AI / Human Modified).
-  const showRequestRegen = canEdit && isAiGenerated && !isActive && !isInactive;
-  // Human Draft / Under Review: local re-suggest on this screen.
-  const showHumanResuggest = canEdit && isHumanCreated && canMutateGraph;
+  // Request regeneration for AI Proposed, Human Modified, and Human Created.
+  const showRequestRegen = canEdit;
   const excluded =
     catalog?.excluded_targeting_attributes || [
       "Ethnicity",
@@ -505,31 +474,55 @@ export function PayFlowWorkflowDetailPage() {
                 Save Draft
               </Btn>
             )}
-            {canReject && (
+            {showDelete && (
+              <Btn variant="danger" disabled={busy} onClick={() => setConfirmDelete(true)}>
+                Delete
+              </Btn>
+            )}
+            {showReject && (
               <Btn
                 variant="danger"
                 disabled={busy}
-                onClick={() => setNoteAction("reject")}
+                onClick={() => {
+                  // Sidebar "Note for PayFlow" feeds Reject / regeneration.
+                  if (isAiGenerated && rejectNote.trim().length >= 3) {
+                    void runReject(rejectNote);
+                    return;
+                  }
+                  setNoteAction("reject");
+                }}
               >
                 Reject / Request Regeneration
               </Btn>
             )}
-            {canApprove && (
+            {showPrimaryAction && (
               <Btn
                 variant="primary"
                 disabled={busy}
-                onClick={() => setNoteAction("approve")}
+                onClick={() => {
+                  // After approve → same primary button becomes Activate (AC1).
+                  if (primaryIsActivate) {
+                    setNoteAction("activate");
+                    return;
+                  }
+                  if (isAiProposed || isUnderReview) {
+                    setNoteAction("approve");
+                    return;
+                  }
+                  if (isDraft && isHumanCreated) {
+                    void runAction(
+                      () => submitPayflowWorkflowReview(strategy.id),
+                      "Submitted for review.",
+                    );
+                    return;
+                  }
+                  setNotice(
+                    "Approve is available once the workflow is AI Proposed or Under Review.",
+                  );
+                  setError("");
+                }}
               >
-                Approve Strategy
-              </Btn>
-            )}
-            {canActivate && (
-              <Btn
-                variant="primary"
-                disabled={busy}
-                onClick={() => setNoteAction("activate")}
-              >
-                Activate
+                {primaryIsActivate ? "Activate" : "Approve Strategy"}
               </Btn>
             )}
             {canDeactivate && (
@@ -545,11 +538,6 @@ export function PayFlowWorkflowDetailPage() {
                 Deactivate
               </Btn>
             )}
-            {/* {showDelete ? (
-              <Btn variant="danger" disabled={busy} onClick={() => setConfirmDelete(true)}>
-                Delete
-              </Btn>
-            ) : null} */}
           </div>
         }
       />
@@ -573,57 +561,70 @@ export function PayFlowWorkflowDetailPage() {
 
       {showAiBanner && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-ai/25 bg-ai/[0.06] px-4 py-3.5">
-          <div>
-            <p className="text-[13px] font-semibold text-foreground">AI Proposed Strategy</p>
-            <p className="mt-0.5 max-w-2xl text-[12.5px] leading-relaxed text-muted-foreground">
-              PayFlow generated this strategy using the available portfolio, account, payment and
-              engagement context. Review each step, adjust what needs changing, then approve.
-            </p>
+          <div className="flex items-start gap-2.5">
+            <span className="mt-0.5 flex size-7 items-center justify-center rounded-lg bg-ai/15 text-ai">
+              <SparklesIcon className="size-4" />
+            </span>
+            <div>
+              <p className="text-[13px] font-semibold text-foreground">AI Proposed Strategy</p>
+              <p className="mt-0.5 max-w-2xl text-[12.5px] leading-relaxed text-muted-foreground">
+                PayFlow generated this strategy using the available portfolio, account, payment and
+                engagement context. Review each step, adjust what needs changing, then approve.
+              </p>
+            </div>
           </div>
-          {(strategy.ai_context || []).length > 0 && (
-            <Btn onClick={() => setShowContext((v) => !v)}>
-              {showContext ? "Hide reasoning" : "Why PayFlow proposed this strategy"}
-            </Btn>
-          )}
+          <Btn variant="ghost" onClick={() => setShowContext((v) => !v)}>
+            {showContext ? "Hide reasoning" : "Why PayFlow proposed this strategy"}
+          </Btn>
         </div>
       )}
 
-      {showContext && (strategy.ai_context || []).length > 0 && (
+      {showContext && (
         <Panel
           title="Why PayFlow proposed this strategy"
           description="Operational context only. Strategy decisions never use demographic attributes."
           className="mb-4"
         >
-          <dl className="grid gap-x-8 gap-y-2 sm:grid-cols-2">
-            {strategy.ai_context.map((item) => (
-              <div
-                key={item.label}
-                className="flex items-baseline justify-between gap-4 border-b border-border/50 pb-1.5"
-              >
-                <dt className="text-[12px] text-muted-foreground">{item.label}</dt>
-                <dd className="text-[12.5px] font-medium text-foreground">{item.value}</dd>
-              </div>
-            ))}
-          </dl>
+          {(strategy.ai_context || []).length === 0 ? (
+            <p className="text-[12.5px] text-muted-foreground">
+              No additional reasoning context was recorded for this proposal.
+            </p>
+          ) : (
+            <dl className="grid gap-x-8 gap-y-2 sm:grid-cols-2">
+              {strategy.ai_context.map((item) => (
+                <div
+                  key={item.label}
+                  className="flex items-baseline justify-between gap-4 border-b border-border/50 pb-1.5"
+                >
+                  <dt className="text-[12px] text-muted-foreground">{item.label}</dt>
+                  <dd className="text-[12.5px] font-medium text-foreground">{item.value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
         </Panel>
       )}
 
-      {segmentLabelRows.length > 0 && (
+      {hasSegment && (
         <Panel
           title="Who this strategy applies to"
           description="Operational and geographic attributes only. Protected attributes are never used for targeting."
           className="mb-4"
         >
           <div className="flex flex-wrap gap-1.5">
-            {segmentLabelRows.map((item) => (
-              <span
-                key={item.label}
-                className="rounded-lg border border-border/70 bg-surface px-2.5 py-1.5 text-[11.5px]"
-              >
-                <span className="text-muted-foreground">{item.label}: </span>
-                <span className="font-medium text-foreground">{item.value}</span>
-              </span>
-            ))}
+            {segmentLabelRows.length > 0 ? (
+              segmentLabelRows.map((item) => (
+                <span
+                  key={item.label}
+                  className="rounded-lg border border-border/70 bg-surface px-2.5 py-1.5 text-[11.5px]"
+                >
+                  <span className="text-muted-foreground">{item.label}: </span>
+                  <span className="font-medium text-foreground">{item.value}</span>
+                </span>
+              ))
+            ) : (
+              <p className="text-[12.5px] text-muted-foreground">No segment attributes set.</p>
+            )}
           </div>
           <p className="mt-2.5 text-[11.5px] text-muted-foreground">
             Excluded from targeting: {excluded.join(", ")}.
@@ -631,7 +632,7 @@ export function PayFlowWorkflowDetailPage() {
         </Panel>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-[1fr_340px]">
+      <div className="grid gap-4 xl:grid-cols-[1fr_310px]">
         <Panel
           title="Strategy flow"
           description="Click a step to review it, or use the expand icon to edit it in a popup."
@@ -667,7 +668,9 @@ export function PayFlowWorkflowDetailPage() {
               title={draftStep.kind}
               description={draftStep.title}
               action={
-                <Btn onClick={() => setExpandOpen(true)}>Expand</Btn>
+                <Btn variant="ghost" onClick={() => setExpandOpen(true)}>
+                  Expand
+                </Btn>
               }
             >
               <StepConfigForm
@@ -722,7 +725,7 @@ export function PayFlowWorkflowDetailPage() {
           <Panel
             title="Approval & versions"
             action={
-              <Btn onClick={() => setShowAudit((v) => !v)}>
+              <Btn variant="ghost" onClick={() => setShowAudit((v) => !v)}>
                 {showAudit ? "Hide" : "View changes"}
               </Btn>
             }
@@ -820,49 +823,17 @@ export function PayFlowWorkflowDetailPage() {
 
           {showRequestRegen && (
             <Panel title="Request regeneration">
-              <Field label="Note for PayFlow" hint="Optional. Explain what should change.">
+              <Field
+                label="Note for PayFlow"
+                hint="Optional. Explain what should change, then use Reject / Request Regeneration."
+              >
                 <TextArea
                   value={rejectNote}
                   onChange={setRejectNote}
                   placeholder="e.g. reduce contact volume for low balances"
-                  disabled={busy}
+                  disabled={busy || !canEdit}
                 />
               </Field>
-              <Btn
-                className="mt-2"
-                variant="primary"
-                disabled={busy}
-                onClick={() => void onResuggestAi()}
-              >
-                <SparklesIcon className="size-3.5" />
-                {busy ? "Re-suggesting…" : "Re-suggest steps"}
-              </Btn>
-            </Panel>
-          )}
-
-          {showHumanResuggest && (
-            <Panel
-              title="Ask PayFlow AI"
-              description="Describe the outcome you want. AI suggests the steps; you stay in control."
-              action={<StatusPill tone="ai">AI</StatusPill>}
-            >
-              <Field label="Your prompt">
-                <TextArea
-                  value={resuggestPrompt}
-                  onChange={setResuggestPrompt}
-                  placeholder="e.g. gentle SMS-first reminder for small balances, offer an installment plan if there is no payment after a week"
-                  disabled={busy}
-                />
-              </Field>
-              <Btn
-                className="mt-2"
-                variant="primary"
-                disabled={busy}
-                onClick={onResuggestHuman}
-              >
-                <SparklesIcon className="size-3.5" />
-                Re-suggest steps
-              </Btn>
             </Panel>
           )}
         </div>

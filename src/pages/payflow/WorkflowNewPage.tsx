@@ -320,7 +320,7 @@ export function PayFlowWorkflowNewPage() {
         name: name.trim(),
         client_id: Number(clientId),
         portfolio_id: Number(portfolioId),
-        summary: summary.trim() || "Human-created workflow with AI assistance.",
+        summary: summary.trim() || "Human-created workflow.",
         coverage: "Targeted segment",
         segment,
         steps: built,
