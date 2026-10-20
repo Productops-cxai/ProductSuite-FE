@@ -55,8 +55,24 @@ function commStatusTone(status: string): Tone {
 }
 
 function engagementLabel(c: PayflowCommunication) {
+  if (c.engagement_tracking === "not_available") return "Not available";
   if (c.engagement == null || c.engagement === "") return "Not trackable";
   return c.engagement;
+}
+
+function eligibilityTone(status?: string | null): Tone {
+  switch (status) {
+    case "Eligible":
+      return "success";
+    case "Blocked":
+    case "Failed":
+      return "danger";
+    case "Deferred":
+    case "Scheduled":
+      return "warning";
+    default:
+      return "neutral";
+  }
 }
 
 function Expandable({ title, children }: { title: string; children: ReactNode }) {
@@ -147,8 +163,41 @@ export function PayFlowCommDetailPage() {
     { label: "Status", value: comm.status },
     { label: "Created", value: formatStamp(comm.created_at) },
     { label: "Sent", value: sentLabel },
+    { label: "Delivered", value: formatStamp(comm.delivered_at) },
     { label: "Engagement", value: engagementLabel(comm) },
   ];
+
+  const engagementFacts = [
+    { label: "Opens", value: String(comm.opens_count ?? 0) },
+    { label: "Clicks", value: String(comm.clicks_count ?? 0) },
+    { label: "First opened", value: formatStamp(comm.first_opened_at) },
+    { label: "Last opened", value: formatStamp(comm.last_opened_at) },
+    { label: "First clicked", value: formatStamp(comm.first_clicked_at) },
+    { label: "Last clicked", value: formatStamp(comm.last_clicked_at) },
+    { label: "Last clicked URL", value: comm.last_clicked_url || "—" },
+    {
+      label: "Days since delivery without open",
+      value:
+        comm.days_since_delivery_without_open != null
+          ? String(comm.days_since_delivery_without_open)
+          : "—",
+    },
+    {
+      label: "Days since delivery without click",
+      value:
+        comm.days_since_delivery_without_click != null
+          ? String(comm.days_since_delivery_without_click)
+          : "—",
+    },
+    { label: "Payment initiated", value: comm.payment_initiated ? "Yes" : "No" },
+    { label: "Payment completed", value: comm.payment_completed ? "Yes" : "No" },
+  ];
+
+  const showEligibility =
+    Boolean(comm.eligibility_status) ||
+    Boolean(comm.restriction_reason) ||
+    Boolean(comm.rule_id) ||
+    ["Awaiting Governance", "Suppressed", "Failed", "Scheduled"].includes(comm.status);
 
   return (
     <>
@@ -208,6 +257,49 @@ export function PayFlowCommDetailPage() {
               {comm.why_timing || "No explanation recorded."}
             </Expandable>
           </Panel>
+
+          {showEligibility ? (
+            <Panel
+              title="Eligibility & governance"
+              description="Whether this send was allowed, deferred, or blocked by rules"
+            >
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                {comm.eligibility_status ? (
+                  <StatusPill tone={eligibilityTone(comm.eligibility_status)}>
+                    {comm.eligibility_status}
+                  </StatusPill>
+                ) : null}
+                {comm.next_eligible_at ? (
+                  <span className="text-[12px] text-muted-foreground">
+                    Next eligible · {formatStamp(comm.next_eligible_at)}
+                  </span>
+                ) : null}
+              </div>
+              {comm.restriction_reason ? (
+                <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[13px] text-foreground">
+                  {comm.restriction_reason}
+                </p>
+              ) : (
+                <p className="text-[13px] text-muted-foreground">
+                  No restriction reason recorded for this communication.
+                </p>
+              )}
+              {comm.rule_id && comm.can_view_rule ? (
+                <Link
+                  to={`/payflow/rules/${comm.rule_id}`}
+                  className="mt-3 inline-block text-[13px] font-medium text-primary hover:underline"
+                >
+                  View rule · {comm.rule_name || comm.rule_code || `#${comm.rule_id}`}
+                </Link>
+              ) : null}
+              {comm.rule_name && !comm.can_view_rule ? (
+                <p className="mt-2 text-[12px] text-muted-foreground">
+                  Rule · {comm.rule_name}
+                  {comm.rule_code ? ` (${comm.rule_code})` : ""}
+                </p>
+              ) : null}
+            </Panel>
+          ) : null}
 
           <Panel title="Linked records" bodyClassName="p-0">
             <ul className="divide-y divide-border text-[13px]">
@@ -290,6 +382,27 @@ export function PayFlowCommDetailPage() {
             </div>
           </Panel>
 
+          <Panel title="Engagement metrics" bodyClassName="p-0">
+            <dl className="divide-y divide-border">
+              {engagementFacts.map((f) => (
+                <div key={f.label} className="flex items-center justify-between gap-4 px-4 py-2.5">
+                  <dt className="text-[13px] text-muted-foreground">{f.label}</dt>
+                  <dd className="max-w-[55%] truncate text-right tabular text-[13px] font-medium text-foreground">
+                    {f.value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            {comm.engagement_tracking === "not_available" ||
+            comm.engagement == null ||
+            comm.engagement === "" ? (
+              <p className="border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
+                Open / read tracking is not available for this send, so engagement is reported as not
+                available rather than assumed.
+              </p>
+            ) : null}
+          </Panel>
+
           <Panel title="Delivery & Engagement Events">
             {(comm.events || []).length === 0 ? (
               <p className="text-[13px] text-muted-foreground">No delivery events recorded yet.</p>
@@ -309,12 +422,6 @@ export function PayFlowCommDetailPage() {
                   </li>
                 ))}
               </ol>
-            )}
-            {(comm.engagement == null || comm.engagement === "") && (
-              <p className="mt-3 rounded-md border border-dashed border-border-strong bg-surface px-3 py-2 text-xs text-muted-foreground">
-                Open / read tracking is not available for this send, so engagement is reported as not
-                trackable rather than assumed.
-              </p>
             )}
           </Panel>
         </div>

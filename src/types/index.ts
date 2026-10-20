@@ -1260,6 +1260,7 @@ export interface PayflowCommunication {
   status: string;
   workflow_name?: string | null;
   engagement?: string | null;
+  engagement_tracking?: string | null;
   date_bucket?: string | null;
   date_label?: string | null;
   time_label?: string | null;
@@ -1278,6 +1279,28 @@ export interface PayflowCommunication {
   sender_name?: string | null;
   email_from?: string | null;
   sms_sender_id?: string | null;
+  provider?: string | null;
+  provider_message_id?: string | null;
+  sent_at?: string | null;
+  delivered_at?: string | null;
+  opens_count?: number;
+  clicks_count?: number;
+  first_opened_at?: string | null;
+  last_opened_at?: string | null;
+  first_clicked_at?: string | null;
+  last_clicked_at?: string | null;
+  last_clicked_url?: string | null;
+  days_since_delivery_without_open?: number | null;
+  days_since_delivery_without_click?: number | null;
+  payment_initiated?: boolean;
+  payment_completed?: boolean;
+  eligibility_status?: string | null;
+  restriction_reason?: string | null;
+  rule_id?: number | null;
+  rule_name?: string | null;
+  rule_code?: string | null;
+  next_eligible_at?: string | null;
+  can_view_rule?: boolean;
   created_at?: string | null;
   updated_at?: string | null;
 }
@@ -1299,6 +1322,22 @@ export interface PayflowCommunicationsListResponse {
   purposes: string[];
   workflows: string[];
   drop_off_segments: string[];
+  total?: number;
+  limit?: number;
+  offset?: number;
+}
+
+export interface PayflowCommunicationEligibility {
+  email: { ok?: boolean; eligibility_status?: string; restriction_reason?: string | null; next_eligible_at?: string | null };
+  sms: { ok?: boolean; eligibility_status?: string; restriction_reason?: string | null; next_eligible_at?: string | null };
+  latest_restriction_reason?: string | null;
+  latest_eligibility_status?: string | null;
+  next_eligible_at?: string | null;
+  rule_id?: number | null;
+  rule_name?: string | null;
+  rule_code?: string | null;
+  can_view_rule?: boolean;
+  communication_id?: number | null;
 }
 
 export interface PayflowDashboardKpi {

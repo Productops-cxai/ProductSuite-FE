@@ -14,6 +14,7 @@ import type {
   PayflowClientDetail,
   PayflowClientsListResponse,
   PayflowCommunication,
+  PayflowCommunicationEligibility,
   PayflowCommunicationsListResponse,
   PayflowDashboardResponse,
   PayflowIntegration,
@@ -822,6 +823,10 @@ export function listPayflowComms(params?: {
   purpose?: string;
   workflow?: string;
   search?: string;
+  date_from?: string;
+  date_to?: string;
+  limit?: number;
+  offset?: number;
 }) {
   const q = new URLSearchParams();
   if (params?.client_id != null) q.set("client_id", String(params.client_id));
@@ -831,8 +836,18 @@ export function listPayflowComms(params?: {
   if (params?.purpose) q.set("purpose", params.purpose);
   if (params?.workflow) q.set("workflow", params.workflow);
   if (params?.search) q.set("search", params.search);
+  if (params?.date_from) q.set("date_from", params.date_from);
+  if (params?.date_to) q.set("date_to", params.date_to);
+  if (params?.limit != null) q.set("limit", String(params.limit));
+  if (params?.offset != null) q.set("offset", String(params.offset));
   const qs = q.toString();
   return apiRequest<PayflowCommunicationsListResponse>(`/payflow/comms${qs ? `?${qs}` : ""}`);
+}
+
+export function getPayflowAccountCommunicationEligibility(accountId: number) {
+  return apiRequest<PayflowCommunicationEligibility>(
+    `/payflow/accounts/${accountId}/communication-eligibility`,
+  );
 }
 
 export function getPayflowDashboard(params?: {

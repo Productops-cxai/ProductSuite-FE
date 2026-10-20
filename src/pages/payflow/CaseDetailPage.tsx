@@ -4,6 +4,7 @@ import { ApiError } from "../../api/client";
 import {
   getAccountWorkflowExecution,
   getPayflowAccount,
+  getPayflowAccountCommunicationEligibility,
   listPayflowComms,
   listPayflowReviews,
 } from "../../api/payflow";
@@ -19,6 +20,7 @@ import {
 import type {
   PayflowAccount,
   PayflowCommunication,
+  PayflowCommunicationEligibility,
   PayflowReview,
   PayflowWorkflowRun,
   PayflowWorkflowUiStatus,
@@ -239,6 +241,7 @@ export function PayFlowCaseDetailPage() {
   const [account, setAccount] = useState<PayflowAccount | null>(null);
   const [reviews, setReviews] = useState<PayflowReview[]>([]);
   const [comms, setComms] = useState<PayflowCommunication[]>([]);
+  const [eligibility, setEligibility] = useState<PayflowCommunicationEligibility | null>(null);
   const [execution, setExecution] = useState<PayflowWorkflowRun | null>(null);
   const [executionLoading, setExecutionLoading] = useState(true);
   const [executionError, setExecutionError] = useState("");
@@ -280,6 +283,7 @@ export function PayFlowCaseDetailPage() {
     if (!account) {
       setReviews([]);
       setComms([]);
+      setEligibility(null);
       setExecution(null);
       setSideLoading(false);
       setExecutionLoading(false);
@@ -295,6 +299,7 @@ export function PayFlowCaseDetailPage() {
         search: account.account_reference,
       }),
       listPayflowComms({ account_id: account.id }),
+      getPayflowAccountCommunicationEligibility(account.id).catch(() => null),
       getAccountWorkflowExecution(account.id).catch((err) => {
         if (!cancelled) {
           setExecutionError(
@@ -304,18 +309,20 @@ export function PayFlowCaseDetailPage() {
         return { execution: null };
       }),
     ])
-      .then(([reviewRes, commRes, execRes]) => {
+      .then(([reviewRes, commRes, eligibilityRes, execRes]) => {
         if (cancelled) return;
         setReviews(
           (reviewRes.reviews || []).filter((r) => r.account_id === account.id),
         );
         setComms(commRes.communications || []);
+        setEligibility(eligibilityRes);
         setExecution(execRes.execution || null);
       })
       .catch(() => {
         if (!cancelled) {
           setReviews([]);
           setComms([]);
+          setEligibility(null);
           setExecution(null);
         }
       })
@@ -867,6 +874,64 @@ export function PayFlowCaseDetailPage() {
           description="The live visual strategy for this case. Click any step to review or adjust it."
         />
 
+        {(eligibility?.latest_restriction_reason ||
+          eligibility?.email?.eligibility_status === "Blocked" ||
+          eligibility?.sms?.eligibility_status === "Blocked") && (
+          <Panel
+            title="Communication eligibility"
+            description="Current send gates for this account"
+          >
+            <div className="mb-3 flex flex-wrap gap-2">
+              <StatusPill
+                tone={
+                  eligibility.email?.ok === false ||
+                  eligibility.email?.eligibility_status === "Blocked"
+                    ? "danger"
+                    : "success"
+                }
+              >
+                Email · {eligibility.email?.eligibility_status || (eligibility.email?.ok ? "Eligible" : "—")}
+              </StatusPill>
+              <StatusPill
+                tone={
+                  eligibility.sms?.ok === false ||
+                  eligibility.sms?.eligibility_status === "Blocked"
+                    ? "danger"
+                    : "success"
+                }
+              >
+                SMS · {eligibility.sms?.eligibility_status || (eligibility.sms?.ok ? "Eligible" : "—")}
+              </StatusPill>
+            </div>
+            {eligibility.latest_restriction_reason ? (
+              <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[13px] text-foreground">
+                {eligibility.latest_restriction_reason}
+              </p>
+            ) : null}
+            {eligibility.next_eligible_at ? (
+              <p className="mt-2 text-[12px] text-muted-foreground">
+                Next eligible · {formatStamp(eligibility.next_eligible_at)}
+              </p>
+            ) : null}
+            {eligibility.rule_id && eligibility.can_view_rule ? (
+              <Link
+                to={`/payflow/rules/${eligibility.rule_id}`}
+                className="mt-2 inline-block text-[13px] font-medium text-primary hover:underline"
+              >
+                View rule · {eligibility.rule_name || eligibility.rule_code || `#${eligibility.rule_id}`}
+              </Link>
+            ) : null}
+            {eligibility.communication_id ? (
+              <Link
+                to={`/payflow/comms/${eligibility.communication_id}`}
+                className="mt-2 ml-3 inline-block text-[13px] font-medium text-primary hover:underline"
+              >
+                Open blocked communication
+              </Link>
+            ) : null}
+          </Panel>
+        )}
+
         <Panel
           title="Communications"
           description="Actions executed as part of the current strategy"
@@ -897,7 +962,11 @@ export function PayFlowCaseDetailPage() {
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     {[c.date_label, c.time_label].filter(Boolean).join(" · ") || "—"}
                     {c.workflow_name ? ` · ${c.workflow_name}` : ""}
-                    {c.engagement ? ` · ${c.engagement}` : " · Not trackable"}
+                    {c.engagement_tracking === "not_available"
+                      ? " · Not available"
+                      : c.engagement
+                        ? ` · ${c.engagement}`
+                        : " · Not trackable"}
                   </p>
                 </li>
               ))}
