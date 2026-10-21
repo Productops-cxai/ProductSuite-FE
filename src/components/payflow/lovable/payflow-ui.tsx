@@ -310,8 +310,14 @@ export function Tr({
 }
 
 export function Td({ children, className }: { children: ReactNode; className?: string }) {
+  // Default nowrap; allow callers to opt into wrap via whitespace-normal / break-words.
+  const wrap = Boolean(className?.match(/\bwhitespace-(normal|pre-wrap|pre-line)\b/));
   return (
-    <td className={cn("px-4 py-3 align-middle whitespace-nowrap", className)}>{children}</td>
+    <td
+      className={cn("px-4 py-3 align-middle", !wrap && "whitespace-nowrap", className)}
+    >
+      {children}
+    </td>
   );
 }
 

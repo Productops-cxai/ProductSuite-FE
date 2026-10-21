@@ -27,6 +27,7 @@ import {
 } from "../../components/payflow/client-config-sections";
 import {
   ClientAccountsTab,
+  ClientCommunicationsTab,
   ClientRulesTab,
   ClientWorkflowsTab,
 } from "../../components/payflow/client-detail-tabs";
@@ -63,6 +64,7 @@ const MAIN_TABS = [
   "Overview",
   "Sub-Clients / Portfolios",
   "Accounts",
+  "Communications",
   "Workflows",
   "Rules",
   "Configuration",
@@ -391,6 +393,19 @@ export function PayFlowClientDetailPage() {
               </>
             ) : null}
             <StatusPill tone={statusTone(statusLabel)}>{statusLabel}</StatusPill>
+            <StatusPill
+              tone={
+                (detail.added_through || "") === "file_upload" ||
+                (detail.added_through_label || "").toLowerCase().includes("file upload")
+                  ? "info"
+                  : "neutral"
+              }
+            >
+              {detail.added_through_label ||
+                ((detail.added_through || "") === "file_upload"
+                  ? "Created from file upload"
+                  : "Created")}
+            </StatusPill>
             {detail.ai_mode_label ? (
               <StatusPill tone={detail.ai_mode_label === "Autopilot" ? "ai" : "neutral"}>
                 {detail.ai_mode_label}
@@ -561,6 +576,10 @@ export function PayFlowClientDetailPage() {
 
       {tab === "Accounts" && (
         <ClientAccountsTab clientId={detail.id} clientName={detail.name} />
+      )}
+
+      {tab === "Communications" && (
+        <ClientCommunicationsTab clientId={detail.id} clientName={detail.name} />
       )}
 
       {tab === "Workflows" && (

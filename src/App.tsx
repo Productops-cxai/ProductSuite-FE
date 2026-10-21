@@ -45,6 +45,14 @@ import { PayFlowWorkflowsPage } from "./pages/payflow/WorkflowsPage";
 import { PayFlowWorkflowNewPage } from "./pages/payflow/WorkflowNewPage";
 import { PayFlowWorkflowDetailPage } from "./pages/payflow/WorkflowDetailPage";
 import { PayFlowReviewDetailPage } from "./pages/payflow/ReviewDetailPage";
+import { PayFlowCommsPage } from "./pages/payflow/CommsPage";
+import { PayFlowCommDetailPage } from "./pages/payflow/CommDetailPage";
+import { PayFlowExceptionsPage } from "./pages/payflow/ExceptionsPage";
+import {
+  CustomerPaymentCheckoutPage,
+  CustomerPaymentPortalPage,
+  CustomerPaymentResultPage,
+} from "./pages/pay/CustomerPaymentPortalPage";
 
 function HomeRedirect() {
   const { loading, user, nextStep, products } = useAuth();
@@ -62,6 +70,11 @@ export default function App() {
       <Route path="/no-access" element={<NoAccessPage />} />
       <Route path="/products" element={<ProductLauncherPage />} />
       <Route path="/profile" element={<AccountProfilePage />} />
+
+      {/* Customer payment portal — public, no PayFlow auth shell */}
+      <Route path="/pay/:token" element={<CustomerPaymentPortalPage />} />
+      <Route path="/pay/:token/checkout" element={<CustomerPaymentCheckoutPage />} />
+      <Route path="/pay/:token/result" element={<CustomerPaymentResultPage />} />
 
       <Route path="/platform" element={<PlatformLayout />}>
         <Route index element={<OverviewPage />} />
@@ -108,6 +121,9 @@ export default function App() {
         <Route path="workflows" element={<PayFlowWorkflowsPage />} />
         <Route path="workflows/new" element={<PayFlowWorkflowNewPage />} />
         <Route path="workflows/:strategyId" element={<PayFlowWorkflowDetailPage />} />
+        <Route path="comms" element={<PayFlowCommsPage />} />
+        <Route path="comms/:communicationId" element={<PayFlowCommDetailPage />} />
+        <Route path="exceptions" element={<PayFlowExceptionsPage />} />
       </Route>
 
       <Route path="/insightiq" element={<InsightIqPlaceholderPage />} />

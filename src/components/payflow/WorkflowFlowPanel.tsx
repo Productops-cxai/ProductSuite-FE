@@ -82,12 +82,18 @@ function toStepPayload(steps: PayflowStrategyStep[]): PayflowWorkflowStepPayload
 export function WorkflowFlowPanel({
   clientId,
   workflowName,
+  exceptionStepId,
+  strategyId,
   title = "Collection Workflow",
   description = "Same visual map used in the Strategy Builder. Click a step to open its configuration.",
   className,
 }: {
   clientId?: number | null;
   workflowName?: string | null;
+  /** Highlight the step that triggered this human review. */
+  exceptionStepId?: string | null;
+  /** Prefer loading this strategy id when known (more reliable than name match). */
+  strategyId?: number | null;
   title?: string;
   description?: string;
   className?: string;
@@ -110,23 +116,36 @@ export function WorkflowFlowPanel({
     setDialogOpen(false);
     setSelectedId(null);
     setDirty(false);
-    listPayflowWorkflows(clientId ? { client_id: clientId } : {})
-      .then(async (res) => {
-        if (cancelled) return;
-        const rows = (res.strategies || []).map(ensureStepLinks);
-        if (res.catalog) setCatalog(res.catalog);
-        const match = resolveWorkflowByName(rows, workflowName);
+    const load = async () => {
+      const res = await listPayflowWorkflows(clientId ? { client_id: clientId } : {});
+      if (cancelled) return;
+      const rows = (res.strategies || []).map(ensureStepLinks);
+      if (res.catalog) setCatalog(res.catalog);
+
+      let match: PayflowStrategy | undefined;
+      if (strategyId) {
+        match = rows.find((s) => s.id === strategyId);
         if (!match) {
-          setStrategy(null);
-          return;
+          try {
+            match = ensureStepLinks(await getPayflowWorkflow(strategyId));
+          } catch {
+            match = undefined;
+          }
         }
-        try {
-          const full = ensureStepLinks(await getPayflowWorkflow(match.id));
-          if (!cancelled) setStrategy(full);
-        } catch {
-          if (!cancelled) setStrategy(match);
-        }
-      })
+      }
+      if (!match) match = resolveWorkflowByName(rows, workflowName);
+      if (!match) {
+        setStrategy(null);
+        return;
+      }
+      try {
+        const full = ensureStepLinks(await getPayflowWorkflow(match.id));
+        if (!cancelled) setStrategy(full);
+      } catch {
+        if (!cancelled) setStrategy(match);
+      }
+    };
+    load()
       .catch(() => {
         if (!cancelled) setStrategy(null);
       })
@@ -136,7 +155,7 @@ export function WorkflowFlowPanel({
     return () => {
       cancelled = true;
     };
-  }, [clientId, workflowName]);
+  }, [clientId, workflowName, strategyId]);
 
   const selectedStep = useMemo(
     () => (strategy ? findStep(strategy, selectedId) : null),
@@ -268,7 +287,12 @@ export function WorkflowFlowPanel({
         {strategy.portfolio_name && <StatusPill>{strategy.portfolio_name}</StatusPill>}
       </div>
 
-      <StrategyCanvas strategy={strategy} selectedId={selectedId} onSelect={openStep} />
+      <StrategyCanvas
+        strategy={strategy}
+        selectedId={selectedId}
+        highlightId={exceptionStepId}
+        onSelect={openStep}
+      />
 
       <StepEditorDialog
         strategy={strategy}

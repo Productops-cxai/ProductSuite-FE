@@ -19,6 +19,7 @@ import {
   OUTCOMES,
   PAYMENT_ACTIONS,
   REFERENCE_EVENTS,
+  REVIEW_REASONS,
   TIME_DIRECTIONS,
   TIME_UNITS,
   stepConfig,
@@ -214,13 +215,30 @@ export function StepConfigForm({
       )}
 
       {step.kind === "Human Review" && (
-        <Field label="Review Note" hint="Shown to the supervisor who picks up the review.">
-          <TextArea
-            value={cfg.note ?? step.detail ?? ""}
-            disabled={!canEdit}
-            onChange={(v) => onChange({ note: v })}
-          />
-        </Field>
+        <>
+          <Field
+            label="Review Reason"
+            hint="Shown in the Human Review queue Reason column."
+          >
+            <SelectInput
+              value={
+                cfg.review_reason && REVIEW_REASONS.includes(cfg.review_reason)
+                  ? cfg.review_reason
+                  : REVIEW_REASONS[2]!
+              }
+              options={REVIEW_REASONS}
+              disabled={!canEdit}
+              onChange={(v) => onChange({ review_reason: v })}
+            />
+          </Field>
+          <Field label="Review Note" hint="Shown to the supervisor who picks up the review.">
+            <TextArea
+              value={cfg.note ?? step.detail ?? ""}
+              disabled={!canEdit}
+              onChange={(v) => onChange({ note: v })}
+            />
+          </Field>
+        </>
       )}
 
       {step.kind === "AI Reassessment" && (

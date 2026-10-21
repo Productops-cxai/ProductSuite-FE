@@ -266,45 +266,60 @@ export function PayFlowDashboardPage() {
           </p>
         ) : (
           <div className="grid gap-px overflow-hidden rounded-lg border border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-2 xl:grid-cols-6">
-            {data.funnel.map((step) => (
-              <div className="bg-white px-4 py-3.5 dark:bg-slate-900" key={step.label}>
-                <div className="flex items-center gap-1.5">
-                  <span className="tabular text-[10px] font-semibold text-slate-400">{step.step}</span>
-                  <span
-                    className={`text-[11.5px] font-semibold ${
-                      step.paid ? "text-emerald-600" : "text-slate-800 dark:text-slate-100"
-                    }`}
-                  >
-                    {step.label}
-                  </span>
+            {data.funnel.map((step) => {
+              const body = (
+                <>
+                  <div className="flex items-center gap-1.5">
+                    <span className="tabular text-[10px] font-semibold text-slate-400">{step.step}</span>
+                    <span
+                      className={`text-[11.5px] font-semibold ${
+                        step.paid ? "text-emerald-600" : "text-slate-800 dark:text-slate-100"
+                      }`}
+                    >
+                      {step.label}
+                    </span>
+                  </div>
+                  <p className="tabular mt-2 text-[19px] font-bold leading-none tracking-tight text-slate-900 dark:text-slate-50">
+                    {step.display}
+                  </p>
+                  <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                    <span
+                      className={`block h-full rounded-full ${
+                        step.paid
+                          ? "bg-teal-500"
+                          : step.bar >= 100
+                            ? "bg-slate-800 dark:bg-slate-300"
+                            : "bg-primary"
+                      }`}
+                      style={{ width: `${step.bar}%` }}
+                    />
+                  </div>
+                  <div className="mt-2 flex items-baseline justify-between gap-2">
+                    {step.rate ? (
+                      <>
+                        <span className="tabular text-[11.5px] font-semibold text-primary">{step.rate}</span>
+                        <span className="tabular text-[10.5px] text-slate-400">{step.drop}</span>
+                      </>
+                    ) : (
+                      <span className="tabular text-[11.5px] font-semibold text-primary">Start</span>
+                    )}
+                  </div>
+                </>
+              );
+              return step.href ? (
+                <Link
+                  key={step.label}
+                  to={step.href}
+                  className="block bg-white px-4 py-3.5 transition hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-800"
+                >
+                  {body}
+                </Link>
+              ) : (
+                <div className="bg-white px-4 py-3.5 dark:bg-slate-900" key={step.label}>
+                  {body}
                 </div>
-                <p className="tabular mt-2 text-[19px] font-bold leading-none tracking-tight text-slate-900 dark:text-slate-50">
-                  {step.display}
-                </p>
-                <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                  <span
-                    className={`block h-full rounded-full ${
-                      step.paid
-                        ? "bg-teal-500"
-                        : step.bar >= 100
-                          ? "bg-slate-800 dark:bg-slate-300"
-                          : "bg-primary"
-                    }`}
-                    style={{ width: `${step.bar}%` }}
-                  />
-                </div>
-                <div className="mt-2 flex items-baseline justify-between gap-2">
-                  {step.rate ? (
-                    <>
-                      <span className="tabular text-[11.5px] font-semibold text-primary">{step.rate}</span>
-                      <span className="tabular text-[10.5px] text-slate-400">{step.drop}</span>
-                    </>
-                  ) : (
-                    <span className="tabular text-[11.5px] font-semibold text-primary">Start</span>
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Panel>

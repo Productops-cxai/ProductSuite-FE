@@ -1199,15 +1199,21 @@ export function BrandingSection({
             {thirdParty ? ` (on behalf of ${clientBrand})` : ""}. You can settle it securely, or
             set up a payment plan that works for you.
           </p>
-          <span className="mt-3 inline-block rounded-md bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground">
+          <span
+            className="mt-3 inline-block rounded-md bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground"
+            title="Preview only — live links open the customer payment portal at /pay/{token}"
+          >
             Pay now
           </span>
+          <p className="mt-1.5 text-[11px] text-muted-foreground">
+            Preview control · live communications open the branded payment portal
+          </p>
         </div>
         <div className="rounded-lg border border-border bg-card p-4">
           <p className="text-eyebrow mb-2">SMS · {c.smsSenderId || "SENDER"}</p>
           <p className="rounded-lg bg-surface px-3 py-2 text-[12px] text-foreground">
             {brand}: your balance of $4,250 is overdue
-            {thirdParty ? ` (${clientBrand})` : ""}. Pay or arrange a plan here: pay.fl/x9k2
+            {thirdParty ? ` (${clientBrand})` : ""}. Pay or arrange a plan here: /pay/••••••••
           </p>
         </div>
       </div>

@@ -14,7 +14,14 @@ import type {
   PayflowClientDetail,
   PayflowClientsListResponse,
   PayflowCommunication,
+  PayflowCommunicationEligibility,
   PayflowCommunicationsListResponse,
+  ManualSmsSendResponse,
+  PayflowOperationalException,
+  PayflowOperationalExceptionsListResponse,
+  PayflowAccountPaymentsResponse,
+  PayflowPaymentLink,
+  PayflowPaymentLinksListResponse,
   PayflowDashboardResponse,
   PayflowIntegration,
   PayflowIntegrationsListResponse,
@@ -489,16 +496,24 @@ export function listPayflowReviews(params?: {
   status?: string;
   priority?: string;
   reason?: string;
+  rule_id?: number;
+  proposed_action?: string;
   search?: string;
   waiting_bucket?: string;
+  page?: number;
+  page_size?: number;
 }) {
   const q = new URLSearchParams();
   if (params?.client_id != null) q.set("client_id", String(params.client_id));
   if (params?.status) q.set("status", params.status);
   if (params?.priority) q.set("priority", params.priority);
   if (params?.reason) q.set("reason", params.reason);
+  if (params?.rule_id != null) q.set("rule_id", String(params.rule_id));
+  if (params?.proposed_action) q.set("proposed_action", params.proposed_action);
   if (params?.search) q.set("search", params.search);
   if (params?.waiting_bucket) q.set("waiting_bucket", params.waiting_bucket);
+  if (params?.page != null) q.set("page", String(params.page));
+  if (params?.page_size != null) q.set("page_size", String(params.page_size));
   const qs = q.toString();
   return apiRequest<PayflowReviewsListResponse>(`/payflow/reviews${qs ? `?${qs}` : ""}`);
 }
@@ -507,7 +522,10 @@ export function getPayflowReview(reviewId: number) {
   return apiRequest<PayflowReview>(`/payflow/reviews/${reviewId}`);
 }
 
-export async function approvePayflowReview(reviewId: number, payload?: { note?: string }) {
+export async function approvePayflowReview(
+  reviewId: number,
+  payload?: { note?: string; decision_version?: number },
+) {
   return apiRequest<PayflowReview>(`/payflow/reviews/${reviewId}/approve`, {
     method: "POST",
     body: payload || {},
@@ -516,7 +534,7 @@ export async function approvePayflowReview(reviewId: number, payload?: { note?: 
 
 export async function modifyPayflowReview(
   reviewId: number,
-  payload: { action: string; guidance?: string },
+  payload: { action: string; guidance?: string; decision_version?: number },
 ) {
   return apiRequest<PayflowReview>(`/payflow/reviews/${reviewId}/modify`, {
     method: "POST",
@@ -526,7 +544,7 @@ export async function modifyPayflowReview(
 
 export async function rejectPayflowReview(
   reviewId: number,
-  payload: { reason: string; comment?: string },
+  payload: { reason: string; comment?: string; decision_version?: number },
 ) {
   return apiRequest<PayflowReview>(`/payflow/reviews/${reviewId}/reject`, {
     method: "POST",
@@ -536,9 +554,19 @@ export async function rejectPayflowReview(
 
 export async function holdPayflowReview(
   reviewId: number,
-  payload?: { until?: string; reason?: string },
+  payload?: { until?: string; reason?: string; decision_version?: number },
 ) {
   return apiRequest<PayflowReview>(`/payflow/reviews/${reviewId}/hold`, {
+    method: "POST",
+    body: payload || {},
+  });
+}
+
+export async function releasePayflowReview(
+  reviewId: number,
+  payload?: { note?: string; decision_version?: number },
+) {
+  return apiRequest<PayflowReview>(`/payflow/reviews/${reviewId}/release`, {
     method: "POST",
     body: payload || {},
   });
@@ -822,6 +850,10 @@ export function listPayflowComms(params?: {
   purpose?: string;
   workflow?: string;
   search?: string;
+  date_from?: string;
+  date_to?: string;
+  limit?: number;
+  offset?: number;
 }) {
   const q = new URLSearchParams();
   if (params?.client_id != null) q.set("client_id", String(params.client_id));
@@ -831,8 +863,122 @@ export function listPayflowComms(params?: {
   if (params?.purpose) q.set("purpose", params.purpose);
   if (params?.workflow) q.set("workflow", params.workflow);
   if (params?.search) q.set("search", params.search);
+  if (params?.date_from) q.set("date_from", params.date_from);
+  if (params?.date_to) q.set("date_to", params.date_to);
+  if (params?.limit != null) q.set("limit", String(params.limit));
+  if (params?.offset != null) q.set("offset", String(params.offset));
   const qs = q.toString();
   return apiRequest<PayflowCommunicationsListResponse>(`/payflow/comms${qs ? `?${qs}` : ""}`);
+}
+
+export function getPayflowAccountCommunicationEligibility(accountId: number) {
+  return apiRequest<PayflowCommunicationEligibility>(
+    `/payflow/accounts/${accountId}/communication-eligibility`,
+  );
+}
+
+export function sendPayflowManualSms(
+  accountId: number,
+  payload: {
+    body: string;
+    purpose?: string;
+    include_payment_link?: boolean;
+    idempotency_key?: string;
+  },
+) {
+  return apiRequest<ManualSmsSendResponse>(
+    `/payflow/accounts/${accountId}/communications/sms/send`,
+    { method: "POST", body: payload },
+  );
+}
+
+export function sendPayflowManualEmail(
+  accountId: number,
+  payload: {
+    subject: string;
+    body: string;
+    purpose?: string;
+    include_payment_link?: boolean;
+    idempotency_key?: string;
+  },
+) {
+  return apiRequest<ManualSmsSendResponse>(
+    `/payflow/accounts/${accountId}/communications/email/send`,
+    { method: "POST", body: payload },
+  );
+}
+
+export function resendPayflowCommunication(
+  communicationId: number,
+  payload?: { idempotency_key?: string },
+) {
+  return apiRequest<ManualSmsSendResponse>(`/payflow/comms/${communicationId}/resend`, {
+    method: "POST",
+    body: payload || {},
+  });
+}
+
+export function listPayflowAccountPaymentLinks(accountId: number) {
+  return apiRequest<PayflowPaymentLinksListResponse>(
+    `/payflow/accounts/${accountId}/payment-links`,
+  );
+}
+
+export function listPayflowAccountPayments(accountId: number) {
+  return apiRequest<PayflowAccountPaymentsResponse>(
+    `/payflow/accounts/${accountId}/payments`,
+  );
+}
+
+export function getPayflowPaymentLink(linkId: number) {
+  return apiRequest<PayflowPaymentLink>(`/payflow/payment-links/${linkId}`);
+}
+
+export function revokePayflowPaymentLink(linkId: number) {
+  return apiRequest<PayflowPaymentLink>(`/payflow/payment-links/${linkId}/revoke`, {
+    method: "POST",
+    body: {},
+  });
+}
+
+export function listPayflowOperationalExceptions(params?: {
+  status?: string;
+  exception_type?: string;
+  client_id?: number;
+  limit?: number;
+  offset?: number;
+}) {
+  const q = new URLSearchParams();
+  if (params?.status) q.set("status", params.status);
+  if (params?.exception_type) q.set("exception_type", params.exception_type);
+  if (params?.client_id != null) q.set("client_id", String(params.client_id));
+  if (params?.limit != null) q.set("limit", String(params.limit));
+  if (params?.offset != null) q.set("offset", String(params.offset));
+  const qs = q.toString();
+  return apiRequest<PayflowOperationalExceptionsListResponse>(
+    `/payflow/exceptions${qs ? `?${qs}` : ""}`,
+  );
+}
+
+export function getPayflowOperationalException(exceptionId: number) {
+  return apiRequest<PayflowOperationalException>(`/payflow/exceptions/${exceptionId}`);
+}
+
+export function acknowledgePayflowOperationalException(exceptionId: number) {
+  return apiRequest<PayflowOperationalException>(
+    `/payflow/exceptions/${exceptionId}/acknowledge`,
+    { method: "POST", body: {} },
+  );
+}
+
+export function resolvePayflowOperationalException(
+  exceptionId: number,
+  payload?: { note?: string },
+) {
+  return apiRequest<PayflowOperationalException>(
+    `/payflow/exceptions/${exceptionId}/resolve`,
+    { method: "POST", body: payload || {} },
+  );
 }
 
 export function getPayflowDashboard(params?: {
