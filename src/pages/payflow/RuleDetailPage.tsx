@@ -18,6 +18,7 @@ import {
 import type { PayflowRule } from "../../types";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
+import { SHOW_PAYFLOW_DELETE } from "../../lib/payflow-features";
 
 function ruleStatusTone(status: string): Tone {
   if (status === "Active") return "success";
@@ -29,7 +30,7 @@ export function PayFlowRuleDetailPage() {
   const { ruleId } = useParams<{ ruleId: string }>();
   const navigate = useNavigate();
   const { hasPermission } = usePayFlowAccess();
-  const canDelete = hasPermission("delete_rules");
+  const canDelete = SHOW_PAYFLOW_DELETE && hasPermission("delete_rules");
   const [rule, setRule] = useState<PayflowRule | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -123,6 +124,11 @@ export function PayFlowRuleDetailPage() {
           <div className="flex flex-wrap items-center gap-2">
             <StatusPill tone={ruleStatusTone(rule.status)}>{rule.status}</StatusPill>
             <StatusPill>{rule.rule_type}</StatusPill>
+            {rule.can_edit ? (
+              <Link to={`/payflow/rules/${rule.id}/edit`}>
+                <Btn variant="primary">Edit</Btn>
+              </Link>
+            ) : null}
             {rule.can_edit && rule.status !== "Active" ? (
               <Btn variant="primary" disabled={busy} onClick={() => void onActivate()}>
                 Activate
@@ -175,12 +181,25 @@ export function PayFlowRuleDetailPage() {
 
           <Panel title="Where This Rule Is Used">
             {(rule.applied_to || []).length === 0 ? (
-              <p className="text-[13px] text-muted-foreground">No client applications recorded.</p>
+              <p className="text-[13px] text-muted-foreground">
+                {rule.rule_type === "System Rule"
+                  ? "Not selected on any client’s governance settings yet."
+                  : "No client applications recorded."}
+              </p>
             ) : (
               <ul className="space-y-1 text-[13px]">
-                {rule.applied_to.map((code) => (
-                  <li key={code} className="text-muted-foreground">
-                    {code}
+                {rule.applied_to.map((clientName) => (
+                  <li key={clientName} className="font-medium text-foreground">
+                    {rule.client_id && rule.client_name === clientName ? (
+                      <Link
+                        to={`/payflow/clients/${rule.client_id}`}
+                        className="text-primary hover:underline"
+                      >
+                        {clientName}
+                      </Link>
+                    ) : (
+                      clientName
+                    )}
                   </li>
                 ))}
               </ul>

@@ -7,7 +7,11 @@ import { AccountProfilePage } from "./pages/AccountProfilePage";
 import { LoginPage } from "./pages/LoginPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { AccessPage } from "./pages/platform/AccessPage";
+import { AiSuggestJobsPage } from "./pages/platform/AiSuggestJobsPage";
 import { EmailLogsPage } from "./pages/platform/EmailLogsPage";
+import { SmsLogsPage } from "./pages/platform/SmsLogsPage";
+import { WorkerLogDetailPage } from "./pages/platform/WorkerLogDetailPage";
+import { WorkerLogsPage } from "./pages/platform/WorkerLogsPage";
 import { OverviewPage } from "./pages/platform/OverviewPage";
 import { PeoplePage } from "./pages/platform/PeoplePage";
 import { ProductDetailPage } from "./pages/platform/ProductDetailPage";
@@ -40,6 +44,15 @@ import { PayFlowHumanReview } from "./pages/payflow/HumanReview";
 import { PayFlowWorkflowsPage } from "./pages/payflow/WorkflowsPage";
 import { PayFlowWorkflowNewPage } from "./pages/payflow/WorkflowNewPage";
 import { PayFlowWorkflowDetailPage } from "./pages/payflow/WorkflowDetailPage";
+import { PayFlowReviewDetailPage } from "./pages/payflow/ReviewDetailPage";
+import { PayFlowCommsPage } from "./pages/payflow/CommsPage";
+import { PayFlowCommDetailPage } from "./pages/payflow/CommDetailPage";
+import { PayFlowExceptionsPage } from "./pages/payflow/ExceptionsPage";
+import {
+  CustomerPaymentCheckoutPage,
+  CustomerPaymentPortalPage,
+  CustomerPaymentResultPage,
+} from "./pages/pay/CustomerPaymentPortalPage";
 
 function HomeRedirect() {
   const { loading, user, nextStep, products } = useAuth();
@@ -58,6 +71,11 @@ export default function App() {
       <Route path="/products" element={<ProductLauncherPage />} />
       <Route path="/profile" element={<AccountProfilePage />} />
 
+      {/* Customer payment portal — public, no PayFlow auth shell */}
+      <Route path="/pay/:token" element={<CustomerPaymentPortalPage />} />
+      <Route path="/pay/:token/checkout" element={<CustomerPaymentCheckoutPage />} />
+      <Route path="/pay/:token/result" element={<CustomerPaymentResultPage />} />
+
       <Route path="/platform" element={<PlatformLayout />}>
         <Route index element={<OverviewPage />} />
         <Route path="profile" element={<ProfilePage workspace="platform" />} />
@@ -67,6 +85,10 @@ export default function App() {
         <Route path="people" element={<PeoplePage />} />
         <Route path="deletion-logs" element={<DeletionLogsPage workspace="platform" />} />
         <Route path="email-logs" element={<EmailLogsPage />} />
+        <Route path="sms-logs" element={<SmsLogsPage />} />
+        <Route path="worker-logs" element={<WorkerLogsPage />} />
+        <Route path="worker-logs/:logId" element={<WorkerLogDetailPage />} />
+        <Route path="ai-suggest-jobs" element={<AiSuggestJobsPage />} />
       </Route>
 
       <Route path="/payflow" element={<PayFlowLayout />}>
@@ -87,6 +109,7 @@ export default function App() {
         <Route path="imports/:importId" element={<PayFlowImportDetailPage />} />
         <Route path="rules" element={<PayFlowRulesPage />} />
         <Route path="rules/new" element={<PayFlowRuleNewPage />} />
+        <Route path="rules/:ruleId/edit" element={<PayFlowRuleNewPage />} />
         <Route path="rules/:ruleId" element={<PayFlowRuleDetailPage />} />
         <Route path="system-mapping" element={<PayFlowIntegrationsPage />} />
         <Route path="integrations" element={<PayFlowIntegrationsPage />} />
@@ -94,9 +117,13 @@ export default function App() {
         <Route path="users" element={<PayFlowUsersPage />} />
         <Route path="users/:userId" element={<PayFlowUserDetailPage />} />
         <Route path="review" element={<PayFlowHumanReview />} />
+        <Route path="review/:reviewId" element={<PayFlowReviewDetailPage />} />
         <Route path="workflows" element={<PayFlowWorkflowsPage />} />
         <Route path="workflows/new" element={<PayFlowWorkflowNewPage />} />
         <Route path="workflows/:strategyId" element={<PayFlowWorkflowDetailPage />} />
+        <Route path="comms" element={<PayFlowCommsPage />} />
+        <Route path="comms/:communicationId" element={<PayFlowCommDetailPage />} />
+        <Route path="exceptions" element={<PayFlowExceptionsPage />} />
       </Route>
 
       <Route path="/insightiq" element={<InsightIqPlaceholderPage />} />

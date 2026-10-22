@@ -19,7 +19,7 @@ export interface ImportError {
   subClient: string;
   field: string;
   error: string;
-  status: "Rejected" | "Skipped";
+  status: "Rejected" | "Skipped" | "Attention";
 }
 
 export interface ImportRecord {
@@ -35,6 +35,8 @@ export interface ImportRecord {
   currentBalance?: number | null;
   incomingBalance?: number;
   note?: string;
+  /** Remaining onboarding / config issues after import (masters). */
+  setupIssues?: string[];
 }
 
 export interface ImportCounts {
@@ -77,6 +79,8 @@ export interface ImportRun {
   status: ImportStatus;
   counts: ImportCounts;
   errors: ImportError[];
+  /** User-facing note (e.g. Draft / Complete Setup after client import). */
+  message?: string | null;
 }
 
 export const importKindLabel: Record<ImportKind, string> = {

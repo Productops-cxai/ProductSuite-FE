@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { StatusPill } from "./lovable/payflow-ui";
 import { cn } from "../../lib/utils";
 import {
@@ -10,6 +11,19 @@ import {
   timingLabel,
 } from "../../lib/strategy-workflow";
 import type { PayflowStrategy, PayflowStrategyStep } from "../../types";
+
+const CANVAS_ZOOM_MIN = 0.5;
+const CANVAS_ZOOM_MAX = 1.75;
+const CANVAS_ZOOM_STEP = 0.1;
+
+function clampCanvasZoom(value: number) {
+  return Math.min(CANVAS_ZOOM_MAX, Math.max(CANVAS_ZOOM_MIN, Math.round(value * 100) / 100));
+}
+
+function isCanvasInteractiveTarget(target: EventTarget | null) {
+  if (!(target instanceof Element)) return false;
+  return Boolean(target.closest('[role="button"], button, a, input, textarea, select, label'));
+}
 
 function NodeIcon({ kind, channel }: { kind: string; channel?: string | null }) {
   const cls = "size-4";
@@ -140,11 +154,17 @@ function Connector({ label, tone }: { label?: string; tone?: "success" | "danger
 function NodeCard({
   node,
   selected,
+  highlighted,
   onSelect,
+  onExpand,
+  templateSnippet,
 }: {
   node: PayflowStrategyStep;
   selected: boolean;
+  highlighted?: boolean;
   onSelect: () => void;
+  onExpand?: () => void;
+  templateSnippet?: string | null;
 }) {
   const cfg = stepConfig(node);
   const timing = timingLabel(node);
@@ -167,9 +187,12 @@ function NodeCard({
         "group relative w-[248px] cursor-pointer rounded-xl border bg-card px-3.5 py-3 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-panel",
         selected
           ? "border-primary ring-2 ring-primary/25 shadow-panel"
-          : "border-border shadow-subtle hover:border-primary/40",
+          : highlighted
+            ? "border-warning ring-2 ring-warning/35 shadow-panel"
+            : "border-border shadow-subtle hover:border-primary/40",
         node.disabled && "opacity-55",
       )}
+      title={highlighted && !selected ? "Exception step for this human review" : undefined}
     >
       <span className={cn("absolute inset-x-0 top-0 h-[3px] rounded-t-xl", topBar(node.kind))} aria-hidden />
       <div className="flex items-center gap-2">
@@ -184,10 +207,29 @@ function NodeCard({
             Human
           </span>
         )}
+        {onExpand && (
+          <button
+            type="button"
+            className="ml-auto rounded-md border border-border/70 bg-surface px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground hover:text-foreground"
+            onClick={(e) => {
+              e.stopPropagation();
+              onExpand();
+            }}
+            title="Expand step editor"
+          >
+            Expand
+          </button>
+        )}
       </div>
       <p className="mt-2 text-[13px] leading-snug font-semibold text-foreground">{node.title}</p>
       {condition && <p className="mt-1 text-[11.5px] text-muted-foreground">{condition}</p>}
       {timing && <p className="mt-1 text-[11.5px] text-muted-foreground">{timing}</p>}
+      {templateSnippet && (
+        <p className="mt-1.5 line-clamp-2 rounded-md border border-border/60 bg-surface px-2 py-1 text-[10.5px] text-muted-foreground">
+          <span className="font-semibold text-foreground">Sending: </span>
+          {templateSnippet}
+        </p>
+      )}
       <div className="mt-2 flex flex-wrap gap-1.5">
         {channel && <StatusPill tone={stepTone(node.kind)}>{channel}</StatusPill>}
         {purpose && <StatusPill>{purpose}</StatusPill>}
@@ -203,13 +245,19 @@ function NodeBranch({
   nodes,
   nodeId,
   selectedId,
+  highlightId,
   onSelect,
+  onExpand,
+  templateSnippetFor,
   depth = 0,
 }: {
   nodes: Record<string, PayflowStrategyStep>;
   nodeId: string | null | undefined;
   selectedId: string | null;
+  highlightId?: string | null;
   onSelect: (id: string) => void;
+  onExpand?: (id: string) => void;
+  templateSnippetFor?: (node: PayflowStrategyStep) => string | null | undefined;
   depth?: number;
 }) {
   if (!nodeId || depth > 24) return null;
@@ -221,7 +269,10 @@ function NodeBranch({
       <NodeCard
         node={node}
         selected={selectedId === node.id}
+        highlighted={Boolean(highlightId && node.id === highlightId)}
         onSelect={() => onSelect(node.id!)}
+        onExpand={onExpand ? () => onExpand(node.id!) : undefined}
+        templateSnippet={templateSnippetFor?.(node)}
       />
       {node.kind === "Condition" ? (
         (() => {
@@ -250,7 +301,10 @@ function NodeBranch({
                       nodes={nodes}
                       nodeId={node[path]}
                       selectedId={selectedId}
+                      highlightId={highlightId}
                       onSelect={onSelect}
+                      onExpand={onExpand}
+                      templateSnippetFor={templateSnippetFor}
                       depth={depth + 1}
                     />
                   </div>
@@ -266,7 +320,10 @@ function NodeBranch({
             nodes={nodes}
             nodeId={node.next}
             selectedId={selectedId}
+            highlightId={highlightId}
             onSelect={onSelect}
+            onExpand={onExpand}
+            templateSnippetFor={templateSnippetFor}
             depth={depth + 1}
           />
         </>
@@ -278,27 +335,111 @@ function NodeBranch({
 export function StrategyCanvas({
   strategy,
   selectedId,
+  highlightId,
   onSelect,
+  onExpand,
+  templateSnippetFor,
 }: {
   strategy: PayflowStrategy;
   selectedId: string | null;
+  /** Step id to visually mark (e.g. human-review exception site). */
+  highlightId?: string | null;
   onSelect: (id: string) => void;
+  onExpand?: (id: string) => void;
+  templateSnippetFor?: (node: PayflowStrategyStep) => string | null | undefined;
 }) {
   const linked = ensureStepLinks(strategy);
   const nodes = stepsById(linked);
   const entry = entryNodeId(linked);
 
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const panRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    scrollLeft: number;
+    scrollTop: number;
+  } | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [panning, setPanning] = useState(false);
+
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+
+    const onWheel = (event: WheelEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      event.preventDefault();
+      const direction = event.deltaY > 0 ? -1 : 1;
+      setZoom((current) => clampCanvasZoom(current + direction * CANVAS_ZOOM_STEP));
+    };
+
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
+  const endPan = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (panRef.current?.pointerId !== event.pointerId) return;
+    panRef.current = null;
+    setPanning(false);
+    try {
+      viewportRef.current?.releasePointerCapture(event.pointerId);
+    } catch {
+      /* already released */
+    }
+  };
+
   return (
     <div
-      className="overflow-x-auto rounded-xl border border-border/70 bg-surface px-6 py-8"
+      ref={viewportRef}
+      className={cn(
+        "max-h-[min(70vh,720px)] min-w-0 overflow-auto rounded-xl border border-border/70 bg-surface px-6 py-8",
+        panning ? "cursor-grabbing select-none" : "cursor-grab",
+      )}
       style={{
         backgroundImage:
           "radial-gradient(color-mix(in oklab, var(--color-border-strong) 60%, transparent) 1px, transparent 1px)",
         backgroundSize: "18px 18px",
       }}
+      title="Drag to pan · Ctrl + scroll to zoom"
+      onPointerDown={(event) => {
+        if (event.button !== 0 || isCanvasInteractiveTarget(event.target)) return;
+        const el = viewportRef.current;
+        if (!el) return;
+        panRef.current = {
+          pointerId: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          scrollLeft: el.scrollLeft,
+          scrollTop: el.scrollTop,
+        };
+        el.setPointerCapture(event.pointerId);
+        setPanning(true);
+      }}
+      onPointerMove={(event) => {
+        const pan = panRef.current;
+        const el = viewportRef.current;
+        if (!pan || !el || pan.pointerId !== event.pointerId) return;
+        el.scrollLeft = pan.scrollLeft - (event.clientX - pan.startX);
+        el.scrollTop = pan.scrollTop - (event.clientY - pan.startY);
+      }}
+      onPointerUp={endPan}
+      onPointerCancel={endPan}
+      onDoubleClick={(event) => {
+        if (isCanvasInteractiveTarget(event.target)) return;
+        setZoom(1);
+      }}
     >
-      <div className="flex min-w-max justify-center">
-        <NodeBranch nodes={nodes} nodeId={entry} selectedId={selectedId} onSelect={onSelect} />
+      <div className="flex min-w-max justify-center" style={{ zoom } as CSSProperties}>
+        <NodeBranch
+          nodes={nodes}
+          nodeId={entry}
+          selectedId={selectedId}
+          highlightId={highlightId}
+          onSelect={onSelect}
+          onExpand={onExpand}
+          templateSnippetFor={templateSnippetFor}
+        />
       </div>
     </div>
   );
@@ -312,7 +453,7 @@ export function StrategyMiniMap({ strategy }: { strategy: PayflowStrategy }) {
   let current: string | null | undefined = entryNodeId(linked);
   let guard = 0;
   while (current && guard < 6) {
-    const node = nodes[current];
+    const node: PayflowStrategyStep | undefined = nodes[current];
     if (!node) break;
     if (node.kind === "Condition") {
       rows.push({ kinds: ["Condition"] });

@@ -18,6 +18,7 @@ import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { incompleteSetupSections, isClientSettingUp } from "../../lib/client-setup";
 import { invalidateCache } from "../../lib/dedupeAsync";
+import { SHOW_PAYFLOW_DELETE } from "../../lib/payflow-features";
 import type { PayflowClient } from "../../types";
 
 function clientStatusTone(status: string): Tone {
@@ -69,7 +70,7 @@ export function PayFlowClientsPage() {
   const { hasPermission } = usePayFlowAccess();
   const canCreate = hasPermission("create_client");
   const canEdit = hasPermission("edit_client");
-  const canDelete = hasPermission("delete_client");
+  const canDelete = SHOW_PAYFLOW_DELETE && hasPermission("delete_client");
   const canImport = hasPermission("import_clients");
   const [searchParams] = useSearchParams();
   const [clients, setClients] = useState<PayflowClient[]>([]);
@@ -120,7 +121,7 @@ export function PayFlowClientsPage() {
         if (phase1StatusLabel(c.status, c.status_label) !== status) return false;
       }
       if (addedThrough !== "All Sources") {
-        const label = c.added_through_label || "Add Client";
+        const label = c.added_through_label || "Created";
         if (label !== addedThrough) return false;
       }
       return true;
@@ -225,7 +226,7 @@ export function PayFlowClientsPage() {
               remainingSteps.length,
             );
             const showSetupHint = settingUp || remaining > 0;
-            const addedLabel = c.added_through_label || "Add Client";
+            const addedLabel = c.added_through_label || "Created";
 
             return (
               <Tr key={c.id}>
@@ -240,6 +241,24 @@ export function PayFlowClientsPage() {
                           ⚠ {remaining} step{remaining > 1 ? "s" : ""} left
                           {remainingSteps.length === 1 ? ` · ${remainingSteps[0]}` : ""}
                         </StatusPill>
+                      ) : null}
+                      {(c.setup_issues || []).length > 0 ? (
+                        <ul className="max-w-[320px] list-disc space-y-0.5 pl-4 text-[11.5px] text-muted-foreground">
+                          {(c.setup_issues || []).slice(0, 4).map((issue) => (
+                            <li key={issue}>{issue}</li>
+                          ))}
+                          {(c.setup_issues || []).length > 4 ? (
+                            <li>+{(c.setup_issues || []).length - 4} more…</li>
+                          ) : null}
+                        </ul>
+                      ) : remainingSteps.length > 1 ? (
+                        <div className="flex max-w-[320px] flex-wrap gap-1">
+                          {remainingSteps.slice(0, 4).map((step) => (
+                            <StatusPill key={step} tone="warning">
+                              {step}
+                            </StatusPill>
+                          ))}
+                        </div>
                       ) : null}
                       {canEdit ? (
                         <Link
@@ -273,7 +292,13 @@ export function PayFlowClientsPage() {
                 <Td className="text-muted-foreground">{formatDate(c.created_at)}</Td>
                 <Td className="text-muted-foreground">{formatDateTime(c.updated_at)}</Td>
                 <Td>
-                  <StatusPill tone={addedLabel === "File Upload" ? "info" : "neutral"}>
+                  <StatusPill
+                    tone={
+                      addedLabel === "Created from file upload" || addedLabel === "File Upload"
+                        ? "info"
+                        : "neutral"
+                    }
+                  >
                     {addedLabel}
                   </StatusPill>
                 </Td>

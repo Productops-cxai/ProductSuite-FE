@@ -2,6 +2,7 @@ import { FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import { deletePayflowClientPortfolio } from "../../api/payflow";
+import { SHOW_PAYFLOW_DELETE } from "../../lib/payflow-features";
 import { ConfirmDelete } from "../ui/ConfirmDelete";
 import {
   Btn,
@@ -237,7 +238,7 @@ export function PortfolioSection({
                   >
                     View details
                   </Link>
-                  {canEdit ? (
+                  {SHOW_PAYFLOW_DELETE && canEdit ? (
                     <button
                       type="button"
                       className="text-[12.5px] font-semibold text-destructive hover:underline"

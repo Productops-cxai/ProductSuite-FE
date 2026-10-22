@@ -74,6 +74,16 @@ export const OUTCOMES = [
   "Case Closed",
 ];
 
+/** Lovable Human Review reason catalog — separate from Triggered Rule name. */
+export const REVIEW_REASONS = [
+  "Repeated unsuccessful attempts",
+  "Low decision confidence",
+  "Payment arrangement exception",
+  "High balance treatment",
+  "Customer dispute raised",
+  "Hardship signal detected",
+];
+
 export type DraftStepKind =
   | "Communication"
   | "Wait"
@@ -339,6 +349,7 @@ export function buildStepsFromDraft(steps: DraftStep[]): PayflowStrategyStep[] {
     }
     if (step.kind === "Human Review") {
       config.note = step.note;
+      config.review_reason = REVIEW_REASONS[2]; // Payment arrangement exception
     }
     result.push({
       id: step.id,
@@ -355,37 +366,92 @@ export function buildStepsFromDraft(steps: DraftStep[]): PayflowStrategyStep[] {
   return result;
 }
 
-export function suggestFromPrompt(prompt: string): DraftStep[] {
+/** Attach the best catalog template id for each Communication step (channel + purpose). */
+export function assignDraftTemplates(
+  steps: PayflowStrategyStep[],
+  templates: { id: string; channel: string; purpose: string }[],
+): PayflowStrategyStep[] {
+  if (!templates.length) return steps;
+  return steps.map((step) => {
+    if (step.kind !== "Communication") return step;
+    const cfg = step.config || {};
+    const exact = templates.filter(
+      (t) => t.channel === (cfg.channel || "") && t.purpose === (cfg.purpose || ""),
+    );
+    const pick = exact[0] || templates.find((t) => t.channel === cfg.channel) || templates[0];
+    if (!pick) return step;
+    return { ...step, config: { ...cfg, template_id: pick.id } };
+  });
+}
+
+/** Lovable-style tip list for the Ask PayFlow AI panel. */
+export function aiSuggestionsForSegment(segment: {
+  balance_band?: string;
+  delinquency?: string;
+  language?: string;
+  age_band?: string;
+}): string[] {
+  const tips: string[] = [];
+  tips.push(
+    segment.balance_band === "$5,000 and over"
+      ? "Larger balances respond better to a payment plan offer early in the flow."
+      : "Start with the cheapest contactable channel and confirm delivery before adding contact.",
+  );
+  if (segment.delinquency === "90+ days past due") {
+    tips.push("At 90+ days past due, confirm contactability first — reach is the main constraint.");
+  }
+  if (segment.language === "French" || segment.language === "English + French") {
+    tips.push("Send in the customer's preferred language to lift response rates.");
+  }
+  if (segment.age_band === "18 – 24" || segment.age_band === "25 – 34") {
+    tips.push("Younger age bands engage more with SMS payment links than with email.");
+  }
+  if (segment.age_band === "65 and over") {
+    tips.push("Allow longer observation windows between contacts for this age band.");
+  }
+  tips.push("Add a supervisor review step before any escalated treatment.");
+  return tips;
+}
+
+/** Deterministic local "AI" suggestions — stays on the create screen (lovable behaviour). */
+export function suggestFromPrompt(
+  prompt: string,
+  segment?: { delinquency?: string; balance_band?: string },
+): DraftStep[] {
   const p = prompt.toLowerCase();
   const gentle = /gentle|soft|early|gradual|remind/.test(p);
   const urgent = /urgent|fast|aggressive|escalat|final|late|overdue/.test(p);
   const smsFirst = /sms|text|mobile/.test(p);
   const wantsPlan = /plan|installment|instalment|arrangement|afford/.test(p);
   const wantsReview = /review|supervisor|approval|sensitive/.test(p);
+  const lateSegment = (segment?.delinquency || "").includes("90");
 
   const first = makeDraftStep("Communication");
   first.channel = smsFirst ? "SMS" : "Email";
   first.purpose = MESSAGE_PURPOSES[0];
   first.amount = urgent ? 0 : 1;
-  first.referenceEvent = "Case Received";
+  first.referenceEvent = "Previous Action";
 
   const wait = makeDraftStep("Wait");
   wait.amount = urgent ? 2 : gentle ? 5 : 3;
-  wait.referenceEvent = smsFirst ? "Previous SMS" : "Previous Email";
+  wait.referenceEvent = "Previous Action";
 
   const check = makeDraftStep("Condition");
 
   const second = makeDraftStep("Communication");
   second.channel = smsFirst ? "Email" : "SMS";
-  second.purpose = wantsPlan ? "Payment Plan Reminder" : "Promise-to-Pay Reminder";
+  second.purpose = wantsPlan
+    ? MESSAGE_PURPOSES.find((m) => /plan|arrangement/i.test(m)) || MESSAGE_PURPOSES[0]!
+    : MESSAGE_PURPOSES[1] || MESSAGE_PURPOSES[0]!;
   second.amount = urgent ? 1 : 3;
   second.referenceEvent = "Previous Action";
 
   const steps: DraftStep[] = [first, wait, check, second, makeDraftStep("AI Reassessment")];
-  if (urgent) {
+  if (lateSegment || urgent) {
     const finalNotice = makeDraftStep("Communication");
     finalNotice.channel = "Email";
-    finalNotice.purpose = "Firm Reminder";
+    finalNotice.purpose =
+      MESSAGE_PURPOSES.find((m) => /final|firm|notice/i.test(m)) || MESSAGE_PURPOSES[0]!;
     finalNotice.amount = 5;
     finalNotice.referenceEvent = "Previous Action";
     steps.push(finalNotice);
@@ -407,4 +473,229 @@ export function originTone(origin: string): Tone {
   if (origin === "AI Proposed") return "ai";
   if (origin === "Human Modified") return "info";
   return "neutral";
+}
+
+export type AddableStepKind =
+  | "Communication"
+  | "Wait"
+  | "Condition"
+  | "AI Reassessment"
+  | "Case Action"
+  | "Payment Action"
+  | "Human Review";
+
+export const ADDABLE_STEP_KINDS: AddableStepKind[] = [
+  "Communication",
+  "Wait",
+  "Condition",
+  "AI Reassessment",
+  "Case Action",
+  "Payment Action",
+  "Human Review",
+];
+
+function cloneSteps(steps: PayflowStrategyStep[]): PayflowStrategyStep[] {
+  return steps.map((s, i) => ({
+    ...s,
+    id: s.id || `s${i + 1}`,
+    config: { ...(s.config || {}) },
+  }));
+}
+
+function defaultStepForKind(kind: AddableStepKind): PayflowStrategyStep {
+  const id = uid();
+  if (kind === "Communication") {
+    return {
+      id,
+      kind,
+      title: `Send Email — ${MESSAGE_PURPOSES[0]}`,
+      origin: "Human Modified",
+      config: {
+        channel: "Email",
+        purpose: MESSAGE_PURPOSES[0],
+        reference_event: "Previous Action",
+        amount: 2,
+        unit: "Days",
+        direction: "After",
+      },
+      channel: "Email",
+      purpose: MESSAGE_PURPOSES[0],
+      next: null,
+    };
+  }
+  if (kind === "Condition") {
+    return {
+      id,
+      kind,
+      title: "Payment received?",
+      origin: "Human Modified",
+      config: {
+        attribute: "Payment Status",
+        operator: "Equals",
+        value: "Paid In Full",
+      },
+      next: null,
+      yes: null,
+      no: null,
+    };
+  }
+  if (kind === "Payment Action") {
+    return {
+      id,
+      kind,
+      title: PAYMENT_ACTIONS[0]!,
+      origin: "Human Modified",
+      config: {
+        action: PAYMENT_ACTIONS[0],
+        reference_event: "Previous Action",
+        amount: 0,
+        unit: "Days",
+        direction: "After",
+      },
+      next: null,
+    };
+  }
+  if (kind === "Case Action") {
+    return {
+      id,
+      kind,
+      title: CASE_ACTIONS[0]!,
+      origin: "Human Modified",
+      config: {
+        action: CASE_ACTIONS[0],
+        reference_event: "Previous Action",
+        amount: 0,
+        unit: "Days",
+        direction: "After",
+      },
+      next: null,
+    };
+  }
+  if (kind === "Human Review") {
+    return {
+      id,
+      kind,
+      title: "Human review",
+      origin: "Human Modified",
+      config: {
+        note: "Supervisor review required before continuing",
+        review_reason: REVIEW_REASONS[2], // Payment arrangement exception
+        reference_event: "Previous Action",
+        amount: 0,
+        unit: "Days",
+        direction: "After",
+      },
+      next: null,
+    };
+  }
+  if (kind === "AI Reassessment") {
+    return {
+      id,
+      kind,
+      title: "AI reassessment",
+      origin: "Human Modified",
+      config: {
+        note: "Reassess treatment with latest case context",
+        reference_event: "Previous Action",
+        amount: 0,
+        unit: "Days",
+        direction: "After",
+      },
+      next: null,
+    };
+  }
+  return {
+    id,
+    kind: "Wait",
+    title: "Wait / observe",
+    origin: "Human Modified",
+    config: {
+      reference_event: "Previous Action",
+      amount: 3,
+      unit: "Days",
+      direction: "After",
+    },
+    next: null,
+  };
+}
+
+/** Insert a new step after `afterId`, rewiring next/yes/no links. */
+export function addStepAfter(
+  steps: PayflowStrategyStep[],
+  afterId: string,
+  kind: AddableStepKind,
+): PayflowStrategyStep[] {
+  const list = cloneSteps(steps);
+  const after = list.find((s) => s.id === afterId);
+  if (!after || after.kind === "Condition") return list;
+
+  const created = defaultStepForKind(kind);
+  const previousNext = after.next ?? null;
+
+  if (kind === "Condition") {
+    const outcomeId = `${created.id}-yes`;
+    const outcome: PayflowStrategyStep = {
+      id: outcomeId,
+      kind: "Outcome",
+      title: "Case closed — paid",
+      origin: "Human Modified",
+      config: { outcome: "Paid In Full" },
+      next: null,
+    };
+    created.yes = outcomeId;
+    created.no = previousNext;
+    created.next = null;
+    after.next = created.id!;
+    return [...list, created, outcome];
+  }
+
+  created.next = previousNext;
+  after.next = created.id!;
+  return [...list, created];
+}
+
+/** Remove a step and rewire predecessors to its next (or NO branch for conditions). */
+export function removeStep(
+  steps: PayflowStrategyStep[],
+  stepId: string,
+): PayflowStrategyStep[] {
+  const list = cloneSteps(steps);
+  const target = list.find((s) => s.id === stepId);
+  if (!target || target.kind === "Trigger") return list;
+
+  const fallback =
+    target.kind === "Condition" ? target.no ?? target.yes ?? null : target.next ?? null;
+  const removeIds = new Set<string>([stepId]);
+  if (target.kind === "Condition" && target.yes) {
+    const yesNode = list.find((s) => s.id === target.yes);
+    if (yesNode?.kind === "Outcome" && !yesNode.next) removeIds.add(target.yes);
+  }
+
+  return list
+    .filter((s) => !removeIds.has(s.id!))
+    .map((s) => {
+      const next = s.next === stepId ? fallback : s.next;
+      const yes = s.yes === stepId ? fallback : s.yes;
+      const no = s.no === stepId ? fallback : s.no;
+      return { ...s, next, yes, no };
+    });
+}
+
+export function templatesForChannelPurpose(
+  templates: { id: string; name: string; channel: string; purpose: string; subject?: string | null; body?: string | null }[],
+  channel?: string | null,
+  purpose?: string | null,
+) {
+  return templates.filter(
+    (t) =>
+      (!channel || t.channel === channel) && (!purpose || t.purpose === purpose),
+  );
+}
+
+export function templateById(
+  templates: { id: string; name: string; channel: string; purpose: string; subject?: string | null; body?: string | null }[],
+  templateId?: string | null,
+) {
+  if (!templateId) return undefined;
+  return templates.find((t) => t.id === templateId);
 }

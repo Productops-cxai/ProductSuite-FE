@@ -252,7 +252,10 @@ export function ClientCommunicationsTab({
       title="Communications"
       description={`Customer communications sent for ${clientName} accounts`}
       action={
-        <Link to="/payflow/comms" className="text-[12.5px] font-semibold text-primary hover:underline">
+        <Link
+          to={`/payflow/comms?client=${encodeURIComponent(clientName)}`}
+          className="text-[12.5px] font-semibold text-primary hover:underline"
+        >
           Full communication log
         </Link>
       }
@@ -308,15 +311,8 @@ export function ClientRulesTab({
     listPayflowRules({ client_id: clientId })
       .then((res) => {
         if (!cancelled) {
-          const list = res.rules || [];
-          setRows(
-            list.filter(
-              (r) =>
-                r.rule_type === "System Rule" ||
-                r.client_id === clientId ||
-                r.client_name === clientName,
-            ),
-          );
+          // BE already scopes to this client's rules + assigned governance system rules.
+          setRows(res.rules || []);
         }
       })
       .catch((err) => {
@@ -333,7 +329,7 @@ export function ClientRulesTab({
   return (
     <Panel
       title="Rules"
-      description={`System and client rules applying to ${clientName}`}
+      description={`Client rules for ${clientName}, plus system rules assigned in AI & Governance`}
       action={
         <Link to="/payflow/rules" className="text-[12.5px] font-semibold text-primary hover:underline">
           All rules

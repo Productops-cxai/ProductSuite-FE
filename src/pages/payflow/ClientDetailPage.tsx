@@ -20,12 +20,14 @@ import {
   draftFromDetail,
   draftToUpdatePayload,
   emptyDraft,
+  generalConfigIssues,
   postalCodeConfigIssues,
   type ClientDraft,
   type ClientDraftConfig,
 } from "../../components/payflow/client-config-sections";
 import {
   ClientAccountsTab,
+  ClientCommunicationsTab,
   ClientRulesTab,
   ClientWorkflowsTab,
 } from "../../components/payflow/client-detail-tabs";
@@ -43,12 +45,14 @@ import {
 } from "../../components/payflow/lovable/payflow-ui";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
+import { SHOW_PAYFLOW_DELETE } from "../../lib/payflow-features";
 import {
   buildActivationChecks,
   buildOnboardingStages,
   configSectionHint,
   isClientSettingUp,
   missingSetupChips,
+  remainingSetupIssueMessages,
   setupTargetForLabel,
   type OnboardingStage,
   type SetupCheck,
@@ -60,6 +64,7 @@ const MAIN_TABS = [
   "Overview",
   "Sub-Clients / Portfolios",
   "Accounts",
+  "Communications",
   "Workflows",
   "Rules",
   "Configuration",
@@ -91,7 +96,7 @@ export function PayFlowClientDetailPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { hasPermission } = usePayFlowAccess();
   const canEdit = hasPermission("edit_client");
-  const canDelete = hasPermission("delete_client");
+  const canDelete = SHOW_PAYFLOW_DELETE && hasPermission("delete_client");
   const id = Number(clientId);
 
   const initialTab = (searchParams.get("tab") as MainTab) || "Overview";
@@ -139,6 +144,19 @@ export function PayFlowClientDetailPage() {
   useEffect(() => {
     void load();
   }, [id]);
+
+  // Refresh governance list when returning from Rule Builder (new tab).
+  useEffect(() => {
+    function refreshGovernance() {
+      void getPayflowClientMappingCatalog()
+        .then((catalog) => setGovernanceRules(catalog.governance_rules || []))
+        .catch(() => {
+          /* ignore */
+        });
+    }
+    window.addEventListener("focus", refreshGovernance);
+    return () => window.removeEventListener("focus", refreshGovernance);
+  }, []);
 
   const patch = (p: Partial<ClientDraft>) => setDraft((d) => ({ ...d, ...p }));
   const patchConfig = (p: Partial<ClientDraftConfig>) =>
@@ -227,7 +245,8 @@ export function PayFlowClientDetailPage() {
   }
 
   async function deleteClient() {
-    if (!detail || readOnly) return;
+    // Delete is gated by delete_client — not edit_client (readOnly).
+    if (!detail || !canDelete) return;
     setBusy(true);
     setError("");
     try {
@@ -281,10 +300,16 @@ export function PayFlowClientDetailPage() {
     () => (detail ? buildActivationChecks(detail) : []),
     [detail],
   );
-  const onboardingStages = useMemo(
-    () => (detail ? buildOnboardingStages(detail) : []),
-    [detail],
-  );
+  const onboardingStages = useMemo(() => {
+    if (!detail) return [];
+    const stages = buildOnboardingStages(detail);
+    const generalBad = generalConfigIssues(draft).length > 0;
+    return stages.map((s) =>
+      s.key === "profile"
+        ? { ...s, done: !generalBad && s.done, pending: generalBad || s.pending }
+        : s,
+    );
+  }, [detail, draft]);
   const checksDone = activationChecks.filter((c) => c.done).length;
   const checksPct = activationChecks.length
     ? Math.round((checksDone / activationChecks.length) * 100)
@@ -368,6 +393,19 @@ export function PayFlowClientDetailPage() {
               </>
             ) : null}
             <StatusPill tone={statusTone(statusLabel)}>{statusLabel}</StatusPill>
+            <StatusPill
+              tone={
+                (detail.added_through || "") === "file_upload" ||
+                (detail.added_through_label || "").toLowerCase().includes("file upload")
+                  ? "info"
+                  : "neutral"
+              }
+            >
+              {detail.added_through_label ||
+                ((detail.added_through || "") === "file_upload"
+                  ? "Created from file upload"
+                  : "Created")}
+            </StatusPill>
             {detail.ai_mode_label ? (
               <StatusPill tone={detail.ai_mode_label === "Autopilot" ? "ai" : "neutral"}>
                 {detail.ai_mode_label}
@@ -407,9 +445,17 @@ export function PayFlowClientDetailPage() {
       )}
 
       {(() => {
-            const missing = missingSetupChips(detail);
-            if (missing.length === 0) return null;
+            const missing = [
+              ...missingSetupChips(detail),
+              ...(generalConfigIssues(draft).length &&
+              !missingSetupChips(detail).some((m) => /profile|general/i.test(m))
+                ? ["Client Profile"]
+                : []),
+            ];
+            const issueMessages = remainingSetupIssueMessages(detail, draft);
+            if (missing.length === 0 && issueMessages.length === 0) return null;
             const drafting = isClientSettingUp(statusLabel);
+            const issueCount = Math.max(missing.length, issueMessages.length);
             return (
               <div className="mb-4 rounded-lg border border-warning/40 bg-warning/8 px-4 py-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -418,8 +464,8 @@ export function PayFlowClientDetailPage() {
                       <span className="mr-1.5 inline-block" aria-hidden>
                         ⚠
                       </span>
-                      Client setup incomplete — {missing.length} step
-                      {missing.length > 1 ? "s" : ""} left
+                      Client setup incomplete — {issueCount} item
+                      {issueCount > 1 ? "s" : ""} left
                     </p>
                     <p className="mt-0.5 text-[12px] text-muted-foreground">
                       {drafting
@@ -438,13 +484,29 @@ export function PayFlowClientDetailPage() {
                         </button>
                       ))}
                     </div>
+                    {issueMessages.length > 0 ? (
+                      <ul className="mt-2 list-disc space-y-0.5 pl-5 text-[12px] text-foreground">
+                        {issueMessages.map((msg) => (
+                          <li key={msg}>
+                            <button
+                              type="button"
+                              className="text-left hover:underline"
+                              onClick={() => goSetupTarget(setupTargetForLabel(msg))}
+                            >
+                              {msg}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
                   </div>
                   {canEdit ? (
                     <Btn
                       variant="primary"
                       className="shrink-0"
                       onClick={() =>
-                        missing.some((m) => /portfolio|sub-client/i.test(m))
+                        missing.some((m) => /portfolio|sub-client/i.test(m)) ||
+                        issueMessages.some((m) => /portfolio|sub-client/i.test(m))
                           ? goSetupTarget("portfolios")
                           : changeTab("Configuration")
                       }
@@ -514,6 +576,10 @@ export function PayFlowClientDetailPage() {
 
       {tab === "Accounts" && (
         <ClientAccountsTab clientId={detail.id} clientName={detail.name} />
+      )}
+
+      {tab === "Communications" && (
+        <ClientCommunicationsTab clientId={detail.id} clientName={detail.name} />
       )}
 
       {tab === "Workflows" && (
@@ -649,7 +715,7 @@ export function PayFlowClientDetailPage() {
           <div className="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
             <div className="panel overflow-hidden p-2">
               {CONFIG_SECTIONS.map((s) => {
-                const hint = configSectionHint(s, detail);
+                const hint = configSectionHint(s, detail, draft);
                 return (
                   <button
                     key={s}

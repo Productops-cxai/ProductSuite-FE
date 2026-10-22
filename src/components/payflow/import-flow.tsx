@@ -238,7 +238,11 @@ export function ImportErrorTable({ errors }: { errors: ImportError[] }) {
           <Td>{e.field}</Td>
           <Td className="min-w-[280px] whitespace-normal">{e.error}</Td>
           <Td>
-            <StatusPill tone={e.status === "Rejected" ? "danger" : "warning"}>{e.status}</StatusPill>
+            <StatusPill
+              tone={e.status === "Rejected" ? "danger" : e.status === "Attention" ? "warning" : "warning"}
+            >
+              {e.status}
+            </StatusPill>
           </Td>
         </Tr>
       ))}
@@ -284,6 +288,9 @@ export function ImportResult({
                 No records were changed. Review the issue below, correct the file and upload it again.
               </p>
             )}
+            {run.message ? (
+              <p className="mt-2 text-[13px] text-foreground">{run.message}</p>
+            ) : null}
           </div>
           <StatusPill tone={importStatusTone(run.status)}>{run.status}</StatusPill>
         </div>
@@ -366,6 +373,15 @@ function ClientPreviewTable({ records }: { records: ImportRecord[] }) {
             <Td className="text-[12.5px] text-muted-foreground">
               {g.master?.action === "Error" ? (
                 <span className="text-destructive">{g.master.note}</span>
+              ) : g.master?.setupIssues && g.master.setupIssues.length > 0 ? (
+                <div className="space-y-1">
+                  <span className="font-medium text-warning">Setup incomplete</span>
+                  <ul className="list-disc pl-4 text-[11.5px] text-foreground">
+                    {g.master.setupIssues.map((issue) => (
+                      <li key={issue}>{issue}</li>
+                    ))}
+                  </ul>
+                </div>
               ) : g.master ? (
                 "Valid"
               ) : null}
@@ -397,7 +413,14 @@ function AccountPreviewTable({ records }: { records: ImportRecord[] }) {
   return (
     <DataTable
       minWidth={880}
-      head={["Account ID", "Client → Sub-Client", "Current Balance", "Incoming Balance", "Action", "Status"]}
+      head={[
+        "Account ID",
+        "Client → Sub-Client",
+        "In PayFlow",
+        "Outstanding Balance",
+        "Action",
+        "Status",
+      ]}
     >
       {records.map((r) => (
         <Tr key={r.id}>
@@ -413,7 +436,7 @@ function AccountPreviewTable({ records }: { records: ImportRecord[] }) {
             />
           </Td>
           <Td className="tabular text-muted-foreground">
-            {r.currentBalance == null ? "New account" : formatCurrency(r.currentBalance)}
+            {r.currentBalance == null ? "—" : formatCurrency(r.currentBalance)}
           </Td>
           <Td className="tabular font-medium">
             {formatCurrency(r.incomingBalance ?? 0)}
@@ -445,20 +468,28 @@ const formatInfo: Record<ImportKind, { required: string[]; note: string }> = {
       "client_number",
       "client_code",
       "is_master_client",
-      "master_client__client_number (subs)",
       "company_name / short_name",
+      "client_type__name",
+      "clientdemographiccontactinformation__full_name",
+      "email_address (or demographic email)",
+      "phone_number (or demographic phone)",
+      "country__name",
+      "correspondence_language__name",
+      "currency__name",
+      "master_client__client_number (subs)",
     ],
-    note: "CRM clients export (CSV/XLSX). Masters (is_master_client=True) become Clients; children with master_client__client_number become Sub-Clients/Portfolios. Daily account files then use master client_code + sub client_code.",
+    note: "CRM clients export (CSV/XLSX). Masters (is_master_client=True) become Clients and must include the same mandatory profile fields as Add Client (contact, country, language, currency). Children with master_client__client_number become Sub-Clients/Portfolios.",
   },
   account: {
     required: [
       "account_id (or account_number)",
       "customer name (or first_name / last_name)",
       "outstanding_balance",
-      "email (or email_address)",
+      "email (or email_address / customer_email) — account customer, for alerts",
+      "phone_mobile (or phone_number / dn_debtorcasephonenumber_phone_number) — for SMS",
       "client_code + sub_client_code — or CRM client_number",
     ],
-    note: "Daily CRM account file (CSV or XLSX), including Debtor Summary dumps. Native CRM columns (account_number, first_name, email_address, client_number, …) are mapped automatically. Clients must already exist in PayFlow (matched by client_code or CRM client_number). Defaults: country CA, currency CAD, product P4 when missing.",
+    note: "Daily CRM account file (CSV or XLSX), including Debtor Summary dumps. outstanding_balance is the live balance shown everywhere as Outstanding Balance. principle_amount maps to Original Balance. Address columns (dn_debtorcaseaddress_*) map to Contact. Account email/phone are debtor channels for Email/SMS — not the client's ops contact_email. Clients must already exist in PayFlow. Defaults: country CA, currency CAD, product P4 when missing.",
   },
 };
 
@@ -472,6 +503,13 @@ function mapPreviewAction(action: string): ImportAction {
   if (action === "Update") return "Update";
   if (action === "No Change") return "No Change";
   return "Error";
+}
+
+function mapImportErrorStatus(status: string | undefined): ImportError["status"] {
+  const s = (status || "").toLowerCase();
+  if (s === "skipped") return "Skipped";
+  if (s === "attention") return "Attention";
+  return "Rejected";
 }
 
 function mapPreviewRecords(rows: PayflowImportPreviewResponse["preview"]): ImportRecord[] {
@@ -490,6 +528,7 @@ function mapPreviewRecords(rows: PayflowImportPreviewResponse["preview"]): Impor
       currentBalance: r.current_balance,
       incomingBalance: r.incoming_balance ?? undefined,
       note: r.note ?? r.record_id,
+      setupIssues: r.setup_issues || [],
     };
   });
 }
@@ -521,7 +560,7 @@ function failedRunFromPreview(
       subClient: e.sub_client,
       field: e.field,
       error: e.error,
-      status: e.status === "Skipped" ? "Skipped" : "Rejected",
+      status: mapImportErrorStatus(e.status),
     })),
   };
 }
@@ -566,6 +605,7 @@ function bulkUploadToRun(file: File, result: PayflowBulkUploadResult, uploadedBy
       errors,
     ),
     errors,
+    message: result.message ?? null,
   };
 }
 
@@ -580,6 +620,8 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
     null,
   );
   const [previewRecords, setPreviewRecords] = useState<ImportRecord[]>([]);
+  const [previewErrors, setPreviewErrors] = useState<ImportError[]>([]);
+  const [previewMessage, setPreviewMessage] = useState<string | null>(null);
 
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -618,6 +660,17 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
       }
       setPreviewSummary(preview.summary);
       setPreviewRecords(mapPreviewRecords(preview.preview));
+      setPreviewErrors(
+        (preview.errors || []).map((e) => ({
+          recordId: e.record_id,
+          client: e.client,
+          subClient: e.sub_client,
+          field: e.field,
+          error: e.error,
+          status: mapImportErrorStatus(e.status),
+        })),
+      );
+      setPreviewMessage(preview.message?.trim() || null);
       setStage("preview");
     } catch (err) {
       setSubmitError(err instanceof ApiError ? err.detail : "Validation failed");
@@ -654,6 +707,10 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
     setRun(null);
     setPreviewSummary(null);
     setPreviewRecords([]);
+    setPreviewErrors([]);
+    setPreviewMessage(null);
+    setSubmitError(null);
+    setFileError(null);
   };
 
   const returnBtn = (
@@ -762,7 +819,18 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
             <span className="font-medium text-foreground">{file?.name}</span>. Records with errors will be skipped;
             all others will be processed when you continue.
           </p>
+          {previewMessage ? (
+            <p className="text-[12.5px] font-medium text-foreground">{previewMessage}</p>
+          ) : null}
           {submitError ? <p className="text-[12.5px] font-medium text-destructive">{submitError}</p> : null}
+          {previewErrors.length > 0 && (
+            <Panel
+              title="Validation & setup issues"
+              description={`${formatNumber(previewErrors.length)} item${previewErrors.length === 1 ? "" : "s"} — Rejected rows are skipped; Attention means the client still imports as Draft with remaining setup.`}
+            >
+              <ImportErrorTable errors={previewErrors} />
+            </Panel>
+          )}
           {isClient ? (
             <ClientPreviewTable records={previewRecords} />
           ) : (
@@ -792,6 +860,7 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
       {stage === "done" && run && (
         <ImportResult
           run={run}
+          initialShowErrors={run.status === "Failed" || run.errors.length > 0}
           returnTo={
             <>
               {run.status === "Failed" && <Btn onClick={reset}>Upload Again</Btn>}

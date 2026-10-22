@@ -5,6 +5,7 @@ import {
   createPayflowWorkflow,
   listPayflowClientPortfolios,
   listPayflowClients,
+  listPayflowWorkflows,
 } from "../../api/payflow";
 import { StrategyCanvas } from "../../components/payflow/strategy-canvas";
 import {
@@ -20,14 +21,24 @@ import {
 import {
   CHANNELS,
   MESSAGE_PURPOSES,
+  TIME_UNITS,
+  aiSuggestionsForSegment,
+  assignDraftTemplates,
   buildStepsFromDraft,
   draftStepTitle,
   makeDraftStep,
+  stepConfig,
   suggestFromPrompt,
+  templateById,
   type DraftStep,
   type DraftStepKind,
 } from "../../lib/strategy-workflow";
-import type { PayflowClient, PayflowPortfolio, PayflowStrategy } from "../../types";
+import type {
+  PayflowClient,
+  PayflowPortfolio,
+  PayflowStrategy,
+  PayflowStrategyCatalog,
+} from "../../types";
 
 const ADDABLE_KINDS: DraftStepKind[] = [
   "Communication",
@@ -35,7 +46,6 @@ const ADDABLE_KINDS: DraftStepKind[] = [
   "Condition",
   "AI Reassessment",
   "Case Action",
-  "Payment Action",
   "Human Review",
 ];
 
@@ -71,6 +81,44 @@ const TENURES = [
   "Long-standing (2 years+)",
 ];
 
+function PlusIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+
+function SparklesIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z" />
+      <path d="M19 15l.75 2.25L22 18l-2.25.75L19 21l-.75-2.25L16 18l2.25-.75L19 15z" />
+    </svg>
+  );
+}
+
+function GripIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden>
+      <circle cx="9" cy="7" r="1.25" />
+      <circle cx="15" cy="7" r="1.25" />
+      <circle cx="9" cy="12" r="1.25" />
+      <circle cx="15" cy="12" r="1.25" />
+      <circle cx="9" cy="17" r="1.25" />
+      <circle cx="15" cy="17" r="1.25" />
+    </svg>
+  );
+}
+
+function TrashIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <path d="M4 7h16M9 7V5h6v2M8 7l1 12h6l1-12" />
+    </svg>
+  );
+}
+
 export function PayFlowWorkflowNewPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -87,6 +135,8 @@ export function PayFlowWorkflowNewPage() {
   const [portfolioId, setPortfolioId] = useState(searchParams.get("portfolioId") || "");
   const [addKind, setAddKind] = useState<DraftStepKind>("Communication");
   const [steps, setSteps] = useState<DraftStep[]>([]);
+  const [catalog, setCatalog] = useState<PayflowStrategyCatalog | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
   const [segment, setSegment] = useState({
     age_band: AGE_BANDS[0]!,
     postal_region: POSTAL_REGIONS[0]!,
@@ -96,14 +146,41 @@ export function PayFlowWorkflowNewPage() {
     tenure: TENURES[0]!,
   });
 
+  const ageBands = catalog?.age_bands?.length ? catalog.age_bands : AGE_BANDS;
+  const postalRegions = catalog?.postal_regions?.length
+    ? catalog.postal_regions
+    : POSTAL_REGIONS;
+  const balanceBands = catalog?.balance_bands?.length ? catalog.balance_bands : BALANCE_BANDS;
+  const delinquencyBands = catalog?.delinquency_bands?.length
+    ? catalog.delinquency_bands
+    : DELINQUENCY_BANDS;
+  const languages =
+    catalog?.language_preferences?.length || catalog?.languages?.length
+      ? catalog.language_preferences || catalog.languages || LANGUAGES
+      : LANGUAGES;
+  const tenures =
+    catalog?.tenure_bands?.length || catalog?.tenures?.length
+      ? catalog.tenure_bands || catalog.tenures || TENURES
+      : TENURES;
+  const timeUnits = catalog?.time_units?.length ? catalog.time_units : TIME_UNITS;
+  const channels = catalog?.channels?.length ? catalog.channels : CHANNELS;
+  const purposes = catalog?.message_purposes?.length
+    ? catalog.message_purposes
+    : MESSAGE_PURPOSES;
+  const templates = catalog?.message_templates || [];
+  const excluded = catalog?.excluded_targeting_attributes?.length
+    ? catalog.excluded_targeting_attributes
+    : ["Ethnicity", "Religion", "Gender", "Health status", "Marital status"];
+
   useEffect(() => {
     let cancelled = false;
-    listPayflowClients({})
-      .then((res) => {
+    Promise.all([listPayflowClients({}), listPayflowWorkflows({}).catch(() => null)])
+      .then(([res, wf]) => {
         if (cancelled) return;
         const list = res.clients || [];
         setClients(list);
         if (!clientId && list[0]) setClientId(String(list[0].id));
+        if (wf?.catalog) setCatalog(wf.catalog);
       })
       .catch((err) => {
         if (!cancelled) {
@@ -159,13 +236,15 @@ export function PayFlowWorkflowNewPage() {
     [portfolios],
   );
 
+  const tips = useMemo(() => aiSuggestionsForSegment(segment), [segment]);
+
   const previewStrategy: PayflowStrategy | null = useMemo(() => {
     if (!steps.length) return null;
-    const built = buildStepsFromDraft(steps);
+    const built = assignDraftTemplates(buildStepsFromDraft(steps), templates);
     return {
       id: 0,
       code: "preview",
-      name: name || "Preview",
+      name: name || "New workflow",
       client_id: Number(clientId) || 0,
       status: "Draft",
       origin: "Human Created",
@@ -187,7 +266,7 @@ export function PayFlowWorkflowNewPage() {
       ai_context: [],
       versions: [],
     };
-  }, [steps, name, clientId, segment]);
+  }, [steps, name, clientId, segment, templates]);
 
   function patchStep(id: string, patch: Partial<DraftStep>) {
     setSteps((prev) =>
@@ -198,16 +277,22 @@ export function PayFlowWorkflowNewPage() {
     );
   }
 
-  function moveStep(id: string, dir: -1 | 1) {
+  function moveStep(fromId: string, toId: string) {
+    if (fromId === toId) return;
     setSteps((prev) => {
-      const idx = prev.findIndex((s) => s.id === id);
-      const target = idx + dir;
-      if (idx < 0 || target < 0 || target >= prev.length) return prev;
+      const from = prev.findIndex((s) => s.id === fromId);
+      const to = prev.findIndex((s) => s.id === toId);
+      if (from < 0 || to < 0) return prev;
       const copy = [...prev];
-      const [item] = copy.splice(idx, 1);
-      copy.splice(target, 0, item!);
+      const [moved] = copy.splice(from, 1);
+      copy.splice(to, 0, moved!);
       return copy;
     });
+  }
+
+  function runAiSuggest() {
+    setError("");
+    setSteps(suggestFromPrompt(prompt, segment));
   }
 
   async function createWorkflow() {
@@ -221,7 +306,7 @@ export function PayFlowWorkflowNewPage() {
       return;
     }
     if (!portfolioId) {
-      setError("Select a portfolio. Every workflow must be scoped to a client and portfolio.");
+      setError("Select a sub-client / portfolio.");
       return;
     }
     if (steps.length === 0) {
@@ -230,12 +315,12 @@ export function PayFlowWorkflowNewPage() {
     }
     setBusy(true);
     try {
-      const built = buildStepsFromDraft(steps);
+      const built = assignDraftTemplates(buildStepsFromDraft(steps), templates);
       const created = await createPayflowWorkflow({
         name: name.trim(),
         client_id: Number(clientId),
         portfolio_id: Number(portfolioId),
-        summary: summary.trim() || "Human-created workflow with optional AI assistance.",
+        summary: summary.trim() || "Human-created workflow.",
         coverage: "Targeted segment",
         segment,
         steps: built,
@@ -261,7 +346,7 @@ export function PayFlowWorkflowNewPage() {
           { label: "Create workflow" },
         ]}
         title="Create a workflow"
-        description="Describe what you want and let PayFlow AI suggest a starting flow, or add the steps yourself. New workflows save as Draft until you submit them for review."
+        description="Describe what you want and let PayFlow AI suggest a starting flow, or add the steps yourself and drag them into the order you want."
       />
 
       <div className="grid gap-4 xl:grid-cols-[360px_1fr]">
@@ -272,7 +357,7 @@ export function PayFlowWorkflowNewPage() {
                 <TextInput
                   value={name}
                   onChange={setName}
-                  placeholder="e.g. Early Reminder — Small Balances"
+                  placeholder="e.g. PayPal Loans Early Reminder"
                 />
               </Field>
               <Field label="Client">
@@ -303,7 +388,7 @@ export function PayFlowWorkflowNewPage() {
                 <TextArea
                   value={summary}
                   onChange={setSummary}
-                  placeholder="e.g. early email reminder for smaller balances"
+                  placeholder="e.g. early email reminder for smaller balances that usually pay after one nudge"
                 />
               </Field>
             </div>
@@ -314,55 +399,56 @@ export function PayFlowWorkflowNewPage() {
               <Field label="Age band">
                 <SelectInput
                   value={segment.age_band}
-                  options={AGE_BANDS}
+                  options={ageBands}
                   onChange={(v) => setSegment((s) => ({ ...s, age_band: v }))}
                 />
               </Field>
               <Field label="Postal region">
                 <SelectInput
                   value={segment.postal_region}
-                  options={POSTAL_REGIONS}
+                  options={postalRegions}
                   onChange={(v) => setSegment((s) => ({ ...s, postal_region: v }))}
                 />
               </Field>
               <Field label="Balance band">
                 <SelectInput
                   value={segment.balance_band}
-                  options={BALANCE_BANDS}
+                  options={balanceBands}
                   onChange={(v) => setSegment((s) => ({ ...s, balance_band: v }))}
                 />
               </Field>
               <Field label="Delinquency stage">
                 <SelectInput
                   value={segment.delinquency}
-                  options={DELINQUENCY_BANDS}
+                  options={delinquencyBands}
                   onChange={(v) => setSegment((s) => ({ ...s, delinquency: v }))}
                 />
               </Field>
               <Field label="Language preference">
                 <SelectInput
                   value={segment.language}
-                  options={LANGUAGES}
+                  options={languages}
                   onChange={(v) => setSegment((s) => ({ ...s, language: v }))}
                 />
               </Field>
               <Field label="Customer tenure">
                 <SelectInput
                   value={segment.tenure}
-                  options={TENURES}
+                  options={tenures}
                   onChange={(v) => setSegment((s) => ({ ...s, tenure: v }))}
                 />
               </Field>
               <p className="text-[11.5px] text-muted-foreground">
-                Excluded from targeting: ethnicity, religion, gender, health status, marital status.
+                Excluded from targeting: {excluded.join(", ")}. These attributes are never used to
+                decide treatment.
               </p>
             </div>
           </Panel>
 
           <Panel
             title="Ask PayFlow AI"
-            description="Describe the outcome you want. AI suggests the steps; you stay in control. The workflow remains human-created."
-            action={<StatusPill tone="ai">AI assist</StatusPill>}
+            description="Describe the outcome you want. AI suggests the steps; you stay in control."
+            action={<StatusPill tone="ai">AI</StatusPill>}
           >
             <Field label="Your prompt">
               <TextArea
@@ -371,23 +457,28 @@ export function PayFlowWorkflowNewPage() {
                 placeholder="e.g. gentle SMS-first reminder for small balances, offer an installment plan if there is no payment after a week"
               />
             </Field>
-            <Btn
-              className="mt-2"
-              variant="primary"
-              onClick={() => {
-                setSteps(suggestFromPrompt(prompt));
-                setError("");
-              }}
-            >
+            <Btn className="mt-2" variant="primary" onClick={runAiSuggest}>
+              <SparklesIcon className="size-3.5" />
               {steps.length ? "Re-suggest steps" : "Suggest steps"}
             </Btn>
+            <ul className="mt-3 space-y-2 border-t border-border/60 pt-3">
+              {tips.map((tip) => (
+                <li
+                  key={tip}
+                  className="flex gap-2 text-[12px] leading-relaxed text-muted-foreground"
+                >
+                  <SparklesIcon className="mt-0.5 size-3.5 shrink-0 text-ai" />
+                  {tip}
+                </li>
+              ))}
+            </ul>
           </Panel>
         </div>
 
         <div className="space-y-4">
           <Panel
             title="Build the steps"
-            description="Reorder with ↑ ↓. A condition splits the flow into a YES (paid) and NO (continue) path. Timing uses days after a reference event."
+            description="Drag a step by its handle to reorder it. A condition splits the flow into a YES and a NO path."
             action={
               <div className="flex items-end gap-2">
                 <SelectInput
@@ -401,6 +492,7 @@ export function PayFlowWorkflowNewPage() {
                     setError("");
                   }}
                 >
+                  <PlusIcon className="size-3.5" />
                   Add
                 </Btn>
               </div>
@@ -408,58 +500,60 @@ export function PayFlowWorkflowNewPage() {
           >
             {steps.length === 0 ? (
               <p className="text-[12.5px] leading-relaxed text-muted-foreground">
-                No steps yet. Describe what you want in “Ask PayFlow AI”, or add steps here.
+                No steps yet. Describe what you want in “Ask PayFlow AI”, or add steps here and drag
+                them into order.
               </p>
             ) : (
               <ul className="space-y-2">
                 {steps.map((step, i) => (
                   <li
                     key={step.id}
-                    className="rounded-xl border border-border bg-card px-3 py-2.5 shadow-subtle"
+                    draggable
+                    onDragStart={() => setDragId(step.id)}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={() => {
+                      if (dragId) moveStep(dragId, step.id);
+                      setDragId(null);
+                    }}
+                    onDragEnd={() => setDragId(null)}
+                    className={
+                      "rounded-xl border border-border bg-card px-3 py-2.5 shadow-subtle " +
+                      (dragId === step.id ? "opacity-60" : "")
+                    }
                   >
                     <div className="flex items-center gap-2">
+                      <GripIcon className="size-4 cursor-grab text-muted-foreground" />
                       <span className="text-[11px] font-bold text-muted-foreground">{i + 1}</span>
                       <StatusPill>{step.kind}</StatusPill>
                       <span className="truncate text-[12.5px] font-medium text-foreground">
                         {draftStepTitle(step)}
                       </span>
-                      <div className="ml-auto flex items-center gap-1">
-                        <Btn disabled={i === 0} onClick={() => moveStep(step.id, -1)}>
-                          ↑
-                        </Btn>
-                        <Btn
-                          disabled={i === steps.length - 1}
-                          onClick={() => moveStep(step.id, 1)}
-                        >
-                          ↓
-                        </Btn>
-                        <Btn
-                          variant="danger"
-                          onClick={() =>
-                            setSteps((prev) => prev.filter((s) => s.id !== step.id))
-                          }
-                        >
-                          Remove
-                        </Btn>
-                      </div>
+                      <button
+                        type="button"
+                        aria-label={`Remove step ${i + 1}`}
+                        className="ml-auto rounded-md border border-border/70 p-1 text-muted-foreground hover:border-destructive/50 hover:text-destructive"
+                        onClick={() => setSteps((prev) => prev.filter((s) => s.id !== step.id))}
+                      >
+                        <TrashIcon className="size-3.5" />
+                      </button>
                     </div>
                     {step.kind === "Communication" && (
                       <div className="mt-2 grid gap-2 sm:grid-cols-3">
                         <Field label="Channel">
                           <SelectInput
                             value={step.channel || "Email"}
-                            options={CHANNELS}
+                            options={channels}
                             onChange={(v) => patchStep(step.id, { channel: v })}
                           />
                         </Field>
                         <Field label="Message purpose">
                           <SelectInput
-                            value={step.purpose || MESSAGE_PURPOSES[0]!}
-                            options={MESSAGE_PURPOSES}
+                            value={step.purpose || purposes[0]!}
+                            options={purposes}
                             onChange={(v) => patchStep(step.id, { purpose: v })}
                           />
                         </Field>
-                        <Field label="Days after previous">
+                        <Field label="Days after previous step">
                           <TextInput
                             value={String(step.amount)}
                             onChange={(v) =>
@@ -472,8 +566,8 @@ export function PayFlowWorkflowNewPage() {
                       </div>
                     )}
                     {step.kind === "Wait" && (
-                      <div className="mt-2">
-                        <Field label="Wait (days after previous action)">
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                        <Field label="Wait for">
                           <TextInput
                             value={String(step.amount)}
                             onChange={(v) =>
@@ -483,12 +577,20 @@ export function PayFlowWorkflowNewPage() {
                             }
                           />
                         </Field>
+                        <Field label="Unit">
+                          <SelectInput
+                            value={step.unit || "Days"}
+                            options={timeUnits}
+                            onChange={(v) => patchStep(step.id, { unit: v })}
+                          />
+                        </Field>
                       </div>
                     )}
                     {step.kind === "Condition" && (
                       <p className="mt-2 text-[11.5px] text-muted-foreground">
-                        Checks whether payment was received. YES closes the case as paid; NO
-                        continues with the steps below.
+                        Checks whether the payment was received. YES closes the case as paid; NO
+                        continues with the steps below. You can change what it checks after the
+                        workflow is created.
                       </p>
                     )}
                   </li>
@@ -497,45 +599,50 @@ export function PayFlowWorkflowNewPage() {
             )}
           </Panel>
 
-          {previewStrategy && (
-            <Panel title="Flow preview" description="How the workflow will look in the builder.">
-              <StrategyCanvas
-                strategy={previewStrategy}
-                selectedId={null}
-                onSelect={() => undefined}
-              />
-            </Panel>
-          )}
-
           <Panel
-            title="Create"
-            description="Saved as Draft. Submit for review, then approve, then activate — AI Proposed and Draft workflows cannot become Active."
+            title="Flow preview"
+            description="This is how the workflow will run. After you create it you can edit any step and its message."
+            bodyClassName="p-3"
             action={
               <Btn variant="primary" disabled={busy} onClick={() => void createWorkflow()}>
+                {!busy && <PlusIcon className="size-3.5" />}
                 {busy ? "Creating…" : "Create workflow"}
               </Btn>
             }
           >
             {error && (
-              <p className="rounded-lg border border-destructive/30 bg-destructive/[0.06] px-3 py-2 text-[12.5px] text-destructive">
+              <p className="mb-3 rounded-lg border border-destructive/30 bg-destructive/[0.06] px-3 py-2 text-[12.5px] text-destructive">
                 {error}
               </p>
             )}
-            {!error && (
-              <p className="text-[12.5px] text-muted-foreground">
-                {steps.length
-                  ? `${steps.length} step${steps.length === 1 ? "" : "s"} ready (+ Trigger).`
-                  : "Add or suggest steps to continue."}
-              </p>
-            )}
             {clients.length === 0 && (
-              <p className="mt-2 text-[12.5px] text-muted-foreground">
+              <p className="mb-3 text-[12.5px] text-muted-foreground">
                 No clients available.{" "}
                 <Link to="/payflow/clients" className="text-primary hover:underline">
                   Create a client
                 </Link>{" "}
                 first.
               </p>
+            )}
+            {previewStrategy ? (
+              <StrategyCanvas
+                strategy={previewStrategy}
+                selectedId={null}
+                onSelect={() => undefined}
+                templateSnippetFor={(node) => {
+                  const cfg = stepConfig(node);
+                  const tpl = templateById(templates, cfg.template_id);
+                  if (!tpl?.body) return null;
+                  return tpl.body.slice(0, 120);
+                }}
+              />
+            ) : (
+              <div className="rounded-xl border border-dashed border-border-strong bg-surface px-6 py-14 text-center">
+                <p className="text-[13px] font-semibold text-foreground">No steps yet</p>
+                <p className="mx-auto mt-1 max-w-sm text-[12px] leading-relaxed text-muted-foreground">
+                  Add steps or ask PayFlow AI for a suggestion, and the flow will appear here.
+                </p>
+              </div>
             )}
           </Panel>
         </div>

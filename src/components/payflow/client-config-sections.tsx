@@ -111,7 +111,31 @@ export function isValidClientPostalCode(value: string): boolean {
 
 export function postalCodeConfigIssues(draft: ClientDraft): string[] {
   if (isValidClientPostalCode(draft.config.postalCode)) return [];
-  return ["Postal code must match format A1A 1A1"];
+  return [
+    "Postal code must match format A1A 1A1 (letter-number-letter space number-letter-number)",
+  ];
+}
+
+/** General tab issues — required profile/contact/address fields + postal format. */
+export function generalConfigIssues(draft: ClientDraft): string[] {
+  const c = draft.config;
+  const issues: string[] = [];
+  if (!draft.name.trim()) issues.push("Client name is required");
+  if (!c.code.trim()) issues.push("Client code is required");
+  if (!c.clientType.trim()) issues.push("Client type is required");
+  if (!c.useCase.trim()) issues.push("Business use case is required");
+  if (!c.contactName.trim()) issues.push("Primary contact name is required");
+  const email = c.contactEmail.trim();
+  if (!email) issues.push("Primary contact email is required");
+  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    issues.push("Enter a valid primary contact email");
+  }
+  if (!c.contactPhone.trim()) issues.push("Primary contact phone is required");
+  if (!c.country.trim()) issues.push("Country is required");
+  if (!c.correspondenceLanguage.trim()) issues.push("Language is required");
+  if (!c.currencyCode.trim()) issues.push("Currency is required");
+  issues.push(...postalCodeConfigIssues(draft));
+  return issues;
 }
 
 export function connectionTone(state: ConnectionLabel): Tone {
@@ -1175,15 +1199,21 @@ export function BrandingSection({
             {thirdParty ? ` (on behalf of ${clientBrand})` : ""}. You can settle it securely, or
             set up a payment plan that works for you.
           </p>
-          <span className="mt-3 inline-block rounded-md bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground">
+          <span
+            className="mt-3 inline-block rounded-md bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground"
+            title="Preview only — live links open the customer payment portal at /pay/{token}"
+          >
             Pay now
           </span>
+          <p className="mt-1.5 text-[11px] text-muted-foreground">
+            Preview control · live communications open the branded payment portal
+          </p>
         </div>
         <div className="rounded-lg border border-border bg-card p-4">
           <p className="text-eyebrow mb-2">SMS · {c.smsSenderId || "SENDER"}</p>
           <p className="rounded-lg bg-surface px-3 py-2 text-[12px] text-foreground">
             {brand}: your balance of $4,250 is overdue
-            {thirdParty ? ` (${clientBrand})` : ""}. Pay or arrange a plan here: pay.fl/x9k2
+            {thirdParty ? ` (${clientBrand})` : ""}. Pay or arrange a plan here: /pay/••••••••
           </p>
         </div>
       </div>
@@ -1201,15 +1231,8 @@ export function AiGovernanceSection({
   readOnly,
 }: SectionProps) {
   const rules = draft.config.governanceRules;
-  const library = governanceRules.length
-    ? governanceRules
-    : [
-        "High Balance Human Review",
-        "Repeated Attempts Escalation",
-        "Low Confidence Review",
-        "Dispute Detected Review",
-        "Settlement Offer Approval",
-      ];
+  // Active system rules from Rules + any already-selected names (so edits stay visible).
+  const library = Array.from(new Set([...governanceRules, ...rules]));
 
   const toggleRule = (rule: string) =>
     patchConfig({
@@ -1254,24 +1277,31 @@ export function AiGovernanceSection({
             ) : null}
           </div>
           <p className="mt-0.5 text-[11px] text-muted-foreground">
-            Select rules for this client. Use Create Rule to open the Rule Builder in a new tab.
+            Select active system rules for this client. Use Create Rule to open the Rule Builder in a
+            new tab, then refresh this step.
           </p>
           <div className="mt-3 space-y-1">
-            {library.map((rule) => (
-              <label
-                key={rule}
-                className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-card"
-              >
-                <input
-                  type="checkbox"
-                  checked={rules.includes(rule)}
-                  onChange={() => !readOnly && toggleRule(rule)}
-                  disabled={readOnly}
-                  className="size-3.5 rounded border-border-strong accent-[var(--color-primary)] dark:border-slate-500"
-                />
-                <span className="text-[13px] text-foreground">{rule}</span>
-              </label>
-            ))}
+            {library.length === 0 ? (
+              <p className="px-2 py-1.5 text-[13px] text-muted-foreground">
+                No active system rules yet. Create a System Rule to assign governance here.
+              </p>
+            ) : (
+              library.map((rule) => (
+                <label
+                  key={rule}
+                  className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-card"
+                >
+                  <input
+                    type="checkbox"
+                    checked={rules.includes(rule)}
+                    onChange={() => !readOnly && toggleRule(rule)}
+                    disabled={readOnly}
+                    className="size-3.5 rounded border-border-strong accent-[var(--color-primary)] dark:border-slate-500"
+                  />
+                  <span className="text-[13px] text-foreground">{rule}</span>
+                </label>
+              ))
+            )}
           </div>
           {rules.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-1.5 border-t border-border pt-3">

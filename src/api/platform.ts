@@ -10,8 +10,11 @@ import type {
   Product,
   ProductAccessItem,
   ProductSavePayload,
+  AiSuggestJob,
   EmailLog,
+  SmsLog,
   DeletionLog,
+  PayflowWorkflowWorkerLog,
 } from "../types";
 
 export function getOverview() {
@@ -163,6 +166,73 @@ export function listEmailLogs(params?: {
   if (params?.limit) q.set("limit", String(params.limit));
   const qs = q.toString();
   return apiRequest<EmailLog[]>(`/email-logs${qs ? `?${qs}` : ""}`);
+}
+
+export function listSmsLogs(params?: {
+  search?: string;
+  sms_type?: string;
+  limit?: number;
+}) {
+  const q = new URLSearchParams();
+  if (params?.search) q.set("search", params.search);
+  if (params?.sms_type) q.set("sms_type", params.sms_type);
+  if (params?.limit) q.set("limit", String(params.limit));
+  const qs = q.toString();
+  return apiRequest<SmsLog[]>(`/sms-logs${qs ? `?${qs}` : ""}`);
+}
+
+export function listAiSuggestJobs(params?: {
+  search?: string;
+  status?: string;
+  client_id?: number;
+  portfolio_id?: number;
+  limit?: number;
+}) {
+  const q = new URLSearchParams();
+  if (params?.search) q.set("search", params.search);
+  if (params?.status) q.set("status", params.status);
+  if (params?.client_id != null) q.set("client_id", String(params.client_id));
+  if (params?.portfolio_id != null) q.set("portfolio_id", String(params.portfolio_id));
+  if (params?.limit) q.set("limit", String(params.limit));
+  const qs = q.toString();
+  return apiRequest<AiSuggestJob[]>(`/ai-suggest-jobs${qs ? `?${qs}` : ""}`);
+}
+
+export function requeueMissingAiSuggestJobs(params?: { client_id?: number }) {
+  const q = new URLSearchParams();
+  if (params?.client_id != null) q.set("client_id", String(params.client_id));
+  const qs = q.toString();
+  return apiRequest<{ enqueued: number; job_ids: number[] }>(
+    `/ai-suggest-jobs/requeue-missing${qs ? `?${qs}` : ""}`,
+    { method: "POST" },
+  );
+}
+
+export function listWorkflowWorkerLogs(params?: {
+  search?: string;
+  event_type?: string;
+  level?: string;
+  client_id?: number;
+  account_id?: number;
+  strategy_id?: number;
+  limit?: number;
+}) {
+  const q = new URLSearchParams();
+  if (params?.search) q.set("search", params.search);
+  if (params?.event_type) q.set("event_type", params.event_type);
+  if (params?.level) q.set("level", params.level);
+  if (params?.client_id != null) q.set("client_id", String(params.client_id));
+  if (params?.account_id != null) q.set("account_id", String(params.account_id));
+  if (params?.strategy_id != null) q.set("strategy_id", String(params.strategy_id));
+  if (params?.limit) q.set("limit", String(params.limit));
+  const qs = q.toString();
+  return apiRequest<PayflowWorkflowWorkerLog[]>(
+    `/workflow-worker-logs${qs ? `?${qs}` : ""}`,
+  );
+}
+
+export function getWorkflowWorkerLog(logId: number) {
+  return apiRequest<PayflowWorkflowWorkerLog>(`/workflow-worker-logs/${logId}`);
 }
 
 export function listDeletionLogs(params?: {

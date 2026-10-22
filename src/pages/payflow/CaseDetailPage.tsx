@@ -1,14 +1,39 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
-import { getPayflowAccount } from "../../api/payflow";
 import {
+  getAccountWorkflowExecution,
+  getPayflowAccount,
+  getPayflowAccountCommunicationEligibility,
+  listPayflowAccountPaymentLinks,
+  listPayflowAccountPayments,
+  listPayflowComms,
+  listPayflowReviews,
+  revokePayflowPaymentLink,
+  sendPayflowManualEmail,
+  sendPayflowManualSms,
+} from "../../api/payflow";
+import { WorkflowFlowPanel } from "../../components/payflow/WorkflowFlowPanel";
+import {
+  Btn,
+  EmptyState,
   PageHeader,
   Panel,
   StatusPill,
   statusTone,
+  type Tone,
 } from "../../components/payflow/lovable/payflow-ui";
-import type { PayflowAccount } from "../../types";
+import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
+import type {
+  PayflowAccount,
+  PayflowAccountPaymentsResponse,
+  PayflowCommunication,
+  PayflowCommunicationEligibility,
+  PayflowPaymentLink,
+  PayflowReview,
+  PayflowWorkflowRun,
+  PayflowWorkflowUiStatus,
+} from "../../types";
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-US", {
@@ -36,18 +61,275 @@ function yn(value?: boolean | null) {
   return value ? "Yes" : "No";
 }
 
+function reviewStatusTone(status: string): Tone {
+  switch (status) {
+    case "Awaiting Review":
+      return "warning";
+    case "Approved":
+    case "Completed":
+      return "success";
+    case "Modified":
+      return "info";
+    case "Rejected":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}
+
+function paymentLinkTone(status: string): Tone {
+  switch (status) {
+    case "Active":
+      return "success";
+    case "Completed":
+      return "info";
+    case "Expired":
+      return "warning";
+    case "Revoked":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}
+
+function paymentTxnTone(status: string, direction?: string): Tone {
+  if (direction === "refund" || direction === "reversal" || status === "Refunded" || status === "Reversed") {
+    return "warning";
+  }
+  switch (status) {
+    case "Succeeded":
+      return "success";
+    case "Failed":
+    case "Cancelled":
+      return "danger";
+    case "Pending":
+    case "Processing":
+    case "Initiated":
+      return "warning";
+    default:
+      return "neutral";
+  }
+}
+
+function optionTypeLabel(value?: string | null) {
+  switch (value) {
+    case "pay_in_full":
+      return "Pay in full";
+    case "partial":
+      return "Partial";
+    case "payment_plan":
+      return "Payment plan";
+    default:
+      return value || "—";
+  }
+}
+
+function commStatusTone(status: string): Tone {
+  switch (status) {
+    case "Payment Link Clicked":
+      return "success";
+    case "Opened / Read":
+      return "info";
+    case "Delivered":
+    case "Sent":
+      return "neutral";
+    case "Queued":
+    case "Awaiting Governance":
+      return "warning";
+    case "Failed":
+    case "Suppressed":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}
+
+function workflowUiTone(status?: PayflowWorkflowUiStatus | null): Tone {
+  switch (status) {
+    case "Completed":
+      return "success";
+    case "In Progress":
+      return "info";
+    case "Scheduled":
+    case "Pending":
+      return "neutral";
+    case "Blocked":
+    case "Awaiting Review":
+      return "warning";
+    case "Failed":
+    case "Cancelled":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}
+
+function stampMs(value?: string | null): number {
+  if (!value) return 0;
+  const t = Date.parse(value);
+  return Number.isNaN(t) ? 0 : t;
+}
+
+function normLabel(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function cleanUiStatus(raw?: string | null): PayflowWorkflowUiStatus | undefined {
+  if (!raw) return undefined;
+  const key = raw.toLowerCase().replace(/[_\s-]+/g, "");
+  if (key === "pausedhumanreview") return "Awaiting Review";
+  return raw;
+}
+
+function isRedundantHumanReviewLabel(label: string): boolean {
+  const key = normLabel(label);
+  return (
+    key === "human review" ||
+    key === "human review created" ||
+    key === "human review required" ||
+    key === "flagged for human review"
+  );
+}
+
+function isHumanReviewDecisionLabel(label: string): boolean {
+  const key = normLabel(label);
+  return (
+    key.startsWith("human review approved") ||
+    key.startsWith("human review rejected") ||
+    key.startsWith("human review held") ||
+    key.startsWith("human review modify") ||
+    key.startsWith("human review modified")
+  );
+}
+
+/** File intake / account birth must lead the story even if stamp clocks disagree. */
+function lifecycleRank(label: string): number {
+  const key = normLabel(label);
+  if (
+    key === "crm import" ||
+    key === "created from file upload" ||
+    key === "created" ||
+    key.startsWith("account created") ||
+    key.includes("created from")
+  ) {
+    return 0;
+  }
+  if (key === "case received" || key === "trigger") return 1;
+  return 2;
+}
+
+/** Normalize legacy intake labels for display. */
+function displayTimelineLabel(label: string, source?: string | null): string {
+  const key = normLabel(label);
+  if (key === "crm refresh" || key === "updated from file upload") {
+    return "Updated from file upload";
+  }
+  if (
+    source === "file_upload" ||
+    key === "crm import" ||
+    key === "created from file upload" ||
+    key === "created from crm daily file"
+  ) {
+    return "Created from file upload";
+  }
+  if (key === "created" || key.startsWith("account created")) return "Created";
+  return label;
+}
+
+function runStatusTone(status?: string | null): Tone {
+  switch ((status || "").toLowerCase()) {
+    case "completed":
+      return "success";
+    case "active":
+      return "info";
+    case "waiting":
+    case "pausedhumanreview":
+      return "warning";
+    case "failed":
+    case "cancelled":
+    case "superseded":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}
+
+function FactRows({ rows }: { rows: { label: string; value: string }[] }) {
+  return (
+    <dl className="divide-y divide-border">
+      {rows.map((f) => (
+        <div key={f.label} className="flex items-start justify-between gap-6 px-4 py-2.5">
+          <dt className="shrink-0 text-[13px] text-muted-foreground">{f.label}</dt>
+          <dd className="tabular min-w-0 text-right text-[13px] font-medium break-words text-foreground">
+            {f.value}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function DetailGrid({ rows }: { rows: { label: string; value: string }[] }) {
+  return (
+    <dl className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
+      {rows.map((f) => (
+        <div key={f.label} className="min-w-0">
+          <dt className="text-[12px] text-muted-foreground">{f.label}</dt>
+          <dd className="mt-0.5 text-[13px] font-medium break-words text-foreground">{f.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+type TimelineEvent = {
+  at: string;
+  atMs: number;
+  label: string;
+  detail: string;
+  reviewId?: number;
+  communicationId?: number;
+  uiStatus?: PayflowWorkflowUiStatus;
+  href?: string;
+};
+
 export function PayFlowCaseDetailPage() {
   const { accountId } = useParams<{ accountId: string }>();
+  const { hasPermission } = usePayFlowAccess();
   const [account, setAccount] = useState<PayflowAccount | null>(null);
+  const [reviews, setReviews] = useState<PayflowReview[]>([]);
+  const [comms, setComms] = useState<PayflowCommunication[]>([]);
+  const [eligibility, setEligibility] = useState<PayflowCommunicationEligibility | null>(null);
+  const [execution, setExecution] = useState<PayflowWorkflowRun | null>(null);
+  const [executionLoading, setExecutionLoading] = useState(true);
+  const [executionError, setExecutionError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [sideLoading, setSideLoading] = useState(true);
   const [error, setError] = useState("");
   const [showAllTimeline, setShowAllTimeline] = useState(false);
+  const [smsSending, setSmsSending] = useState(false);
+  const [smsMessage, setSmsMessage] = useState("");
+  const [smsError, setSmsError] = useState("");
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailMessage, setEmailMessage] = useState("");
+  const [emailError, setEmailError] = useState("");
+  const [commsRefresh, setCommsRefresh] = useState(0);
+  const [paymentLinks, setPaymentLinks] = useState<PayflowPaymentLink[]>([]);
+  const [paymentLinksLoading, setPaymentLinksLoading] = useState(false);
+  const [paymentLinksError, setPaymentLinksError] = useState("");
+  const [payments, setPayments] = useState<PayflowAccountPaymentsResponse | null>(null);
+  const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const [paymentsError, setPaymentsError] = useState("");
+  const [copyFlashId, setCopyFlashId] = useState<number | null>(null);
+  const [revokingId, setRevokingId] = useState<number | null>(null);
 
   useEffect(() => {
     const id = Number(accountId);
     if (!Number.isFinite(id)) {
       setError("Account not found");
       setLoading(false);
+      setSideLoading(false);
       return;
     }
     let cancelled = false;
@@ -71,6 +353,341 @@ export function PayFlowCaseDetailPage() {
     };
   }, [accountId]);
 
+  useEffect(() => {
+    if (!account) {
+      setReviews([]);
+      setComms([]);
+      setEligibility(null);
+      setExecution(null);
+      setPaymentLinks([]);
+      setPaymentLinksError("");
+      setPayments(null);
+      setPaymentsError("");
+      setSideLoading(false);
+      setExecutionLoading(false);
+      setPaymentLinksLoading(false);
+      setPaymentsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setSideLoading(true);
+    setExecutionLoading(true);
+    setPaymentLinksLoading(true);
+    setPaymentsLoading(true);
+    setExecutionError("");
+    setPaymentLinksError("");
+    setPaymentsError("");
+    Promise.all([
+      listPayflowReviews({
+        client_id: account.client_id,
+        search: account.account_reference,
+      }),
+      listPayflowComms({ account_id: account.id }),
+      getPayflowAccountCommunicationEligibility(account.id).catch(() => null),
+      getAccountWorkflowExecution(account.id).catch((err) => {
+        if (!cancelled) {
+          setExecutionError(
+            err instanceof ApiError ? err.detail : "Failed to load workflow execution",
+          );
+        }
+        return { execution: null };
+      }),
+      listPayflowAccountPaymentLinks(account.id).catch((err) => {
+        if (!cancelled) {
+          setPaymentLinksError(
+            err instanceof ApiError ? err.detail : "Failed to load payment links",
+          );
+        }
+        return { payment_links: [] as PayflowPaymentLink[], total: 0, active_count: 0 };
+      }),
+      listPayflowAccountPayments(account.id).catch((err) => {
+        if (!cancelled) {
+          setPaymentsError(
+            err instanceof ApiError ? err.detail : "Failed to load payments",
+          );
+        }
+        return null;
+      }),
+    ])
+      .then(([reviewRes, commRes, eligibilityRes, execRes, linksRes, paymentsRes]) => {
+        if (cancelled) return;
+        setReviews(
+          (reviewRes.reviews || []).filter((r) => r.account_id === account.id),
+        );
+        setComms(commRes.communications || []);
+        setEligibility(eligibilityRes);
+        setExecution(execRes.execution || null);
+        setPaymentLinks(linksRes.payment_links || []);
+        setPayments(paymentsRes);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setReviews([]);
+          setComms([]);
+          setEligibility(null);
+          setExecution(null);
+          setPaymentLinks([]);
+          setPayments(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setSideLoading(false);
+          setExecutionLoading(false);
+          setPaymentLinksLoading(false);
+          setPaymentsLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [account, commsRefresh]);
+
+  const canSendSms =
+    hasPermission("send_communications") &&
+    eligibility?.sms?.ok !== false &&
+    eligibility?.sms?.eligibility_status !== "Blocked";
+
+  const canSendEmail =
+    hasPermission("send_communications") &&
+    eligibility?.email?.ok !== false &&
+    eligibility?.email?.eligibility_status !== "Blocked";
+
+  const canRevokeLink = hasPermission("send_communications");
+
+  async function handleCopyPaymentLink(link: PayflowPaymentLink) {
+    if (!link.is_usable || !link.url) return;
+    try {
+      await navigator.clipboard.writeText(link.url);
+      setCopyFlashId(link.id);
+      window.setTimeout(() => setCopyFlashId((cur) => (cur === link.id ? null : cur)), 1600);
+    } catch {
+      /* ignore clipboard failures */
+    }
+  }
+
+  async function handleRevokePaymentLink(link: PayflowPaymentLink) {
+    if (!canRevokeLink || !link.is_usable || revokingId != null) return;
+    setRevokingId(link.id);
+    setPaymentLinksError("");
+    try {
+      const updated = await revokePayflowPaymentLink(link.id);
+      setPaymentLinks((rows) => rows.map((r) => (r.id === updated.id ? updated : r)));
+    } catch (err) {
+      setPaymentLinksError(err instanceof ApiError ? err.detail : "Failed to revoke link");
+    } finally {
+      setRevokingId(null);
+    }
+  }
+
+  async function handleSendSms() {
+    if (!account || !canSendSms || smsSending) return;
+    const body = (
+      smsMessage.trim() ||
+      `Payment reminder for account ${account.account_reference || account.id}. Reply STOP to opt out.`
+    ).slice(0, 1600);
+    setSmsSending(true);
+    setSmsError("");
+    try {
+      const res = await sendPayflowManualSms(account.id, {
+        body,
+        purpose: "Payment Reminder",
+        include_payment_link: true,
+        idempotency_key: `case-sms-${account.id}-${Date.now()}`,
+      });
+      if (res.skipped === "eligibility" || res.restriction_reason) {
+        setSmsError(res.restriction_reason || "SMS was blocked by eligibility checks");
+      } else if (res.provider_error) {
+        setSmsError(res.provider_error);
+      }
+      setCommsRefresh((n) => n + 1);
+      setSmsMessage("");
+    } catch (err) {
+      setSmsError(err instanceof ApiError ? err.detail : "Failed to send SMS");
+    } finally {
+      setSmsSending(false);
+    }
+  }
+
+  async function handleSendEmail() {
+    if (!account || !canSendEmail || emailSending) return;
+    const subject = (
+      emailSubject.trim() || `Payment reminder · ${account.account_reference || account.id}`
+    ).slice(0, 500);
+    const body = (
+      emailMessage.trim() ||
+      `Hello,\n\nThis is a payment reminder for account ${account.account_reference || account.id}.\n\nThank you.`
+    ).slice(0, 20000);
+    setEmailSending(true);
+    setEmailError("");
+    try {
+      const res = await sendPayflowManualEmail(account.id, {
+        subject,
+        body,
+        purpose: "Payment Reminder",
+        include_payment_link: true,
+        idempotency_key: `case-email-${account.id}-${Date.now()}`,
+      });
+      if (res.skipped === "eligibility" || res.restriction_reason) {
+        setEmailError(res.restriction_reason || "Email was blocked by eligibility checks");
+      } else if (res.provider_error) {
+        setEmailError(res.provider_error);
+      }
+      setCommsRefresh((n) => n + 1);
+      setEmailSubject("");
+      setEmailMessage("");
+    } catch (err) {
+      setEmailError(err instanceof ApiError ? err.detail : "Failed to send email");
+    } finally {
+      setEmailSending(false);
+    }
+  }
+
+  const timeline = useMemo(() => {
+    if (!account) return [] as TimelineEvent[];
+
+    const coveredCommIds = new Set<number>();
+    const events: TimelineEvent[] = [];
+
+    // 1) Workflow execution is the spine (step status + links).
+    for (const e of execution?.activity || []) {
+      const communicationId = e.communication_id || undefined;
+      const reviewId =
+        e.human_review_id ||
+        (e.kind === "Human Review" ? execution?.human_review_id || undefined : undefined);
+      if (communicationId) coveredCommIds.add(communicationId);
+      const rawAt = e.at || "";
+      events.push({
+        at: rawAt ? formatStamp(rawAt) : "—",
+        atMs: stampMs(rawAt),
+        label: e.label || e.kind || "Workflow step",
+        detail: e.block_reason || e.error || e.detail || "",
+        uiStatus: cleanUiStatus(e.ui_status),
+        communicationId,
+        reviewId,
+        href: communicationId
+          ? `/payflow/comms/${communicationId}`
+          : reviewId
+            ? `/payflow/review/${reviewId}`
+            : undefined,
+      });
+    }
+
+    const hasExecutionHumanReview = events.some(
+      (ev) =>
+        normLabel(ev.label).includes("human review") ||
+        ev.uiStatus === "Awaiting Review" ||
+        !!ev.reviewId,
+    );
+
+    // 2) Account timeline — keep CRM / decisions; drop HR create duplicates.
+    for (const e of account.timeline || []) {
+      const label = e.label || "";
+      if (hasExecutionHumanReview && isRedundantHumanReviewLabel(label)) continue;
+      if (!isHumanReviewDecisionLabel(label) && isRedundantHumanReviewLabel(label) && reviews.length > 0) {
+        continue;
+      }
+      const rawAt = e.at || "";
+      const reviewId = e.review_id || undefined;
+      events.push({
+        at: rawAt ? formatStamp(rawAt) : rawAt || "—",
+        atMs: stampMs(rawAt),
+        label: displayTimelineLabel(label, e.source),
+        detail: e.detail || "",
+        reviewId,
+        href: reviewId ? `/payflow/review/${reviewId}` : undefined,
+      });
+    }
+
+    // 3) Communication events — only if this send is not already on the spine.
+    for (const c of comms) {
+      if (coveredCommIds.has(c.id)) continue;
+      coveredCommIds.add(c.id);
+      const rawAt = c.created_at || c.events?.[0]?.at || "";
+      events.push({
+        at: rawAt ? formatStamp(rawAt) : [c.date_label, c.time_label].filter(Boolean).join(" ") || "—",
+        atMs: stampMs(rawAt),
+        label: `${c.channel} · ${c.purpose}`,
+        detail: c.status,
+        communicationId: c.id,
+        href: `/payflow/comms/${c.id}`,
+        uiStatus: c.status === "Failed" ? "Failed" : undefined,
+      });
+    }
+
+    // 4) Reviews — merge into existing HR spine row; otherwise add one clean row each.
+    for (const r of reviews) {
+      const existing = events.find(
+        (ev) =>
+          ev.reviewId === r.id ||
+          (!ev.reviewId &&
+            (normLabel(ev.label).includes("human review") || ev.uiStatus === "Awaiting Review")),
+      );
+      if (existing) {
+        existing.reviewId = r.id;
+        existing.href = `/payflow/review/${r.id}`;
+        if (!existing.detail) {
+          existing.detail = [r.reason, r.proposed_action].filter(Boolean).join(" · ");
+        } else if (r.reason && !existing.detail.toLowerCase().includes(r.reason.toLowerCase())) {
+          existing.detail = `${existing.detail} · ${r.reason}`;
+        }
+        if (!existing.uiStatus && r.status === "Awaiting Review") {
+          existing.uiStatus = "Awaiting Review";
+        }
+        if (normLabel(existing.label) === "human review created") {
+          existing.label = "Human review";
+        }
+        continue;
+      }
+      const rawAt = r.created_at || "";
+      events.push({
+        at: rawAt ? formatStamp(rawAt) : r.waiting_label || "—",
+        atMs: stampMs(rawAt),
+        label: "Human review",
+        detail: [r.reason, r.rule_name ? `Rule: ${r.rule_name}` : "", r.proposed_action]
+          .filter(Boolean)
+          .join(" · "),
+        reviewId: r.id,
+        href: `/payflow/review/${r.id}`,
+        uiStatus:
+          r.status === "Awaiting Review"
+            ? "Awaiting Review"
+            : r.status === "On Hold"
+              ? "Blocked"
+              : undefined,
+      });
+    }
+
+    // Origin (file upload / created) first, then chronological for the rest.
+    events.sort((a, b) => {
+      const rankDiff = lifecycleRank(a.label) - lifecycleRank(b.label);
+      if (rankDiff !== 0) return rankDiff;
+      if (a.atMs !== b.atMs) return a.atMs - b.atMs;
+      return a.label.localeCompare(b.label);
+    });
+
+    // Final pass: collapse near-duplicate HR rows that slipped through.
+    const merged: TimelineEvent[] = [];
+    for (const ev of events) {
+      const prev = merged[merged.length - 1];
+      const sameHrCluster =
+        prev &&
+        Math.abs((prev.atMs || 0) - (ev.atMs || 0)) < 5 * 60 * 1000 &&
+        isRedundantHumanReviewLabel(prev.label) &&
+        isRedundantHumanReviewLabel(ev.label);
+      if (sameHrCluster && prev) {
+        prev.reviewId = prev.reviewId || ev.reviewId;
+        prev.href = prev.href || ev.href;
+        prev.uiStatus = prev.uiStatus || ev.uiStatus;
+        if (ev.detail && !prev.detail) prev.detail = ev.detail;
+        if (normLabel(prev.label) === "human review created") prev.label = "Human review";
+        continue;
+      }
+      merged.push(ev);
+    }
+    return merged;
+  }, [account, comms, reviews, execution]);
+
   if (loading) {
     return <p className="text-sm text-muted-foreground">Loading account…</p>;
   }
@@ -88,13 +705,21 @@ export function PayFlowCaseDetailPage() {
     );
   }
 
-  const facts = [
+  const summaryFacts = [
     { label: "Client", value: account.client_name || "—" },
     { label: "Sub-Client", value: account.portfolio_name || "—" },
     { label: "Product", value: account.product_code || "—" },
     { label: "Customer / Customer Account", value: account.customer_name },
     { label: "Account Reference", value: account.account_reference },
     { label: "Collection Case", value: account.case_reference },
+    { label: "Original Balance", value: formatCurrency(account.original_balance) },
+    { label: "Outstanding Balance", value: formatCurrency(account.outstanding_balance) },
+    { label: "Amount Recovered", value: formatCurrency(account.recovered_balance) },
+    { label: "Last Action", value: account.last_action || "—" },
+    { label: "Next Action", value: account.next_action || "—" },
+  ];
+
+  const identityFacts = [
     { label: "CRM Case ID", value: account.crm_case_id || "—" },
     { label: "Customer / Debtor ID", value: account.debtor_id || "—" },
     { label: "Client Reference Number", value: account.client_reference_number || "—" },
@@ -104,27 +729,15 @@ export function PayFlowCaseDetailPage() {
     { label: "Education level", value: account.education_level || "—" },
     { label: "Customer segment", value: account.customer_segment || "—" },
     { label: "Date of birth", value: account.date_of_birth || "—" },
+    { label: "Language", value: account.language || "—" },
+  ];
+
+  const listingFacts = [
     { label: "Date listed", value: account.date_listed || "—" },
     { label: "Date incurred", value: account.date_incurred || "—" },
     { label: "Delinquency date", value: account.delinquency_date || "—" },
-    { label: "Language", value: account.language || "—" },
-    {
-      label: "Address",
-      value: [account.address_line1, account.city, account.province_state, account.postal_code]
-        .filter(Boolean)
-        .join(", ") || "—",
-    },
-    { label: "Region", value: account.region || "—" },
-    { label: "Country", value: account.country_code || "—" },
-    { label: "Email", value: account.email || "—" },
-    { label: "Email consent", value: yn(account.email_consent) },
-    { label: "Mobile", value: account.phone_mobile || "—" },
-    { label: "Work phone", value: account.phone_work || "—" },
-    { label: "Provincial / communication hold", value: yn(account.provincial_hold) },
-    { label: "Hold days", value: account.hold_days == null ? "—" : String(account.hold_days) },
-    { label: "Original Balance", value: formatCurrency(account.original_balance) },
-    { label: "Outstanding Balance", value: formatCurrency(account.outstanding_balance) },
-    { label: "Amount Recovered", value: formatCurrency(account.recovered_balance) },
+    { label: "Days past due", value: account.days_past_due == null ? "—" : String(account.days_past_due) },
+    { label: "Due date", value: account.due_date || "—" },
     {
       label: "Paid amount (to date)",
       value: account.paid_amount != null ? formatCurrency(account.paid_amount) : "—",
@@ -138,8 +751,25 @@ export function PayFlowCaseDetailPage() {
       value: account.commission_rate != null ? `${account.commission_rate}%` : "—",
     },
     { label: "Currency", value: account.currency_code || "—" },
-    { label: "Days past due", value: account.days_past_due == null ? "—" : String(account.days_past_due) },
-    { label: "Due date", value: account.due_date || "—" },
+    { label: "Source updated at", value: formatStamp(account.source_updated_at) },
+  ];
+
+  const contactFacts = [
+    {
+      label: "Address",
+      value:
+        [account.address_line1, account.city, account.province_state, account.postal_code]
+          .filter(Boolean)
+          .join(", ") || "—",
+    },
+    { label: "Region", value: account.region || "—" },
+    { label: "Country", value: account.country_code || "—" },
+    { label: "Email", value: account.email || "—" },
+    { label: "Email consent", value: yn(account.email_consent) },
+    { label: "Mobile", value: account.phone_mobile || "—" },
+    { label: "Work phone", value: account.phone_work || "—" },
+    { label: "Provincial / communication hold", value: yn(account.provincial_hold) },
+    { label: "Hold days", value: account.hold_days == null ? "—" : String(account.hold_days) },
     { label: "Last email sent", value: account.last_email_sent_date || "—" },
     { label: "Last SMS sent", value: account.last_sms_sent_date || "—" },
     { label: "Last contact", value: account.last_contact_date || "—" },
@@ -157,14 +787,11 @@ export function PayFlowCaseDetailPage() {
         ? `${account.ptp_amount != null ? formatCurrency(account.ptp_amount) : "—"} · ${account.ptp_due_date || "—"}`
         : "—",
     },
-    { label: "Source updated at", value: formatStamp(account.source_updated_at) },
-    { label: "Last Action", value: account.last_action || "—" },
-    { label: "Next Action", value: account.next_action || "—" },
   ];
 
-  const timeline = account.timeline || [];
   const visibleTimeline = showAllTimeline ? timeline : timeline.slice(0, 6);
   const hiddenCount = Math.max(0, timeline.length - 6);
+  const hasWorkflow = Boolean(account.current_workflow);
 
   return (
     <>
@@ -181,93 +808,677 @@ export function PayFlowCaseDetailPage() {
             <StatusPill tone={statusTone(account.collection_status)}>
               {account.collection_status}
             </StatusPill>
-            {account.human_review ? <StatusPill tone="danger">Human review</StatusPill> : null}
+            {(account.human_review || reviews.length > 0) &&
+            (account.collection_status || "").toLowerCase() !== "human review" ? (
+              <StatusPill tone="danger">Human review</StatusPill>
+            ) : null}
           </div>
         }
       />
 
-      <div className="grid gap-5 lg:grid-cols-[1.1fr_1fr]">
-        <div className="space-y-5">
-          <Panel title="Case Summary">
-            <dl className="-mx-1 divide-y divide-border">
-              {facts.map((f) => (
-                <div key={f.label} className="flex items-center justify-between gap-4 px-1 py-2.5">
-                  <dt className="text-[13px] text-muted-foreground">{f.label}</dt>
-                  <dd className="tabular text-[13px] font-medium text-foreground">{f.value}</dd>
-                </div>
-              ))}
-            </dl>
+      <div className="grid gap-5 lg:grid-cols-2">
+        <div className="min-w-0 space-y-5">
+          <Panel title="Case Summary" bodyClassName="p-0">
+            <FactRows rows={summaryFacts} />
           </Panel>
 
           <Panel
-            title="Payment"
-            description="Payment outcomes from the customer payment experience"
+            title="Customer profile"
+            description="Demographics and identity fields from CRM"
           >
-            <p className="text-[13px] text-muted-foreground">
-              Payment details will appear here when the Payments module is connected.
-            </p>
+            <DetailGrid rows={identityFacts} />
           </Panel>
 
           <Panel
-            title="Current Workflow"
-            description={account.current_workflow || "No workflow assigned"}
+            title="Listing & balances"
+            description="Placement dates, delinquency and commercial terms"
+          >
+            <DetailGrid rows={listingFacts} />
+          </Panel>
+
+          <Panel
+            title="Contact & engagement"
+            description="Reachability, holds and recent outreach"
+          >
+            <DetailGrid rows={contactFacts} />
+          </Panel>
+
+          <Panel
+            title="Workflow Execution"
+            description="Assigned workflow version, run status, current step and next scheduled action"
             action={
-              <Link
-                to="/payflow/workflows"
-                className="text-[12.5px] font-semibold text-primary hover:underline"
-              >
-                Open strategies
-              </Link>
+              execution?.workflow_definition_path ? (
+                <Link
+                  to={execution.workflow_definition_path}
+                  className="text-[12px] font-medium text-primary hover:underline"
+                >
+                  Open workflow
+                </Link>
+              ) : hasWorkflow ? (
+                <Link
+                  to="/payflow/workflows"
+                  className="text-[12px] font-medium text-primary hover:underline"
+                >
+                  Workflows
+                </Link>
+              ) : null
             }
           >
-            <p className="text-[13px] text-muted-foreground">
-              {account.current_workflow
-                ? `This case is associated with “${account.current_workflow}”. Open Strategies / Workflows to review or modify collection strategies.`
-                : "No collection strategy is currently assigned to this case."}
-            </p>
-          </Panel>
-
-          <Panel title="Communications">
-            <p className="text-[13px] text-muted-foreground">
-              Communications screens are temporarily parked for redesign.
-            </p>
+            {executionLoading ? (
+              <p className="text-[13px] text-muted-foreground">Loading execution…</p>
+            ) : null}
+            {!executionLoading && executionError ? (
+              <p className="text-[13px] text-destructive">{executionError}</p>
+            ) : null}
+            {!executionLoading && !executionError && !execution ? (
+              <EmptyState
+                title="No workflow execution"
+                description={
+                  hasWorkflow
+                    ? `Account shows “${account.current_workflow}” but no run is recorded yet.`
+                    : "No workflow is assigned to this collection case."
+                }
+              />
+            ) : null}
+            {!executionLoading && execution ? (
+              <>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[14px] font-semibold text-foreground">
+                    {execution.strategy_name || account.current_workflow || "Workflow"}
+                  </span>
+                  <StatusPill tone={runStatusTone(execution.status)}>
+                    {execution.status}
+                  </StatusPill>
+                  {execution.strategy_version != null ? (
+                    <StatusPill tone="neutral">v{execution.strategy_version}</StatusPill>
+                  ) : null}
+                </div>
+                {(execution.block_reason || execution.last_error) &&
+                ["Blocked", "Failed", "Waiting", "PausedHumanReview", "Cancelled"].some(
+                  (s) =>
+                    execution.status === s ||
+                    (execution.block_reason || "").length > 0,
+                ) ? (
+                  <p className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12px] text-foreground">
+                    {execution.block_reason || execution.last_error}
+                  </p>
+                ) : null}
+                <dl className="mt-3 divide-y divide-border border-t border-border">
+                  <div className="flex items-center justify-between gap-4 py-2">
+                    <dt className="text-[13px] text-muted-foreground">Current step</dt>
+                    <dd className="text-right text-[13px] font-medium text-foreground">
+                      {execution.current_step?.title ||
+                        execution.current_step_id ||
+                        "—"}
+                      {execution.current_step?.kind
+                        ? ` · ${execution.current_step.kind}`
+                        : ""}
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-4 py-2">
+                    <dt className="text-[13px] text-muted-foreground">Next scheduled</dt>
+                    <dd className="text-right text-[13px] font-medium text-foreground">
+                      {execution.next_step_title || execution.next_step_id || "—"}
+                      {execution.next_scheduled_at
+                        ? ` · ${formatStamp(execution.next_scheduled_at)}`
+                        : ""}
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-4 py-2">
+                    <dt className="text-[13px] text-muted-foreground">Last / next action</dt>
+                    <dd className="text-right text-[13px] font-medium text-foreground">
+                      {account.last_action || "—"}
+                      {account.next_action ? ` → ${account.next_action}` : ""}
+                    </dd>
+                  </div>
+                  {execution.human_review_id ? (
+                    <div className="flex items-center justify-between gap-4 py-2">
+                      <dt className="text-[13px] text-muted-foreground">Human review</dt>
+                      <dd className="text-right text-[13px] font-medium">
+                        <Link
+                          to={`/payflow/review/${execution.human_review_id}`}
+                          className="text-primary hover:underline"
+                        >
+                          Open review #{execution.human_review_id}
+                        </Link>
+                      </dd>
+                    </div>
+                  ) : null}
+                </dl>
+              </>
+            ) : null}
           </Panel>
         </div>
 
-        <div className="space-y-5">
-          <Panel title="Human Review">
-            <p className="text-[13px] text-muted-foreground">
-              {account.human_review
-                ? "This case is flagged for human review. The review queue UI is parked for redesign."
-                : "No human review items are open for this case."}
-            </p>
-          </Panel>
-
-          <Panel title="Activity Timeline">
-            {visibleTimeline.length === 0 ? (
-              <p className="text-[13px] text-muted-foreground">No activity recorded yet.</p>
-            ) : (
-              <ul className="space-y-3">
-                {visibleTimeline.map((event, index) => (
-                  <li key={`${event.at}-${event.label}-${index}`} className="border-b border-border pb-3 last:border-0 last:pb-0">
-                    <p className="text-[13px] font-medium text-foreground">{event.label}</p>
-                    <p className="text-[12px] text-muted-foreground">{event.detail}</p>
-                    <p className="mt-0.5 text-[11px] text-muted-foreground">{event.at}</p>
+        <div className="min-w-0 space-y-5">
+          <Panel
+            title="Human Review"
+            description="Governance exceptions raised on this collection case"
+            bodyClassName={reviews.length > 0 ? "p-0" : undefined}
+            action={
+              <Link
+                to="/payflow/review"
+                className="text-[12px] font-medium text-primary hover:underline"
+              >
+                Open queue
+              </Link>
+            }
+          >
+            {sideLoading ? (
+              <p className="text-[13px] text-muted-foreground">Loading reviews…</p>
+            ) : null}
+            {!sideLoading && reviews.length === 0 ? (
+              <div className="rounded-md border border-border/60 bg-secondary/40 px-3.5 py-3">
+                <p className="text-[13px] font-medium text-foreground">
+                  {account.human_review
+                    ? "Flagged for human review"
+                    : "No open review items"}
+                </p>
+                <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+                  {account.human_review
+                    ? "This case is marked for supervisor attention. Matching queue items will show here once raised."
+                    : "No human review items are open for this case."}
+                </p>
+              </div>
+            ) : null}
+            {!sideLoading && reviews.length > 0 ? (
+              <ul className="divide-y divide-border">
+                {reviews.map((r) => (
+                  <li key={r.id} className="px-4 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <Link
+                        to={`/payflow/review/${r.id}`}
+                        className="min-w-0 text-[13px] font-semibold text-primary hover:underline"
+                      >
+                        {r.reason}
+                      </Link>
+                      <StatusPill tone={reviewStatusTone(r.status)}>{r.status}</StatusPill>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Rule: {r.rule_name || "—"} · Proposed: {r.proposed_action}
+                    </p>
+                    {r.waiting_label ? (
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+                        Waiting {r.waiting_label}
+                      </p>
+                    ) : null}
                   </li>
                 ))}
               </ul>
-            )}
+            ) : null}
+          </Panel>
+
+          <Panel
+            title="Activity Timeline"
+            description="Triggered steps, communications, waits, decisions, payments and outcomes"
+          >
+            {sideLoading || executionLoading ? (
+              <p className="text-[13px] text-muted-foreground">Loading activity…</p>
+            ) : null}
+            {!sideLoading && !executionLoading && visibleTimeline.length === 0 ? (
+              <p className="text-[13px] text-muted-foreground">No activity recorded yet.</p>
+            ) : null}
+            {!sideLoading && !executionLoading && visibleTimeline.length > 0 ? (
+              <ol className="relative space-y-4 pl-5">
+                <span className="absolute top-1.5 bottom-1.5 left-[5px] w-px bg-border" />
+                {visibleTimeline.map((event, index) => (
+                  <li key={`${event.at}-${event.label}-${index}`} className="relative min-w-0">
+                    <span className="absolute top-1.5 -left-5 size-[11px] rounded-full border-2 border-card bg-primary/70" />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-[13px] font-medium text-foreground">{event.label}</p>
+                      {event.uiStatus ? (
+                        <StatusPill tone={workflowUiTone(event.uiStatus)}>
+                          {event.uiStatus}
+                        </StatusPill>
+                      ) : null}
+                    </div>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{event.at}</p>
+                    {event.detail ? (
+                      <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                        {event.detail}
+                      </p>
+                    ) : null}
+                    {event.href || event.reviewId || event.communicationId ? (
+                      <Link
+                        to={
+                          event.href ||
+                          (event.reviewId
+                            ? `/payflow/review/${event.reviewId}`
+                            : `/payflow/comms/${event.communicationId}`)
+                        }
+                        className="mt-1 inline-block text-[11px] font-medium text-primary hover:underline"
+                      >
+                        {event.reviewId
+                          ? "Open review"
+                          : event.communicationId
+                            ? "Open communication"
+                            : "Open"}
+                      </Link>
+                    ) : null}
+                  </li>
+                ))}
+              </ol>
+            ) : null}
             {hiddenCount > 0 ? (
               <button
                 type="button"
-                className="mt-3 text-[13px] font-medium text-primary hover:underline"
+                className="mt-4 text-[12px] font-medium text-primary hover:underline"
                 onClick={() => setShowAllTimeline((v) => !v)}
               >
-                {showAllTimeline ? "Show fewer events" : `Show ${hiddenCount} more events`}
+                {showAllTimeline ? "Show less" : `Show ${hiddenCount} more events`}
               </button>
             ) : null}
           </Panel>
         </div>
+      </div>
+
+      <div className="mt-5 space-y-5">
+        <WorkflowFlowPanel
+          clientId={account.client_id}
+          workflowName={execution?.strategy_name || account.current_workflow}
+          title="Workflow Map"
+          description="The live visual strategy for this case. Click any step to review or adjust it."
+        />
+
+        {(eligibility?.latest_restriction_reason ||
+          eligibility?.email?.eligibility_status === "Blocked" ||
+          eligibility?.sms?.eligibility_status === "Blocked") && (
+          <Panel
+            title="Communication eligibility"
+            description="Current send gates for this account"
+          >
+            <div className="mb-3 flex flex-wrap gap-2">
+              <StatusPill
+                tone={
+                  eligibility.email?.ok === false ||
+                  eligibility.email?.eligibility_status === "Blocked"
+                    ? "danger"
+                    : "success"
+                }
+              >
+                Email · {eligibility.email?.eligibility_status || (eligibility.email?.ok ? "Eligible" : "—")}
+              </StatusPill>
+              <StatusPill
+                tone={
+                  eligibility.sms?.ok === false ||
+                  eligibility.sms?.eligibility_status === "Blocked"
+                    ? "danger"
+                    : "success"
+                }
+              >
+                SMS · {eligibility.sms?.eligibility_status || (eligibility.sms?.ok ? "Eligible" : "—")}
+              </StatusPill>
+            </div>
+            {eligibility.latest_restriction_reason ? (
+              <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[13px] text-foreground">
+                {eligibility.latest_restriction_reason}
+              </p>
+            ) : null}
+            {eligibility.next_eligible_at ? (
+              <p className="mt-2 text-[12px] text-muted-foreground">
+                Next eligible · {formatStamp(eligibility.next_eligible_at)}
+              </p>
+            ) : null}
+            {eligibility.rule_id && eligibility.can_view_rule ? (
+              <Link
+                to={`/payflow/rules/${eligibility.rule_id}`}
+                className="mt-2 inline-block text-[13px] font-medium text-primary hover:underline"
+              >
+                View rule · {eligibility.rule_name || eligibility.rule_code || `#${eligibility.rule_id}`}
+              </Link>
+            ) : null}
+            {eligibility.communication_id ? (
+              <Link
+                to={`/payflow/comms/${eligibility.communication_id}`}
+                className="mt-2 ml-3 inline-block text-[13px] font-medium text-primary hover:underline"
+              >
+                Open blocked communication
+              </Link>
+            ) : null}
+          </Panel>
+        )}
+
+        <Panel
+          title="Payments"
+          description="Backend-confirmed transactions only — initiation alone is never shown as paid"
+          bodyClassName={
+            (payments?.transactions?.length || 0) > 0 || (payments?.payment_plans?.length || 0) > 0
+              ? "p-0"
+              : undefined
+          }
+        >
+          {paymentsError ? (
+            <p className="px-4 py-2.5 text-[13px] text-destructive">{paymentsError}</p>
+          ) : null}
+          {paymentsLoading ? (
+            <p className="px-4 py-2.5 text-[13px] text-muted-foreground">Loading payments…</p>
+          ) : null}
+          {!paymentsLoading && payments ? (
+            <div className={`${(payments.transactions?.length || 0) > 0 ? "border-b border-border" : ""} px-4 py-3`}>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <div>
+                  <p className="text-[11px] text-muted-foreground">Original</p>
+                  <p className="text-[14px] font-semibold tabular text-foreground">
+                    {formatCurrency(payments.balances.original_balance)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-muted-foreground">Outstanding</p>
+                  <p className="text-[14px] font-semibold tabular text-foreground">
+                    {formatCurrency(payments.balances.outstanding_balance)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-muted-foreground">Recovered</p>
+                  <p className="text-[14px] font-semibold tabular text-foreground">
+                    {formatCurrency(payments.balances.recovered_balance)}
+                  </p>
+                </div>
+              </div>
+              <p className="mt-2 text-[12px] text-muted-foreground">
+                Case status · {payments.balances.collection_status || account.collection_status || "—"}
+                {" · "}
+                {payments.balances.currency_code || "USD"}
+              </p>
+            </div>
+          ) : null}
+          {!paymentsLoading && !paymentsError && !(payments?.transactions?.length) ? (
+            <EmptyState
+              title="No confirmed payments yet"
+              description="Verified Stripe or portal payments will appear here with references and balance impact."
+            />
+          ) : null}
+          {!paymentsLoading && (payments?.transactions?.length || 0) > 0 ? (
+            <ul className="divide-y divide-border">
+              {payments!.transactions.map((txn) => (
+                <li key={txn.id} className="px-4 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusPill tone={paymentTxnTone(txn.status, txn.direction)}>
+                        {txn.direction !== "payment" ? `${txn.direction} · ${txn.status}` : txn.status}
+                      </StatusPill>
+                      <span className="text-[13px] font-semibold tabular text-foreground">
+                        {formatCurrency(txn.amount)}
+                      </span>
+                      <span className="text-[12px] text-muted-foreground">
+                        {optionTypeLabel(txn.option_type)}
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-muted-foreground">
+                      {formatStamp(txn.completed_at || txn.created_at)}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Ref {txn.reference || txn.id}
+                    {txn.provider_ref ? ` · Provider ${txn.provider_ref}` : ""}
+                    {txn.method ? ` · ${txn.method}` : ""}
+                    {txn.balance_after != null
+                      ? ` · Balance after ${formatCurrency(txn.balance_after)}`
+                      : ""}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {!paymentsLoading && (payments?.attempts || []).some((a) => a.status !== "Succeeded") ? (
+            <div className="border-t border-border px-4 py-3">
+              <p className="mb-2 text-[12px] font-medium text-foreground">
+                Pending / failed attempts (not applied to balance)
+              </p>
+              <ul className="space-y-2">
+                {payments!.attempts
+                  .filter((a) => a.status !== "Succeeded")
+                  .slice(0, 8)
+                  .map((a) => (
+                    <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 text-[12px]">
+                      <span className="flex items-center gap-2">
+                        <StatusPill tone={paymentTxnTone(a.status)}>{a.status}</StatusPill>
+                        <span className="tabular">{formatCurrency(a.amount)}</span>
+                        <span className="text-muted-foreground">{optionTypeLabel(a.option_type)}</span>
+                      </span>
+                      <span className="text-muted-foreground">{formatStamp(a.created_at)}</span>
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          ) : null}
+          {!paymentsLoading && (payments?.payment_plans?.length || 0) > 0 ? (
+            <div className="border-t border-border px-4 py-3">
+              <p className="mb-2 text-[12px] font-medium text-foreground">Payment plans</p>
+              <ul className="space-y-3">
+                {payments!.payment_plans.map((plan) => (
+                  <li key={plan.id} className="rounded-md border border-border bg-surface px-3 py-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[13px] font-medium text-foreground">
+                        {plan.label || plan.id}
+                      </span>
+                      <StatusPill tone={paymentTxnTone(plan.status)}>{plan.status}</StatusPill>
+                    </div>
+                    <p className="mt-1 text-[12px] text-muted-foreground">
+                      {plan.installments_total} × {formatCurrency(plan.installment_amount)} ·{" "}
+                      {plan.frequency} · paid {formatCurrency(plan.amount_paid)} of{" "}
+                      {formatCurrency(plan.total_payable)}
+                      {plan.next_due_date ? ` · next due ${plan.next_due_date}` : ""}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      Auto-charge off — future instalments are scheduled only
+                    </p>
+                    <ul className="mt-2 space-y-1">
+                      {(plan.installments || []).map((inst) => (
+                        <li
+                          key={`${plan.id}-${inst.sequence}`}
+                          className="flex justify-between gap-2 text-[11px] text-muted-foreground"
+                        >
+                          <span>
+                            #{inst.sequence} · {formatCurrency(inst.amount)} · due {inst.due_date || "—"}
+                          </span>
+                          <span>{inst.status}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </Panel>
+
+        <Panel
+          title="Payment links"
+          description="Secure account-linked payment URLs for this case"
+          bodyClassName={paymentLinks.length > 0 ? "p-0" : undefined}
+        >
+          {paymentLinksError ? (
+            <p className="px-4 py-2.5 text-[13px] text-destructive">{paymentLinksError}</p>
+          ) : null}
+          {paymentLinksLoading ? (
+            <p className="px-4 py-2.5 text-[13px] text-muted-foreground">Loading payment links…</p>
+          ) : null}
+          {!paymentLinksLoading && !paymentLinksError && paymentLinks.length === 0 ? (
+            <EmptyState
+              title="No payment links yet"
+              description="Links are created when a communication includes a payment opportunity. Active links can be copied; expired or revoked links cannot be used."
+            />
+          ) : null}
+          {!paymentLinksLoading && paymentLinks.length > 0 ? (
+            <ul className="divide-y divide-border">
+              {paymentLinks.map((link) => (
+                <li key={link.id} className="px-4 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusPill tone={paymentLinkTone(link.status)}>{link.status}</StatusPill>
+                      <span className="text-[12px] text-muted-foreground tabular">
+                        ···{link.token.slice(-8)}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {link.is_usable ? (
+                        <Btn
+                          variant="secondary"
+                          onClick={() => void handleCopyPaymentLink(link)}
+                        >
+                          {copyFlashId === link.id ? "Copied" : "Copy link"}
+                        </Btn>
+                      ) : (
+                        <span className="text-[11px] text-muted-foreground">
+                          Unavailable
+                        </span>
+                      )}
+                      {canRevokeLink && link.is_usable ? (
+                        <Btn
+                          variant="secondary"
+                          disabled={revokingId === link.id}
+                          onClick={() => void handleRevokePaymentLink(link)}
+                        >
+                          {revokingId === link.id ? "Revoking…" : "Revoke"}
+                        </Btn>
+                      ) : null}
+                    </div>
+                  </div>
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    Created {formatStamp(link.created_at)}
+                    {" · "}Expires {formatStamp(link.expires_at)}
+                    {link.communication_id ? (
+                      <>
+                        {" · "}
+                        <Link
+                          to={`/payflow/comms/${link.communication_id}`}
+                          className="font-medium text-primary hover:underline"
+                        >
+                          {link.communication_code || `Comm #${link.communication_id}`}
+                          {link.communication_channel
+                            ? ` · ${link.communication_channel}`
+                            : ""}
+                        </Link>
+                      </>
+                    ) : null}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Accesses {link.access_count ?? 0}
+                    {" · "}Clicks {link.clicks_count ?? 0}
+                    {link.last_accessed_at
+                      ? ` · Last access ${formatStamp(link.last_accessed_at)}`
+                      : ""}
+                    {link.last_clicked_at
+                      ? ` · Last click ${formatStamp(link.last_clicked_at)}`
+                      : ""}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </Panel>
+
+        <Panel
+          title="Communications"
+          description="Actions executed as part of the current strategy"
+          action={
+            <div className="flex flex-wrap gap-2">
+              {canSendEmail ? (
+                <Btn
+                  variant="secondary"
+                  disabled={emailSending}
+                  onClick={() => void handleSendEmail()}
+                >
+                  {emailSending ? "Sending…" : "Send Email"}
+                </Btn>
+              ) : null}
+              {canSendSms ? (
+                <Btn variant="primary" disabled={smsSending} onClick={() => void handleSendSms()}>
+                  {smsSending ? "Sending…" : "Send SMS"}
+                </Btn>
+              ) : null}
+            </div>
+          }
+          bodyClassName={comms.length > 0 ? "p-0" : undefined}
+        >
+          {(canSendEmail || canSendSms) && (
+            <div
+              className={`space-y-3 ${comms.length > 0 ? "border-b border-border px-4 py-3" : "mb-3"}`}
+            >
+              {canSendEmail ? (
+                <div className="space-y-2">
+                  <input
+                    value={emailSubject}
+                    onChange={(e) => setEmailSubject(e.target.value)}
+                    maxLength={500}
+                    placeholder="Email subject (optional)"
+                    className="w-full rounded-md border border-border bg-surface px-3 py-2 text-[13px] text-foreground"
+                  />
+                  <textarea
+                    value={emailMessage}
+                    onChange={(e) => setEmailMessage(e.target.value)}
+                    rows={3}
+                    maxLength={20000}
+                    placeholder="Optional email body (defaults to a payment reminder). Client branding / From applied on send."
+                    className="w-full rounded-md border border-border bg-surface px-3 py-2 text-[13px] text-foreground"
+                  />
+                  {emailError ? <p className="text-[12px] text-destructive">{emailError}</p> : null}
+                </div>
+              ) : null}
+              {canSendSms ? (
+                <div className="space-y-2">
+                  <textarea
+                    value={smsMessage}
+                    onChange={(e) => setSmsMessage(e.target.value)}
+                    rows={2}
+                    maxLength={1600}
+                    placeholder="Optional SMS body (defaults to a payment reminder)."
+                    className="w-full rounded-md border border-border bg-surface px-3 py-2 text-[13px] text-foreground"
+                  />
+                  {smsError ? <p className="text-[12px] text-destructive">{smsError}</p> : null}
+                </div>
+              ) : null}
+            </div>
+          )}
+          {sideLoading ? (
+            <p className="px-4 py-2.5 text-[13px] text-muted-foreground">Loading communications…</p>
+          ) : null}
+          {!sideLoading && comms.length === 0 ? (
+            <EmptyState
+              title="No communications yet"
+              description="Outbound reminders and payment links for this case will appear here when the strategy sends them."
+            />
+          ) : null}
+          {!sideLoading && comms.length > 0 ? (
+            <ul className="divide-y divide-border">
+              {comms.map((c) => {
+                const preview = (c.body_lines || []).filter(Boolean).join(" ").slice(0, 120);
+                return (
+                  <li key={c.id} className="px-4 py-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <Link
+                        to={`/payflow/comms/${c.id}`}
+                        className="text-[13px] font-semibold text-primary hover:underline"
+                      >
+                        {c.channel} · {c.purpose}
+                      </Link>
+                      <StatusPill tone={commStatusTone(c.status)}>{c.status}</StatusPill>
+                    </div>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {[c.date_label, c.time_label].filter(Boolean).join(" · ") || "—"}
+                      {c.recipient ? ` · ${c.recipient}` : ""}
+                      {c.payment_link ? " · Payment link" : ""}
+                      {c.engagement_tracking === "not_available"
+                        ? " · Not available"
+                        : c.engagement
+                          ? ` · ${c.engagement}`
+                          : ""}
+                    </p>
+                    {preview ? (
+                      <p className="mt-1 text-[12px] text-foreground/80 line-clamp-2">{preview}</p>
+                    ) : null}
+                    {c.status === "Failed" && (c.provider_error || c.restriction_reason) ? (
+                      <p className="mt-1 text-[12px] text-destructive">
+                        {c.provider_error || c.restriction_reason}
+                      </p>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
+        </Panel>
       </div>
     </>
   );
