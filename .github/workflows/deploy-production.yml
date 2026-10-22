@@ -1,0 +1,40 @@
+# Deploy FE: push to main → SSH EC2 → git pull → npm build → publish to nginx web root.
+# Required GitHub secrets (repo Settings → Secrets → Actions):
+#   EC2_HOST          e.g. 35.183.138.117
+#   EC2_USER          ubuntu
+#   EC2_SSH_KEY       contents of payflow-prod.pem (private key)
+
+name: Deploy FE (production)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-fe-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+            cd /var/www/payflow/fe
+            git fetch origin
+            git checkout main
+            git pull --ff-only origin main
+            npm ci
+            VITE_API_BASE_URL=https://api.testatncri.com npm run build
+            rsync -a --delete dist/ /var/www/payflow/web/
+            echo "FE deployed OK"
