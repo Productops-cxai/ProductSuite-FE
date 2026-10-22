@@ -36,6 +36,9 @@ jobs:
             git reset --hard origin/main
             git clean -fd
             npm ci
-            VITE_API_BASE_URL=https://api.testatncri.com npm run build
+            # Must match BE SEED_SUPER_ADMIN_EMAIL (display/docs only; API enforces access).
+            VITE_API_BASE_URL=https://api.testatncri.com \
+            VITE_EMAIL_LOGS_ADMIN_EMAIL=admin@testatncri.com \
+            npm run build
             rsync -a --delete dist/ /var/www/payflow/web/
             echo "FE deployed OK"

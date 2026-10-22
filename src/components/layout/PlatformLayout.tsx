@@ -8,11 +8,6 @@ import type { MenuSection } from "../../types";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 
-/** Must match BE SEED_SUPER_ADMIN_EMAIL — Email Logs menu is private to this account. */
-export const EMAIL_LOGS_ADMIN_EMAIL = (
-  import.meta.env.VITE_EMAIL_LOGS_ADMIN_EMAIL || "admin@suitencri.com"
-).toLowerCase();
-
 const BASE_FALLBACK_MENUS: MenuSection[] = [
   {
     key: "platform",
@@ -118,19 +113,10 @@ const BASE_FALLBACK_MENUS: MenuSection[] = [
   },
 ];
 
-function menusForUser(email: string | undefined | null): MenuSection[] {
-  const allowEmailLogs = (email || "").toLowerCase() === EMAIL_LOGS_ADMIN_EMAIL;
-  return BASE_FALLBACK_MENUS.map((section) => ({
-    ...section,
-    items: section.items.filter(
-      (item) => allowEmailLogs || (item.key !== "email_logs" && item.key !== "sms_logs"),
-    ),
-  })).filter((section) => section.items.length > 0);
-}
-
 export function PlatformLayout() {
   const { loading, user, isSuperAdmin } = useAuth();
-  const fallback = useMemo(() => menusForUser(user?.email), [user?.email]);
+  // Fallback shows all platform menus; BE getMenus() filters Email/SMS Logs to SEED_SUPER_ADMIN_EMAIL.
+  const fallback = useMemo(() => BASE_FALLBACK_MENUS, []);
   const [sections, setSections] = useState<MenuSection[]>(fallback);
 
   useEffect(() => {
