@@ -573,6 +573,8 @@ export interface PayflowClientDetail extends PayflowClient {
     allow_plans?: boolean;
     min_partial_amount?: number;
     min_plan_amount?: number;
+    stripe_payments_enabled?: boolean;
+    accepted_currencies?: string[] | string;
   } | null;
   mappings: PayflowClientMapping[];
   mapping_summary: PayflowClientMappingSummary;
