@@ -1313,6 +1313,8 @@ export interface PayflowCommunication {
   delivered_at?: string | null;
   opens_count?: number;
   clicks_count?: number;
+  /** Times customer was redirected to checkout.stripe.com (Pay Now). */
+  stripe_checkout_opens_count?: number;
   first_opened_at?: string | null;
   last_opened_at?: string | null;
   first_clicked_at?: string | null;
