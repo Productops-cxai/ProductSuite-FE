@@ -151,6 +151,10 @@ export const PAYFLOW_ROUTE_PERMISSIONS: Array<{ prefix: string; anyOf: string[] 
   { prefix: "/payflow/rules", anyOf: ["view_rules"] },
   { prefix: "/payflow/comms", anyOf: ["view_communications"] },
   { prefix: "/payflow/exceptions", anyOf: ["view_operational_exceptions"] },
+  {
+    prefix: "/payflow/reports/payment-reconciliation",
+    anyOf: ["view_analytics", "view_collection_cases"],
+  },
 ];
 
 export function permissionsForPath(pathname: string): string[] | null {

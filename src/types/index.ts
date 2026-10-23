@@ -568,6 +568,12 @@ export interface PayflowClientDetail extends PayflowClient {
   sms_sender_id: string;
   channels: PayflowClientChannels;
   governance_rules: string[];
+  payment_settings?: {
+    allow_partial?: boolean;
+    allow_plans?: boolean;
+    min_partial_amount?: number;
+    min_plan_amount?: number;
+  } | null;
   mappings: PayflowClientMapping[];
   mapping_summary: PayflowClientMappingSummary;
   portfolios: PayflowPortfolio[];
@@ -717,6 +723,7 @@ export interface PayflowAccount {
   next_action?: string | null;
   human_review: boolean;
   timeline: PayflowAccountTimelineEvent[];
+  ai_decision_context?: Array<Record<string, unknown>> | null;
   portfolio_code?: string | null;
   customer_first_name?: string | null;
   customer_last_name?: string | null;
@@ -1275,6 +1282,7 @@ export interface PayflowCommunication {
   purpose: string;
   status: string;
   workflow_name?: string | null;
+  strategy_id?: number | null;
   engagement?: string | null;
   engagement_tracking?: string | null;
   date_bucket?: string | null;
@@ -1443,6 +1451,7 @@ export interface PayflowPaymentPortalResolve {
   };
   payment_options: PayflowPaymentPortalOption[];
   active_payment_plans?: PayflowPaymentPlanSummary[];
+  preview_mode?: boolean;
   provider: {
     name?: string;
     ready?: boolean;

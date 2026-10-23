@@ -5,9 +5,10 @@ import type {
 } from "../types";
 
 /** Unauthenticated customer payment portal APIs. */
-export function resolvePaymentPortal(token: string) {
+export function resolvePaymentPortal(token: string, opts?: { preview?: boolean }) {
+  const qs = opts?.preview ? "?preview=1" : "";
   return apiRequest<PayflowPaymentPortalResolve>(
-    `/payflow/public/payment-links/${encodeURIComponent(token)}`,
+    `/payflow/public/payment-links/${encodeURIComponent(token)}${qs}`,
     { auth: false },
   );
 }

@@ -73,6 +73,8 @@ function PortalShell({
 
 export function CustomerPaymentPortalPage() {
   const { token = "" } = useParams<{ token: string }>();
+  const [searchParams] = useSearchParams();
+  const previewMode = searchParams.get("preview") === "1" || token.startsWith("preview.");
   const [portal, setPortal] = useState<PayflowPaymentPortalResolve | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -91,7 +93,7 @@ export function CustomerPaymentPortalPage() {
     let cancelled = false;
     setLoading(true);
     setError("");
-    resolvePaymentPortal(token)
+    resolvePaymentPortal(token, { preview: previewMode })
       .then((res) => {
         if (cancelled) return;
         setPortal(res);
@@ -115,7 +117,7 @@ export function CustomerPaymentPortalPage() {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, previewMode]);
 
   const selected: PayflowPaymentPortalOption | undefined = useMemo(
     () => portal?.payment_options?.find((o) => o.id === selectedId),
@@ -139,6 +141,10 @@ export function CustomerPaymentPortalPage() {
 
   async function handleConfirmPay() {
     if (!token || !selected || chargeAmount == null || initiating) return;
+    if (portal?.preview_mode || previewMode) {
+      setActionError("Preview only — checkout is disabled.");
+      return;
+    }
     setInitiating(true);
     setActionError("");
     try {
@@ -158,6 +164,8 @@ export function CustomerPaymentPortalPage() {
       setInitiating(false);
     }
   }
+
+  const isPreview = Boolean(portal?.preview_mode || previewMode);
 
   if (loading) {
     return (
@@ -180,7 +188,7 @@ export function CustomerPaymentPortalPage() {
     );
   }
 
-  if (!portal.usable) {
+  if (!portal.usable && !isPreview) {
     return (
       <PortalShell brand={portal.brand}>
         <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
@@ -206,6 +214,11 @@ export function CustomerPaymentPortalPage() {
   return (
     <PortalShell brand={portal.brand}>
       <div className="space-y-5">
+        {isPreview ? (
+          <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-[13px] text-foreground">
+            Staff preview — options are shown for review. Checkout cannot be started.
+          </div>
+        ) : null}
         <div>
           <p className="text-[13px] text-muted-foreground">
             Hello{portal.customer.display_name ? `, ${portal.customer.display_name}` : ""}
@@ -341,11 +354,13 @@ export function CustomerPaymentPortalPage() {
         {!summaryOpen ? (
           <button
             type="button"
-            disabled={!selected || chargeAmount == null || !portal.provider?.ready}
+            disabled={
+              isPreview || !selected || chargeAmount == null || !portal.provider?.ready
+            }
             onClick={() => void handleContinue()}
             className="inline-flex h-11 w-full items-center justify-center rounded-md bg-primary text-[14px] font-semibold text-primary-foreground shadow-brand disabled:opacity-50"
           >
-            Continue
+            {isPreview ? "Preview only" : "Continue"}
           </button>
         ) : (
           <div className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-sm">
