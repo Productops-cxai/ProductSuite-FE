@@ -71,6 +71,12 @@ export interface ClientDraftConfig {
   smsSenderId: string;
   channels: { email: boolean; sms: boolean; whatsapp: boolean };
   governanceRules: string[];
+  paymentSettings: {
+    allow_partial: boolean;
+    allow_plans: boolean;
+    min_partial_amount: number;
+    min_plan_amount: number;
+  };
 }
 
 export interface ClientDraft {
@@ -194,6 +200,12 @@ export function emptyDraft(): ClientDraft {
       smsSenderId: "PAYFLOW",
       channels: { email: true, sms: true, whatsapp: false },
       governanceRules: [],
+      paymentSettings: {
+        allow_partial: true,
+        allow_plans: true,
+        min_partial_amount: 25,
+        min_plan_amount: 100,
+      },
     },
   };
 }
@@ -232,8 +244,16 @@ export function draftFromDetail(
     governance_rules?: string[];
     mappings?: PayflowClientMapping[];
     supervisor_user_ids?: string[];
+    payment_settings?: {
+      allow_partial?: boolean;
+      allow_plans?: boolean;
+      allow_payment_plan?: boolean;
+      min_partial_amount?: number;
+      min_plan_amount?: number;
+    } | null;
   },
 ): ClientDraft {
+  const ps = detail.payment_settings || {};
   return {
     name: detail.name || "",
     industry: detail.industry || detail.category || "",
@@ -274,6 +294,13 @@ export function draftFromDetail(
       smsSenderId: detail.sms_sender_id || "PAYFLOW",
       channels: detail.channels || { email: true, sms: true, whatsapp: false },
       governanceRules: detail.governance_rules || [],
+      paymentSettings: {
+        allow_partial: ps.allow_partial !== false,
+        allow_plans:
+          ps.allow_payment_plan !== false && ps.allow_plans !== false,
+        min_partial_amount: Number(ps.min_partial_amount ?? 25),
+        min_plan_amount: Number(ps.min_plan_amount ?? 100),
+      },
     },
   };
 }
@@ -311,6 +338,13 @@ export function draftToUpdatePayload(draft: ClientDraft) {
     sms_sender_id: draft.config.smsSenderId,
     channels: draft.config.channels,
     governance_rules: draft.config.governanceRules,
+    payment_settings: {
+      allow_partial: draft.config.paymentSettings.allow_partial,
+      allow_plans: draft.config.paymentSettings.allow_plans,
+      allow_payment_plan: draft.config.paymentSettings.allow_plans,
+      min_partial_amount: draft.config.paymentSettings.min_partial_amount,
+      min_plan_amount: draft.config.paymentSettings.min_plan_amount,
+    },
     mappings: draft.config.mappings.map((m) => ({
       source_field: m.sourceField,
       payflow_field: m.payflowField,
@@ -319,6 +353,71 @@ export function draftToUpdatePayload(draft: ClientDraft) {
     })),
     supervisor_user_ids: draft.supervisorUserIds,
   };
+}
+
+/* ---------------- Payment options ---------------- */
+
+export function PaymentSettingsSection({ draft, patchConfig, readOnly }: SectionProps) {
+  const ps = draft.config.paymentSettings;
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="text-[13px] font-semibold text-foreground">Customer payment options</p>
+        <p className="text-[12px] text-muted-foreground">
+          Controls what the public payment portal offers for this client. Future instalments are
+          never auto-charged.
+        </p>
+      </div>
+      <ToggleRow
+        label="Allow partial payments"
+        description="Customer can enter an amount within configured limits"
+        checked={ps.allow_partial}
+        onChange={
+          readOnly
+            ? undefined
+            : (v) => patchConfig({ paymentSettings: { ...ps, allow_partial: v } })
+        }
+        disabled={readOnly}
+      />
+      <ToggleRow
+        label="Allow payment plans"
+        description="Show installment schedule options on the portal"
+        checked={ps.allow_plans}
+        onChange={
+          readOnly
+            ? undefined
+            : (v) => patchConfig({ paymentSettings: { ...ps, allow_plans: v } })
+        }
+        disabled={readOnly}
+      />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Minimum partial amount">
+          <TextInput
+            value={String(ps.min_partial_amount)}
+            onChange={(v) =>
+              !readOnly &&
+              patchConfig({
+                paymentSettings: { ...ps, min_partial_amount: Math.max(0, Number(v) || 0) },
+              })
+            }
+            disabled={readOnly}
+          />
+        </Field>
+        <Field label="Minimum plan total">
+          <TextInput
+            value={String(ps.min_plan_amount)}
+            onChange={(v) =>
+              !readOnly &&
+              patchConfig({
+                paymentSettings: { ...ps, min_plan_amount: Math.max(0, Number(v) || 0) },
+              })
+            }
+            disabled={readOnly}
+          />
+        </Field>
+      </div>
+    </div>
+  );
 }
 
 /* ---------------- Profile ---------------- */

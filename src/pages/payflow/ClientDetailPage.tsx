@@ -15,6 +15,7 @@ import {
   AiGovernanceSection,
   BrandingSection,
   DataSourceSection,
+  PaymentSettingsSection,
   ProfileSection,
   SupervisorSection,
   draftFromDetail,
@@ -76,6 +77,7 @@ const CONFIG_SECTIONS = [
   "General",
   "Data Source",
   "Branding & Channels",
+  "Payment Options",
   "AI & Governance",
   "Assigned Users",
 ] as const;
@@ -766,6 +768,9 @@ export function PayFlowClientDetailPage() {
               {configSection === "Data Source" && <DataSourceSection {...sectionProps} />}
               {configSection === "Branding & Channels" && (
                 <BrandingSection {...sectionProps} readOnly={brandingReadOnly} />
+              )}
+              {configSection === "Payment Options" && (
+                <PaymentSettingsSection {...sectionProps} />
               )}
               {configSection === "AI & Governance" && <AiGovernanceSection {...sectionProps} />}
               {configSection === "Assigned Users" && <SupervisorSection {...sectionProps} />}

@@ -9,6 +9,7 @@ import {
   listPayflowAccountPayments,
   listPayflowComms,
   listPayflowReviews,
+  reassessPayflowCase,
   revokePayflowPaymentLink,
   sendPayflowManualEmail,
   sendPayflowManualSms,
@@ -323,6 +324,8 @@ export function PayFlowCaseDetailPage() {
   const [paymentsError, setPaymentsError] = useState("");
   const [copyFlashId, setCopyFlashId] = useState<number | null>(null);
   const [revokingId, setRevokingId] = useState<number | null>(null);
+  const [reassessing, setReassessing] = useState(false);
+  const [reassessMsg, setReassessMsg] = useState("");
 
   useEffect(() => {
     const id = Number(accountId);
@@ -821,6 +824,83 @@ export function PayFlowCaseDetailPage() {
           <Panel title="Case Summary" bodyClassName="p-0">
             <FactRows rows={summaryFacts} />
           </Panel>
+
+          {(() => {
+            const ctx = [...(account.ai_decision_context || [])].reverse();
+            const latestRec = ctx.find((e) => e.kind === "ai_recommendation");
+            const latestHr = ctx.find((e) => e.kind === "human_decision");
+            const canSuggest =
+              hasPermission("manage_workflows") || hasPermission("view_workflows");
+            return (
+              <Panel
+                title="AI recommendation"
+                description="Case-level reassessment (not portfolio Suggest)"
+                action={
+                  canSuggest ? (
+                    <Btn
+                      variant="secondary"
+                      disabled={reassessing}
+                      onClick={() => {
+                        void (async () => {
+                          setReassessing(true);
+                          setReassessMsg("");
+                          try {
+                            const res = await reassessPayflowCase(account.id);
+                            if (res.case) setAccount(res.case);
+                            setReassessMsg("Recommendation updated");
+                          } catch (err) {
+                            setReassessMsg(
+                              err instanceof ApiError
+                                ? err.detail
+                                : "Reassessment failed",
+                            );
+                          } finally {
+                            setReassessing(false);
+                          }
+                        })();
+                      }}
+                    >
+                      {reassessing ? "Suggesting…" : "Suggest for case"}
+                    </Btn>
+                  ) : undefined
+                }
+              >
+                {reassessMsg ? (
+                  <p className="mb-2 text-[12px] text-muted-foreground">{reassessMsg}</p>
+                ) : null}
+                {latestRec ? (
+                  <div className="space-y-1 text-[13px]">
+                    <p className="font-medium text-foreground">
+                      {String(latestRec.action || "—")}
+                    </p>
+                    <p className="text-muted-foreground">
+                      {String(latestRec.rationale || "")}
+                    </p>
+                    {latestRec.channel ? (
+                      <p className="text-[12px] text-muted-foreground">
+                        Channel: {String(latestRec.channel)}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="text-[13px] text-muted-foreground">
+                    No AI recommendation stored yet for this case.
+                  </p>
+                )}
+                {latestHr ? (
+                  <p className="mt-3 border-t border-border pt-3 text-[12.5px] text-muted-foreground">
+                    Last human decision:{" "}
+                    <span className="font-medium text-foreground">
+                      {String(latestHr.decision)}
+                    </span>
+                    {latestHr.final_action
+                      ? ` · ${String(latestHr.final_action)}`
+                      : ""}
+                  </p>
+                ) : null}
+              </Panel>
+            );
+          })()}
 
           <Panel
             title="Customer profile"
@@ -1363,6 +1443,22 @@ export function PayFlowCaseDetailPage() {
                       ? ` · Last click ${formatStamp(link.last_clicked_at)}`
                       : ""}
                   </p>
+                  {(link.events || []).length > 0 ? (
+                    <ul className="mt-2 space-y-1 border-t border-border/60 pt-2">
+                      {(link.events || []).slice(-6).reverse().map((ev, idx) => (
+                        <li
+                          key={`${link.id}-ev-${idx}`}
+                          className="text-[11px] text-muted-foreground"
+                        >
+                          <span className="font-medium text-foreground">
+                            {ev.label || "Event"}
+                          </span>
+                          {ev.detail ? ` · ${ev.detail}` : ""}
+                          {ev.at ? ` · ${formatStamp(ev.at)}` : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
                 </li>
               ))}
             </ul>

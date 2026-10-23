@@ -79,6 +79,7 @@ export function PayFlowExceptionsPage() {
   const [exceptionType, setExceptionType] = useState(
     searchParams.get("type") || "All Types",
   );
+  const highlightId = Number(searchParams.get("id") || "");
 
   useEffect(() => {
     const nextStatus = searchParams.get("status");
@@ -86,6 +87,12 @@ export function PayFlowExceptionsPage() {
     const nextType = searchParams.get("type");
     if (nextType) setExceptionType(nextType);
   }, [searchParams]);
+
+  useEffect(() => {
+    if (!highlightId || loading) return;
+    const el = document.getElementById(`exception-${highlightId}`);
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [highlightId, loading, rows]);
 
   function reload() {
     setLoading(true);
@@ -195,7 +202,7 @@ export function PayFlowExceptionsPage() {
 
         {!loading && rows.length > 0 ? (
           <DataTable
-            minWidth={980}
+            minWidth={1100}
             head={[
               "When",
               "Type",
@@ -203,12 +210,21 @@ export function PayFlowExceptionsPage() {
               "Client",
               "Case",
               "Reason",
+              "Retriable",
               "Status",
               "",
             ]}
           >
             {rows.map((ex) => (
-              <Tr key={ex.id}>
+              <Tr
+                key={ex.id}
+                id={`exception-${ex.id}`}
+                className={
+                  highlightId === ex.id
+                    ? "bg-primary/5 ring-1 ring-inset ring-primary/30"
+                    : undefined
+                }
+              >
                 <Td className="tabular text-muted-foreground">{formatStamp(ex.created_at)}</Td>
                 <Td>{typeLabel(ex.exception_type)}</Td>
                 <Td>
@@ -231,9 +247,15 @@ export function PayFlowExceptionsPage() {
                     "—"
                   )}
                 </Td>
-                <Td className="max-w-[280px] truncate" title={ex.reason}>
-                  {ex.reason}
+                <Td className="max-w-[240px]" title={ex.reason}>
+                  <span className="line-clamp-2">{ex.reason}</span>
+                  {ex.diagnostic_ref ? (
+                    <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                      Ref · {ex.diagnostic_ref}
+                    </span>
+                  ) : null}
                 </Td>
+                <Td>{ex.retriable ? "Yes" : "No"}</Td>
                 <Td>
                   <StatusPill tone={statusTone(ex.status)}>{ex.status}</StatusPill>
                 </Td>
