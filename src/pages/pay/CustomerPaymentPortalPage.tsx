@@ -569,13 +569,14 @@ export function CustomerPaymentResultPage() {
           return;
         }
         tries += 1;
-        if (tries >= 20) {
+        // Each poll triggers BE Stripe reconcile for stuck Processing.
+        if (tries >= 40) {
           setPolling(false);
           return;
         }
         window.setTimeout(() => {
           void tick();
-        }, 1500);
+        }, 2000);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof ApiError ? err.detail : "Unable to confirm payment");

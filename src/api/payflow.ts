@@ -218,6 +218,8 @@ export interface UpdatePayflowClientPayload {
     allow_payment_plan?: boolean;
     min_partial_amount?: number;
     min_plan_amount?: number;
+    stripe_payments_enabled?: boolean;
+    accepted_currencies?: string[];
   };
   mappings?: {
     source_field: string;

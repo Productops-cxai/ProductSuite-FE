@@ -76,6 +76,10 @@ export interface ClientDraftConfig {
     allow_plans: boolean;
     min_partial_amount: number;
     min_plan_amount: number;
+    /** When false, public portal will not start Stripe Checkout for this client. */
+    stripe_payments_enabled: boolean;
+    /** Comma-separated ISO codes; empty = allow case/client currency only (no extra list). */
+    accepted_currencies: string;
   };
 }
 
@@ -205,6 +209,8 @@ export function emptyDraft(): ClientDraft {
         allow_plans: true,
         min_partial_amount: 25,
         min_plan_amount: 100,
+        stripe_payments_enabled: true,
+        accepted_currencies: "",
       },
     },
   };
@@ -250,10 +256,15 @@ export function draftFromDetail(
       allow_payment_plan?: boolean;
       min_partial_amount?: number;
       min_plan_amount?: number;
+      stripe_payments_enabled?: boolean;
+      accepted_currencies?: string[] | string;
     } | null;
   },
 ): ClientDraft {
   const ps = detail.payment_settings || {};
+  const acceptedList = Array.isArray(ps.accepted_currencies)
+    ? ps.accepted_currencies.join(", ")
+    : String(ps.accepted_currencies || "");
   return {
     name: detail.name || "",
     industry: detail.industry || detail.category || "",
@@ -300,6 +311,8 @@ export function draftFromDetail(
           ps.allow_payment_plan !== false && ps.allow_plans !== false,
         min_partial_amount: Number(ps.min_partial_amount ?? 25),
         min_plan_amount: Number(ps.min_plan_amount ?? 100),
+        stripe_payments_enabled: ps.stripe_payments_enabled !== false,
+        accepted_currencies: acceptedList,
       },
     },
   };
@@ -344,6 +357,11 @@ export function draftToUpdatePayload(draft: ClientDraft) {
       allow_payment_plan: draft.config.paymentSettings.allow_plans,
       min_partial_amount: draft.config.paymentSettings.min_partial_amount,
       min_plan_amount: draft.config.paymentSettings.min_plan_amount,
+      stripe_payments_enabled: draft.config.paymentSettings.stripe_payments_enabled,
+      accepted_currencies: draft.config.paymentSettings.accepted_currencies
+        .split(",")
+        .map((c) => c.trim().toUpperCase())
+        .filter(Boolean),
     },
     mappings: draft.config.mappings.map((m) => ({
       source_field: m.sourceField,
@@ -390,6 +408,18 @@ export function PaymentSettingsSection({ draft, patchConfig, readOnly }: Section
         }
         disabled={readOnly}
       />
+      <ToggleRow
+        label="Enable Stripe online payments"
+        description="When off, this client cannot start Checkout even if platform Stripe keys are set"
+        checked={ps.stripe_payments_enabled}
+        onChange={
+          readOnly
+            ? undefined
+            : (v) =>
+                patchConfig({ paymentSettings: { ...ps, stripe_payments_enabled: v } })
+        }
+        disabled={readOnly}
+      />
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Minimum partial amount">
           <TextInput
@@ -416,6 +446,20 @@ export function PaymentSettingsSection({ draft, patchConfig, readOnly }: Section
           />
         </Field>
       </div>
+      <Field label="Accepted currencies (optional)">
+        <TextInput
+          value={ps.accepted_currencies}
+          onChange={(v) =>
+            !readOnly &&
+            patchConfig({ paymentSettings: { ...ps, accepted_currencies: v } })
+          }
+          disabled={readOnly}
+          placeholder="e.g. CAD, USD — leave blank to use case currency"
+        />
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          Comma-separated ISO codes. Blank = no extra restriction beyond the case currency.
+        </p>
+      </Field>
     </div>
   );
 }
