@@ -384,6 +384,8 @@ export function PayFlowCaseDetailPage() {
       listPayflowReviews({
         client_id: account.client_id,
         search: account.account_reference,
+        sort_by: "created_at",
+        sort_dir: "desc",
       }),
       listPayflowComms({ account_id: account.id }),
       getPayflowAccountCommunicationEligibility(account.id).catch(() => null),
@@ -661,11 +663,13 @@ export function PayFlowCaseDetailPage() {
       });
     }
 
-    // Origin (file upload / created) first, then chronological for the rest.
+    // Latest first; file-upload / created origin stays at the bottom.
     events.sort((a, b) => {
-      const rankDiff = lifecycleRank(a.label) - lifecycleRank(b.label);
-      if (rankDiff !== 0) return rankDiff;
-      if (a.atMs !== b.atMs) return a.atMs - b.atMs;
+      const ra = lifecycleRank(a.label);
+      const rb = lifecycleRank(b.label);
+      if (ra === 0 && rb !== 0) return 1;
+      if (rb === 0 && ra !== 0) return -1;
+      if (a.atMs !== b.atMs) return b.atMs - a.atMs;
       return a.label.localeCompare(b.label);
     });
 
@@ -811,7 +815,10 @@ export function PayFlowCaseDetailPage() {
             <StatusPill tone={statusTone(account.collection_status)}>
               {account.collection_status}
             </StatusPill>
-            {(account.human_review || reviews.length > 0) &&
+            {(account.human_review ||
+              reviews.some(
+                (r) => r.status === "Awaiting Review" || r.status === "On Hold",
+              )) &&
             (account.collection_status || "").toLowerCase() !== "human review" ? (
               <StatusPill tone="danger">Human review</StatusPill>
             ) : null}
@@ -1063,7 +1070,15 @@ export function PayFlowCaseDetailPage() {
             ) : null}
             {!sideLoading && reviews.length > 0 ? (
               <ul className="divide-y divide-border">
-                {reviews.map((r) => (
+                {[...reviews]
+                  .sort((a, b) => {
+                    const open = (s: string) =>
+                      s === "Awaiting Review" || s === "On Hold" ? 0 : 1;
+                    const d = open(a.status) - open(b.status);
+                    if (d !== 0) return d;
+                    return 0;
+                  })
+                  .map((r) => (
                   <li key={r.id} className="px-4 py-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <Link
@@ -1077,7 +1092,8 @@ export function PayFlowCaseDetailPage() {
                     <p className="mt-1 text-xs text-muted-foreground">
                       Rule: {r.rule_name || "—"} · Proposed: {r.proposed_action}
                     </p>
-                    {r.waiting_label ? (
+                    {r.waiting_label &&
+                    (r.status === "Awaiting Review" || r.status === "On Hold") ? (
                       <p className="mt-0.5 text-[11px] text-muted-foreground">
                         Waiting {r.waiting_label}
                       </p>
