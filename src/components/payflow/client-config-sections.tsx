@@ -1294,11 +1294,18 @@ export function BrandingSection({
         </div>
 
         {c.channels.email && (
-          <Field label="Email From Address">
+          <Field
+            label="Email From Address"
+            hint={
+              thirdParty
+                ? "Third Party sends from the PayFlow operator address (SENDGRID_FROM_EMAIL on the server), not this field."
+                : "Must be a verified Sender Identity in SendGrid."
+            }
+          >
             <TextInput
-              value={c.emailFrom}
+              value={thirdParty ? "PayFlow operator (server SENDGRID_FROM_EMAIL)" : c.emailFrom}
               onChange={(v) => patchConfig({ emailFrom: v })}
-              disabled={readOnly}
+              disabled={readOnly || thirdParty}
             />
           </Field>
         )}
@@ -1331,7 +1338,9 @@ export function BrandingSection({
             </div>
             <div className="text-[12px]">
               <p className="font-medium text-foreground">{previewSender}</p>
-              <p className="text-muted-foreground">{c.emailFrom}</p>
+              <p className="text-muted-foreground">
+                {thirdParty ? "PayFlow operator (SENDGRID_FROM_EMAIL)" : c.emailFrom}
+              </p>
             </div>
           </div>
           <p className="mt-3 text-[13px] font-medium text-foreground">
