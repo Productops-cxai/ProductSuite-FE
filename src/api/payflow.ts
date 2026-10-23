@@ -509,6 +509,8 @@ export function listPayflowReviews(params?: {
   proposed_action?: string;
   search?: string;
   waiting_bucket?: string;
+  sort_by?: string;
+  sort_dir?: "asc" | "desc";
   page?: number;
   page_size?: number;
 }) {
@@ -521,6 +523,8 @@ export function listPayflowReviews(params?: {
   if (params?.proposed_action) q.set("proposed_action", params.proposed_action);
   if (params?.search) q.set("search", params.search);
   if (params?.waiting_bucket) q.set("waiting_bucket", params.waiting_bucket);
+  q.set("sort_by", params?.sort_by || "created_at");
+  q.set("sort_dir", params?.sort_dir || "desc");
   if (params?.page != null) q.set("page", String(params.page));
   if (params?.page_size != null) q.set("page_size", String(params.page_size));
   const qs = q.toString();

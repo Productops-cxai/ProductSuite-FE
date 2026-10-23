@@ -1303,7 +1303,7 @@ export function BrandingSection({
             }
           >
             <TextInput
-              value={thirdParty ? "PayFlow operator (server SENDGRID_FROM_EMAIL)" : c.emailFrom}
+              value={thirdParty ? "PayFlow operator (NCRi)" : c.emailFrom}
               onChange={(v) => patchConfig({ emailFrom: v })}
               disabled={readOnly || thirdParty}
             />

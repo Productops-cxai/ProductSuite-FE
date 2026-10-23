@@ -173,16 +173,14 @@ export function PayFlowCommDetailPage() {
   const senderName = comm.sender_name || brandName;
   const payLink = comm.payment_link ? comm.payment_link_url : null;
   const previewLink = previewPayUrl(payLink);
+  // Always use ISO timestamps (same TZ as Created/Delivered) — date_label/time_label
+  // were frozen at prepare time in server-local TZ and drifted from delivered_at.
   const sentLabel =
     comm.status === "Prepared" ||
     comm.status === "Awaiting Governance" ||
     comm.status === "Scheduled"
       ? "Not sent"
-      : comm.status === "Queued"
-        ? [comm.date_label, comm.time_label].filter(Boolean).join(" ") ||
-          formatStamp(comm.sent_at || comm.created_at)
-        : [comm.date_label, comm.time_label].filter(Boolean).join(" ") ||
-          formatStamp(comm.sent_at || comm.created_at);
+      : formatStamp(comm.sent_at || comm.created_at);
 
   const facts = [
     { label: "Client", value: comm.client_name || "—" },
@@ -273,7 +271,7 @@ export function PayFlowCommDetailPage() {
           { label: comm.code },
         ]}
         title={`${comm.channel} · ${comm.purpose}`}
-        description={`${comm.customer_name || "Customer"} · ${comm.account_reference || "—"} · ${[comm.date_label, comm.time_label].filter(Boolean).join(" ") || "—"}`}
+        description={`${comm.customer_name || "Customer"} · ${comm.account_reference || "—"} · ${formatStamp(comm.sent_at || comm.created_at)}`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <StatusPill tone={commStatusTone(comm.status)}>{comm.status}</StatusPill>
