@@ -13,6 +13,7 @@ import type {
   PayflowPaymentPortalOption,
   PayflowPaymentPortalResolve,
 } from "../../types";
+import { resolveAvatarUrl } from "../../components/ui/UserAvatar";
 
 function formatMoney(amount: number, currency: string) {
   try {
@@ -34,21 +35,32 @@ function PortalShell({
   children: ReactNode;
 }) {
   const name = brand?.name || "PayFlow";
+  const logoSrc = resolveAvatarUrl(brand?.logo_url);
   return (
     <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,#e8eefc_0%,#f4f6fb_45%,#eef1f7_100%)]">
       <div className="mx-auto flex min-h-screen w-full max-w-lg flex-col px-4 py-8 sm:px-6">
         <header className="mb-8 flex items-center gap-3">
-          {brand?.logo_url ? (
+          {logoSrc ? (
             <img
-              src={brand.logo_url}
+              src={logoSrc}
               alt=""
               className="h-10 w-10 rounded-md object-contain bg-white shadow-sm"
+              onError={(e) => {
+                // Hide broken icon if asset 404s; initials fallback via parent re-render not needed —
+                // swap to initials block.
+                const el = e.currentTarget;
+                el.style.display = "none";
+                const fallback = el.nextElementSibling as HTMLElement | null;
+                if (fallback) fallback.style.display = "grid";
+              }}
             />
-          ) : (
-            <div className="grid h-10 w-10 place-items-center rounded-md bg-primary text-[13px] font-semibold text-primary-foreground">
-              {name.slice(0, 2).toUpperCase()}
-            </div>
-          )}
+          ) : null}
+          <div
+            className="grid h-10 w-10 place-items-center rounded-md bg-primary text-[13px] font-semibold text-primary-foreground"
+            style={logoSrc ? { display: "none" } : undefined}
+          >
+            {name.slice(0, 2).toUpperCase()}
+          </div>
           <div className="min-w-0">
             <p className="font-display text-xl font-semibold tracking-tight text-foreground">
               {name}
