@@ -331,7 +331,7 @@ export function CustomerPaymentPortalPage() {
     if (!Number.isFinite(n)) return 0;
     const min = partialOpt?.min_amount ?? 0;
     const max = partialOpt?.max_amount ?? outstanding;
-    return Math.min(Math.max(n, 0), max || outstanding);
+    return Math.min(Math.max(n, min), max || outstanding);
   }, [partialAmount, partialOpt, outstanding]);
 
   const remainingAfterPartial = Math.max(outstanding - partialValue, 0);
