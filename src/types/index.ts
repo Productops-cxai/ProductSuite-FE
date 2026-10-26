@@ -1421,6 +1421,9 @@ export interface PayflowPaymentPortalOption {
   installments?: number;
   plan_id?: string;
   frequency?: string;
+  frequencies?: string[];
+  custom_plan?: boolean;
+  auto_charge_enabled?: boolean;
   total_payable?: number;
   installment_amount?: number;
   schedule?: {
@@ -1491,6 +1494,9 @@ export interface PayflowPaymentPlanSummary {
   start_date?: string | null;
   next_due_date?: string | null;
   auto_charge_enabled?: boolean;
+  payment_method_type?: string | null;
+  consecutive_charge_failures?: number;
+  has_saved_payment_method?: boolean;
   installments: PayflowPaymentPlanInstallment[];
   created_at?: string | null;
   completed_at?: string | null;
