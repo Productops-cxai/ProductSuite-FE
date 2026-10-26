@@ -429,24 +429,54 @@ export function CustomerPaymentPortalPage() {
   const outlineBtn =
     "w-full rounded-lg border border-border-strong bg-card px-4 py-3 text-[14px] font-medium text-foreground transition-colors hover:bg-surface";
 
+  // Seed suggested amount once when landing on plan-amount — never overwrite while typing.
   useEffect(() => {
     if (step !== "plan-amount" || !token || !planOpt) return;
+    if (planAmountInput.trim() !== "") return;
     let cancelled = false;
-    const amountNum = Number(planAmountInput);
-    const payload = {
+    quotePaymentPlan(token, {
       frequency: planFrequency,
       start_date: effectiveStartDate,
-      installment_amount:
-        Number.isFinite(amountNum) && amountNum > 0 ? amountNum : undefined,
+    })
+      .then((q) => {
+        if (cancelled) return;
+        setPlanQuote(q);
+        setPlanAmountInput(String(q.suggested_installment));
+        setPlanQuoteError("");
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setPlanQuoteError(err instanceof ApiError ? err.detail : "Unable to calculate plan");
+      });
+    return () => {
+      cancelled = true;
     };
+    // Intentionally omit planAmountInput so typing does not re-seed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, token, planOpt, planFrequency, effectiveStartDate]);
+
+  // Live quote from whatever amount the user typed (no clamp to suggested).
+  useEffect(() => {
+    if (step !== "plan-amount" || !token || !planOpt) return;
+    const amountNum = Number(planAmountInput);
+    if (!Number.isFinite(amountNum) || amountNum <= 0 || planAmountInput.trim() === "") {
+      setPlanQuote(null);
+      setPlanQuoteError("");
+      setQuoting(false);
+      return;
+    }
+    let cancelled = false;
     setQuoting(true);
     setPlanQuoteError("");
     const handle = window.setTimeout(() => {
-      quotePaymentPlan(token, payload)
+      quotePaymentPlan(token, {
+        frequency: planFrequency,
+        start_date: effectiveStartDate,
+        installment_amount: amountNum,
+      })
         .then((q) => {
           if (cancelled) return;
           setPlanQuote(q);
-          if (!planAmountInput) setPlanAmountInput(String(q.suggested_installment));
         })
         .catch((err) => {
           if (cancelled) return;
