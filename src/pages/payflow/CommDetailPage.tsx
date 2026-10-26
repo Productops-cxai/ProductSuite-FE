@@ -204,9 +204,14 @@ export function PayFlowCommDetailPage() {
       : []),
   ];
 
+  const stripeCheckoutOpens =
+    comm.stripe_checkout_opens_count ??
+    (comm.events || []).filter((e) => e.label === "Stripe Checkout Opened").length;
+
   const engagementFacts = [
-    { label: "Opens", value: String(comm.opens_count ?? 0) },
-    { label: "Clicks", value: String(comm.clicks_count ?? 0) },
+    { label: "Opens (email)", value: String(comm.opens_count ?? 0) },
+    { label: "Clicks (PayFlow portal)", value: String(comm.clicks_count ?? 0) },
+    { label: "Stripe Checkout opened", value: String(stripeCheckoutOpens) },
     { label: "First opened", value: formatStamp(comm.first_opened_at) },
     { label: "Last opened", value: formatStamp(comm.last_opened_at) },
     { label: "First clicked", value: formatStamp(comm.first_clicked_at) },

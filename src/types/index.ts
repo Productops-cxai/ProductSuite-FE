@@ -1313,6 +1313,8 @@ export interface PayflowCommunication {
   delivered_at?: string | null;
   opens_count?: number;
   clicks_count?: number;
+  /** Times customer was redirected to checkout.stripe.com (Pay Now). */
+  stripe_checkout_opens_count?: number;
   first_opened_at?: string | null;
   last_opened_at?: string | null;
   first_clicked_at?: string | null;
@@ -1439,6 +1441,7 @@ export interface PayflowPaymentPortalResolve {
   customer: { display_name?: string };
   case: {
     account_reference?: string;
+    account_reference_masked?: string | null;
     original_balance?: number;
     outstanding_balance: number;
     recovered_balance?: number;
@@ -1450,6 +1453,9 @@ export interface PayflowPaymentPortalResolve {
     name: string;
     logo_url?: string | null;
     on_behalf_of?: string | null;
+    client_name?: string | null;
+    support_email?: string | null;
+    support_phone?: string | null;
   };
   payment_options: PayflowPaymentPortalOption[];
   active_payment_plans?: PayflowPaymentPlanSummary[];
@@ -1530,6 +1536,7 @@ export interface PayflowPaymentAttempt {
   id: string;
   status: string;
   option_type: string;
+  option_label?: string | null;
   plan_id?: string | null;
   amount: number;
   currency_code: string;
@@ -1537,12 +1544,28 @@ export interface PayflowPaymentAttempt {
   checkout_url?: string | null;
   error_message?: string | null;
   balance_at_initiation?: number | null;
+  remaining_balance?: number | null;
+  outstanding_balance?: number | null;
+  account_reference?: string | null;
+  account_reference_masked?: string | null;
+  payment_method?: string | null;
   stripe_session_id?: string | null;
   reference?: string | null;
   confirmed: boolean;
   events?: { at?: string; label?: string; detail?: string | null }[];
   created_at?: string | null;
   completed_at?: string | null;
+  paid_at?: string | null;
+  plan?: (PayflowPaymentPlanSummary & { final_payment_date?: string | null }) | null;
+  brand?: {
+    mode?: string;
+    name: string;
+    logo_url?: string | null;
+    on_behalf_of?: string | null;
+    client_name?: string | null;
+    support_email?: string | null;
+    support_phone?: string | null;
+  } | null;
 }
 
 export interface PayflowOperationalException {

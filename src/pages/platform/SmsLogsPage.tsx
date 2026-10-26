@@ -2,7 +2,6 @@ import { FormEvent, useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import { listSmsLogs } from "../../api/platform";
-import { EMAIL_LOGS_ADMIN_EMAIL } from "../../components/layout/PlatformLayout";
 import { PageHeader } from "../../components/payflow-ui";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
@@ -23,15 +22,13 @@ function typeLabel(smsType: string): string {
 }
 
 export function SmsLogsPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { loading: authLoading, isSuperAdmin } = useAuth();
   const [rows, setRows] = useState<SmsLog[]>([]);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-
-  const allowed = (user?.email || "").toLowerCase() === EMAIL_LOGS_ADMIN_EMAIL;
 
   async function load() {
     setLoading(true);
@@ -52,13 +49,13 @@ export function SmsLogsPage() {
   }
 
   useEffect(() => {
-    if (!allowed) return;
+    if (!isSuperAdmin) return;
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [typeFilter, allowed]);
+  }, [typeFilter, isSuperAdmin]);
 
   if (authLoading) return <div className={ui.loading}>Loading…</div>;
-  if (!allowed) return <Navigate to="/platform" replace />;
+  if (!isSuperAdmin) return <Navigate to="/platform" replace />;
 
   async function onSearch(e: FormEvent) {
     e.preventDefault();

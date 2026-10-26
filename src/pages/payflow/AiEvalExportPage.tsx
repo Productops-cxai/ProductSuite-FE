@@ -90,22 +90,15 @@ function stepSnapshotLabel(step: unknown, index: number): { title: string; meta?
 
 type EvalGroup = {
   key: string;
-  row_type: "workflow_version" | "human_review";
   client_code?: string;
   client_name?: string;
   item_name: string;
   strategy_id?: number | null;
-  account_id?: number | null;
   latest: EvalRow;
   versions: EvalRow[];
 };
 
 function groupKeyForRow(row: EvalRow): string {
-  if (row.row_type === "human_review") {
-    if (row.strategy_id != null) return `hr-strategy-${row.strategy_id}`;
-    if (row.account_id != null) return `hr-account-${row.account_id}`;
-    return `hr-${row.review_id ?? "x"}`;
-  }
   if (row.strategy_id != null) return `wf-${row.strategy_id}`;
   return `wf-${row.strategy_code || row.strategy_name || "x"}`;
 }
@@ -113,20 +106,17 @@ function groupKeyForRow(row: EvalRow): string {
 function versionSortValue(row: EvalRow): number {
   const v = Number(row.version);
   if (Number.isFinite(v)) return v;
-  const stamp = String(row.decided_at || row.event_date || "");
+  const stamp = String(row.event_date || "");
   const t = Date.parse(stamp);
-  return Number.isFinite(t) ? t : Number(row.review_id) || 0;
+  return Number.isFinite(t) ? t : 0;
 }
 
-/** Drop duplicate workflow version numbers / duplicate review ids (keep first = newest). */
+/** One row per workflow version number (newest history snapshot wins). */
 function dedupeVersions(versions: EvalRow[]): EvalRow[] {
   const seen = new Set<string>();
   const out: EvalRow[] = [];
   for (const row of versions) {
-    const key =
-      row.row_type === "human_review"
-        ? `hr-${row.review_id ?? ""}`
-        : `wf-${row.strategy_id ?? ""}-v${row.version ?? ""}`;
+    const key = `wf-${row.strategy_id ?? ""}-v${row.version ?? ""}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(row);
@@ -134,9 +124,12 @@ function dedupeVersions(versions: EvalRow[]): EvalRow[] {
   return out;
 }
 
+/** One evaluation list row per workflow — versions expand in the detail panel. */
 function buildEvalGroups(rows: EvalRow[]): EvalGroup[] {
   const map = new Map<string, EvalRow[]>();
   for (const row of rows) {
+    // Case-level Human Review (rev-*) does not belong in AI eval — workflow versions only.
+    if (row.row_type && row.row_type !== "workflow_version") continue;
     const key = groupKeyForRow(row);
     const list = map.get(key) || [];
     list.push(row);
@@ -148,27 +141,13 @@ function buildEvalGroups(rows: EvalRow[]): EvalGroup[] {
       [...versions].sort((a, b) => versionSortValue(b) - versionSortValue(a)),
     );
     const latest = sorted[0];
-    const rowType =
-      latest.row_type === "human_review" ? "human_review" : "workflow_version";
-    const itemName =
-      rowType === "human_review"
-        ? String(
-            latest.strategy_name ||
-              latest.strategy_code ||
-              (latest.account_id != null ? `Case #${latest.account_id}` : "") ||
-              latest.review_code ||
-              "Human review",
-          )
-        : String(latest.strategy_name || latest.strategy_code || "Workflow");
+    if (!latest) continue;
     groups.push({
       key,
-      row_type: rowType,
       client_code: latest.client_code != null ? String(latest.client_code) : undefined,
       client_name: latest.client_name != null ? String(latest.client_name) : undefined,
-      item_name: itemName,
-      strategy_id:
-        latest.strategy_id != null ? Number(latest.strategy_id) : null,
-      account_id: latest.account_id != null ? Number(latest.account_id) : null,
+      item_name: String(latest.strategy_name || latest.strategy_code || "Workflow"),
+      strategy_id: latest.strategy_id != null ? Number(latest.strategy_id) : null,
       latest,
       versions: sorted,
     });
@@ -230,6 +209,53 @@ function StepsSnapshot({ steps }: { steps: unknown }) {
   );
 }
 
+function ChangesBlock({
+  changes,
+  priorChanges,
+}: {
+  changes: unknown;
+  priorChanges?: unknown;
+}) {
+  const text = asText(changes);
+  const prior = asText(priorChanges);
+  if (text === "—" && prior === "—") {
+    return (
+      <div className="mt-3 rounded-md border border-border/70 bg-card px-3 py-2">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          What changed
+        </p>
+        <p className="mt-1 text-[12px] text-muted-foreground">
+          No step changes recorded for this version (status / activation only).
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="mt-3 space-y-2">
+      {text !== "—" ? (
+        <div className="rounded-md border border-primary/25 bg-primary/5 px-3 py-2">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            What changed in this version
+          </p>
+          <p className="mt-1 whitespace-pre-wrap break-words text-[13px] font-medium text-foreground">
+            {text}
+          </p>
+        </div>
+      ) : null}
+      {prior !== "—" ? (
+        <div className="rounded-md border border-border/70 bg-card px-3 py-2">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            Previous version changes
+          </p>
+          <p className="mt-1 whitespace-pre-wrap break-words text-[12px] text-muted-foreground">
+            {prior}
+          </p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function VersionCard({
   row,
   defaultExpanded = false,
@@ -238,11 +264,9 @@ function VersionCard({
   defaultExpanded?: boolean;
 }) {
   const [open, setOpen] = useState(defaultExpanded);
-  const isHr = row.row_type === "human_review";
-  const status = asText(row.decision_outcome || row.review_status || row.status);
-  const title = isHr
-    ? asText(row.review_code || `Review #${row.review_id}`)
-    : `Version ${asText(row.version)}`;
+  const status = asText(row.status);
+  const title = `Version ${asText(row.version)}`;
+  const stepsMissing = Boolean(row.steps_snapshot_missing) || !Array.isArray(row.steps_detail);
 
   return (
     <div className="rounded-lg border border-border/70 bg-surface/40">
@@ -261,25 +285,21 @@ function VersionCard({
           ›
         </span>
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-          <StatusPill tone={isHr ? "warning" : "info"}>{title}</StatusPill>
+          <StatusPill tone="info">{title}</StatusPill>
           <StatusPill tone={decisionTone(status)}>{status}</StatusPill>
           {row.origin ? <StatusPill>{asText(row.origin)}</StatusPill> : null}
+          {row.changes_summary ? (
+            <span className="max-w-[280px] truncate text-[11px] text-muted-foreground">
+              {asText(row.changes_summary)}
+            </span>
+          ) : null}
           {defaultExpanded ? (
             <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
               Latest
             </span>
           ) : null}
         </div>
-        {isHr && row.review_id ? (
-          <Link
-            to={`/payflow/review/${row.review_id}`}
-            className="shrink-0 text-[12.5px] font-medium text-primary hover:underline"
-            onClick={(e) => e.stopPropagation()}
-          >
-            Open review
-          </Link>
-        ) : null}
-        {!isHr && row.strategy_id ? (
+        {row.strategy_id ? (
           <Link
             to={`/payflow/workflows/${row.strategy_id}`}
             className="shrink-0 text-[12.5px] font-medium text-primary hover:underline"
@@ -291,37 +311,23 @@ function VersionCard({
       </button>
       {open ? (
         <div className="border-t border-border/60 px-4 pb-3 pt-1">
-          {isHr ? (
-            <div className="grid gap-x-6 sm:grid-cols-2">
-              <DetailField label="Proposed action" value={row.proposed_action} />
-              <DetailField label="Final action" value={row.final_action} />
-              <DetailField label="Decision outcome" value={row.decision_outcome} />
-              <DetailField label="Confidence" value={row.confidence} />
-              <DetailField label="Reason" value={row.note} />
-              <DetailField label="Condition" value={row.condition_text} />
-              <DetailField label="Observed value" value={row.observed_value} />
-              <DetailField label="Guidance" value={row.guidance} />
-              <DetailField label="Rejection reason" value={row.rejection_reason} />
-              <DetailField label="Explanation" value={row.explanation} />
-              <DetailField label="Decided at" value={row.decided_at} />
-              <DetailField label="Event date" value={row.event_date} />
-            </div>
-          ) : (
-            <div className="grid gap-x-6 sm:grid-cols-2">
-              <DetailField label="Status" value={row.status} />
-              <DetailField label="Origin" value={row.origin} />
-              <DetailField label="Event date" value={row.event_date} />
-              <DetailField label="Approved by" value={row.approved_by} />
-              <DetailField label="Approval date" value={row.approval_date} />
-              <DetailField label="Steps count" value={row.steps_count} />
-              <DetailField label="Note" value={row.note} />
-              <DetailField label="Reviewer note" value={row.reviewer_note} />
-              <DetailField label="Segment" value={row.segment_summary} />
-              <DetailField label="Changes" value={row.changes_summary} />
-            </div>
-          )}
-          {isHr ? (
-            <AuditList items={row.audit_trail} />
+          <ChangesBlock changes={row.changes_summary} priorChanges={row.prior_changes_summary} />
+          <div className="mt-1 grid gap-x-6 sm:grid-cols-2">
+            <DetailField label="Status" value={row.status} />
+            <DetailField label="Origin" value={row.origin} />
+            <DetailField label="Event date" value={row.event_date} />
+            <DetailField label="Approved by" value={row.approved_by} />
+            <DetailField label="Approval date" value={row.approval_date} />
+            <DetailField label="Steps count" value={row.steps_count} />
+            <DetailField label="Note" value={row.note} />
+            <DetailField label="Reviewer note" value={row.reviewer_note} />
+            <DetailField label="Segment" value={row.segment_summary} />
+          </div>
+          {stepsMissing ? (
+            <p className="mt-3 text-[12px] text-muted-foreground">
+              Steps snapshot was not stored for this older history event. New versions will keep a
+              full step list; use &quot;What changed&quot; above for the edit history.
+            </p>
           ) : (
             <StepsSnapshot steps={row.steps_detail} />
           )}
@@ -340,40 +346,6 @@ function DetailField({ label, value }: { label: string; value: unknown }) {
         {label}
       </p>
       <p className="mt-1 whitespace-pre-wrap break-words text-[13px] text-foreground">{text}</p>
-    </div>
-  );
-}
-
-function AuditList({ items }: { items: unknown }) {
-  if (!Array.isArray(items) || items.length === 0) return null;
-  return (
-    <div className="mt-3">
-      <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        Audit trail
-      </p>
-      <ul className="space-y-2">
-        {items.map((ev, i) => {
-          const row = (ev && typeof ev === "object" ? ev : {}) as Record<string, unknown>;
-          return (
-            <li
-              key={i}
-              className="rounded-md border border-border/70 bg-surface px-3 py-2 text-[12px]"
-            >
-              <p className="font-medium text-foreground">{asText(row.event)}</p>
-              {row.detail ? (
-                <p className="mt-0.5 text-muted-foreground">{asText(row.detail)}</p>
-              ) : null}
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                {row.actor ? `${asText(row.actor)} · ` : ""}
-                {asText(row.at)}
-                {row.before_status || row.after_status
-                  ? ` · ${asText(row.before_status)} → ${asText(row.after_status)}`
-                  : ""}
-              </p>
-            </li>
-          );
-        })}
-      </ul>
     </div>
   );
 }
@@ -474,7 +446,7 @@ export function PayFlowAiEvalExportPage() {
       <PageHeader
         breadcrumb={[{ label: "Reports" }, { label: "AI Eval Export" }]}
         title="AI evaluation"
-        description="Workflow AI proposals and human-review outcomes — use this to judge AI performance."
+        description="One row per workflow. Expand a row to compare versions and see what changed."
         actions={
           <div className="flex flex-wrap gap-2">
             <Btn variant="secondary" disabled={loading} onClick={() => void runPreview()}>
@@ -524,7 +496,7 @@ export function PayFlowAiEvalExportPage() {
       {!preview && !loading ? (
         <EmptyState
           title="Generate a preview"
-          description="Choose a client scope and run Generate preview to inspect AI vs human decisions."
+          description="Choose a client scope and run Generate preview to inspect workflow version history."
         />
       ) : null}
 
@@ -532,39 +504,31 @@ export function PayFlowAiEvalExportPage() {
         <>
           <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <KpiCard
-              label="AI-origin workflow versions"
+              label="Workflows"
+              value={String(groups.length)}
+              hint={`${performance?.workflow_versions ?? rows.length} version event(s)`}
+            />
+            <KpiCard
+              label="AI-origin versions"
               value={String(performance?.ai_origin_versions ?? 0)}
               hint={`${performance?.human_created_versions ?? 0} human-created`}
             />
             <KpiCard
-              label="HR approval rate"
+              label="Approved / active"
               value={
                 performance?.approval_rate_pct != null
                   ? `${performance.approval_rate_pct}%`
                   : "—"
               }
-              hint={`${performance?.hr_approved ?? 0} approved / ${performance?.hr_decided ?? 0} decided`}
+              hint={`${performance?.hr_approved ?? 0} approved · ${performance?.hr_held ?? 0} in review`}
             />
             <KpiCard
-              label="HR rejection rate"
-              value={
-                performance?.rejection_rate_pct != null
-                  ? `${performance.rejection_rate_pct}%`
-                  : "—"
-              }
-              hint={`${performance?.hr_rejected ?? 0} rejected · ${performance?.hr_modified ?? 0} modified`}
-            />
-            <KpiCard
-              label="Avg AI confidence"
-              value={
-                performance?.avg_confidence != null
-                  ? String(performance.avg_confidence)
-                  : "—"
-              }
+              label="Versions with edits"
+              value={String(performance?.hr_modified ?? 0)}
               hint={
                 preview.export_reference
                   ? `Ref ${preview.export_reference}`
-                  : undefined
+                  : "Step changes recorded in history"
               }
             />
           </div>
@@ -572,39 +536,29 @@ export function PayFlowAiEvalExportPage() {
           <div className="space-y-5">
             <Panel
               title="Evaluation list"
-              description={`${groups.length} evaluation(s) · ${rows.length} version(s) · click to open all versions below`}
+              description={`${groups.length} workflow(s) · ${rows.length} version(s) · click a row to open version history below`}
             >
               {groups.length === 0 ? (
                 <EmptyState
                   title="No evaluation rows"
-                  description="No workflow versions or human reviews in this scope yet."
+                  description="No workflow versions in this scope yet."
                 />
               ) : (
                 <DataTable
                   minWidth={720}
-                  head={["Type", "Client", "Item", "Latest status", "Versions"]}
+                  head={["Client", "Workflow", "Latest status", "Versions"]}
                 >
                   {groups.map((g) => {
                     const active = g.key === selectedKey;
-                    const latest = g.latest;
-                    const decision = asText(
-                      latest.decision_outcome || latest.review_status || latest.status,
-                    );
+                    const decision = asText(g.latest.status);
                     return (
                       <Tr
                         key={g.key}
                         className={active ? "bg-primary/5" : undefined}
                         onClick={() => selectRow(g.key)}
                       >
-                        <Td>
-                          <StatusPill
-                            tone={g.row_type === "human_review" ? "warning" : "info"}
-                          >
-                            {g.row_type === "human_review" ? "Human review" : "Workflow"}
-                          </StatusPill>
-                        </Td>
                         <Td>{asText(g.client_code || g.client_name)}</Td>
-                        <Td className="max-w-[240px] truncate">{g.item_name}</Td>
+                        <Td className="max-w-[280px] truncate">{g.item_name}</Td>
                         <Td>
                           <StatusPill tone={decisionTone(decision)}>{decision}</StatusPill>
                         </Td>
@@ -624,24 +578,18 @@ export function PayFlowAiEvalExportPage() {
                 description={
                   selected
                     ? `${selected.item_name} · ${selected.versions.length} version(s)`
-                    : "All versions for the selected evaluation"
+                    : "Version history for the selected workflow"
                 }
               >
                 {!selected ? (
                   <EmptyState
                     title="No evaluation selected"
-                    description="Choose a row above to inspect every version in the detail card."
+                    description="Choose a workflow above to inspect version history and changes."
                   />
                 ) : (
                   <div>
                     <div className="mb-4 flex flex-wrap items-center gap-2">
-                      <StatusPill
-                        tone={selected.row_type === "human_review" ? "warning" : "info"}
-                      >
-                        {selected.row_type === "human_review"
-                          ? "Human review"
-                          : "Workflow"}
-                      </StatusPill>
+                      <StatusPill tone="info">Workflow</StatusPill>
                       <span className="text-[13px] font-medium text-foreground">
                         {selected.item_name}
                       </span>
@@ -649,14 +597,6 @@ export function PayFlowAiEvalExportPage() {
                         <span className="text-[12px] text-muted-foreground">
                           {asText(selected.client_name || selected.client_code)}
                         </span>
-                      ) : null}
-                      {selected.account_id ? (
-                        <Link
-                          to={`/payflow/cases/${selected.account_id}`}
-                          className="text-[12.5px] font-medium text-primary hover:underline"
-                        >
-                          Open case
-                        </Link>
                       ) : null}
                       {selected.strategy_id ? (
                         <Link
@@ -670,11 +610,7 @@ export function PayFlowAiEvalExportPage() {
                     <div className="space-y-3">
                       {selected.versions.map((v, i) => (
                         <VersionCard
-                          key={`${selected.key}-${
-                            v.row_type === "human_review"
-                              ? `hr-${v.review_id ?? i}`
-                              : `wv-v${v.version ?? i}-${i}`
-                          }`}
+                          key={`${selected.key}-wv-v${v.version ?? i}-${i}`}
                           row={v}
                           defaultExpanded={i === 0}
                         />

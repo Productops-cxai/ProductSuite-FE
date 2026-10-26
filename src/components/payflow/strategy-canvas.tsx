@@ -195,31 +195,33 @@ function NodeCard({
       title={highlighted && !selected ? "Exception step for this human review" : undefined}
     >
       <span className={cn("absolute inset-x-0 top-0 h-[3px] rounded-t-xl", topBar(node.kind))} aria-hidden />
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 items-center gap-1.5">
         <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-lg", accent(node.kind))}>
           <NodeIcon kind={node.kind} channel={channel} />
         </span>
-        <span className="text-[10px] font-bold tracking-wide text-muted-foreground uppercase">
+        <span className="min-w-0 flex-1 truncate text-[10px] font-bold tracking-wide text-muted-foreground uppercase">
           {node.kind}
         </span>
-        {node.origin === "Human Modified" && (
-          <span className="ml-auto rounded-full bg-info/10 px-1.5 py-[1px] text-[9.5px] font-bold text-info">
-            Human
-          </span>
-        )}
-        {onExpand && (
-          <button
-            type="button"
-            className="ml-auto rounded-md border border-border/70 bg-surface px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground hover:text-foreground"
-            onClick={(e) => {
-              e.stopPropagation();
-              onExpand();
-            }}
-            title="Expand step editor"
-          >
-            Expand
-          </button>
-        )}
+        <div className="flex shrink-0 items-center gap-1">
+          {node.origin === "Human Modified" && (
+            <span className="rounded-full bg-info/10 px-1.5 py-[1px] text-[9.5px] font-bold text-info">
+              Human
+            </span>
+          )}
+          {onExpand && (
+            <button
+              type="button"
+              className="rounded-md border border-border/70 bg-surface px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground hover:text-foreground"
+              onClick={(e) => {
+                e.stopPropagation();
+                onExpand();
+              }}
+              title="Expand step editor"
+            >
+              Expand
+            </button>
+          )}
+        </div>
       </div>
       <p className="mt-2 text-[13px] leading-snug font-semibold text-foreground">{node.title}</p>
       {condition && <p className="mt-1 text-[11.5px] text-muted-foreground">{condition}</p>}
