@@ -295,7 +295,6 @@ export function CustomerPaymentPortalPage() {
   const [error, setError] = useState("");
   const [step, setStep] = useState<PortalStep>("options");
   const [selectedId, setSelectedId] = useState<string>("");
-  const [planFrequency, setPlanFrequency] = useState<PlanFrequency | null>(null);
   const [partialAmount, setPartialAmount] = useState("");
   const [initiating, setInitiating] = useState(false);
   const [actionError, setActionError] = useState("");
@@ -360,18 +359,6 @@ export function CustomerPaymentPortalPage() {
       portal?.payment_options.find((o) => o.type === "payment_plan"),
     [portal],
   );
-  const plansForFrequency = useMemo(() => {
-    if (!planFrequency) return planOpts;
-    return planOpts.filter(
-      (o) => (o.frequency || "monthly").toLowerCase() === planFrequency,
-    );
-  }, [planOpts, planFrequency]);
-  const availableFrequencies = useMemo(() => {
-    const set = new Set(
-      planOpts.map((o) => (o.frequency || "monthly").toLowerCase()),
-    );
-    return PLAN_FREQUENCIES.filter((f) => set.has(f.id));
-  }, [planOpts]);
   const nextOpt = useMemo(
     () => portal?.payment_options.find((o) => o.type === "pay_next_instalment"),
     [portal],
@@ -758,43 +745,6 @@ export function CustomerPaymentPortalPage() {
           >
             Continue
           </button>
-        </StepCard>
-      )}
-
-      {step === "plan-frequency" && (
-        <StepCard title="Select how often you would like to pay" onBack={() => setStep("options")}>
-          <p className="text-[13px] leading-relaxed text-muted-foreground">
-            Tip: sync your payment plan to your pay cycle to stay on top of your balance.
-          </p>
-          <div className="space-y-2.5">
-            {(availableFrequencies.length ? availableFrequencies : PLAN_FREQUENCIES).map(
-              (freq) => {
-                const enabled = planOpts.some(
-                  (o) => (o.frequency || "monthly").toLowerCase() === freq.id,
-                );
-                const active = planFrequency === freq.id;
-                return (
-                  <button
-                    key={freq.id}
-                    type="button"
-                    disabled={!enabled}
-                    onClick={() => selectPlanFrequency(freq.id)}
-                    className={cn(
-                      "w-full rounded-xl border bg-card px-4 py-4 text-left transition-colors",
-                      active
-                        ? "border-foreground ring-1 ring-foreground"
-                        : "border-border hover:bg-surface",
-                      !enabled && "cursor-not-allowed opacity-45",
-                    )}
-                  >
-                    <p className="text-[15px] font-semibold text-foreground">{freq.title}</p>
-                    <p className="mt-0.5 text-[13px] text-muted-foreground">{freq.description}</p>
-                  </button>
-                );
-              },
-            )}
-          </div>
-          <p className="text-[12px] leading-relaxed text-muted-foreground">{PLAN_NOTE}</p>
         </StepCard>
       )}
 
