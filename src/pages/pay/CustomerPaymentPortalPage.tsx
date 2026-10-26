@@ -19,10 +19,23 @@ type PortalStep =
   | "options"
   | "full"
   | "partial"
+  | "plan-frequency"
   | "plan-select"
   | "plan-detail"
   | "next"
   | "review";
+
+type PlanFrequency = "daily" | "weekly" | "monthly";
+
+const PLAN_FREQUENCIES: Array<{
+  id: PlanFrequency;
+  title: string;
+  description: string;
+}> = [
+  { id: "daily", title: "Daily", description: "Small amounts, paid each day" },
+  { id: "weekly", title: "Weekly", description: "Sync with a weekly pay cycle" },
+  { id: "monthly", title: "Monthly", description: "One payment each month" },
+];
 
 function formatMoney(amount: number, currency: string) {
   try {
@@ -261,6 +274,7 @@ export function CustomerPaymentPortalPage() {
   const [error, setError] = useState("");
   const [step, setStep] = useState<PortalStep>("options");
   const [selectedId, setSelectedId] = useState<string>("");
+  const [planFrequency, setPlanFrequency] = useState<PlanFrequency | null>(null);
   const [partialAmount, setPartialAmount] = useState("");
   const [initiating, setInitiating] = useState(false);
   const [actionError, setActionError] = useState("");
@@ -316,6 +330,18 @@ export function CustomerPaymentPortalPage() {
     () => portal?.payment_options.filter((o) => o.type === "payment_plan") || [],
     [portal],
   );
+  const plansForFrequency = useMemo(() => {
+    if (!planFrequency) return planOpts;
+    return planOpts.filter(
+      (o) => (o.frequency || "monthly").toLowerCase() === planFrequency,
+    );
+  }, [planOpts, planFrequency]);
+  const availableFrequencies = useMemo(() => {
+    const set = new Set(
+      planOpts.map((o) => (o.frequency || "monthly").toLowerCase()),
+    );
+    return PLAN_FREQUENCIES.filter((f) => set.has(f.id));
+  }, [planOpts]);
   const nextOpt = useMemo(
     () => portal?.payment_options.find((o) => o.type === "pay_next_instalment"),
     [portal],
@@ -326,25 +352,50 @@ export function CustomerPaymentPortalPage() {
     [portal, selectedId],
   );
 
+  /** Raw entered amount — do not clamp to min (that silently upgraded low amounts). */
   const partialValue = useMemo(() => {
     const n = Number(partialAmount);
-    if (!Number.isFinite(n)) return 0;
-    const min = partialOpt?.min_amount ?? 0;
-    const max = partialOpt?.max_amount ?? outstanding;
-    return Math.min(Math.max(n, min), max || outstanding);
-  }, [partialAmount, partialOpt, outstanding]);
+    if (!Number.isFinite(n) || partialAmount.trim() === "") return 0;
+    return n;
+  }, [partialAmount]);
 
-  const remainingAfterPartial = Math.max(outstanding - partialValue, 0);
+  const partialMin = partialOpt?.min_amount ?? 0;
+  const partialMax = partialOpt?.max_amount ?? outstanding;
+  const partialError = useMemo(() => {
+    if (!partialOpt || step !== "partial") return "";
+    if (partialAmount.trim() === "") return "Enter a payment amount.";
+    if (!Number.isFinite(partialValue) || partialValue <= 0) {
+      return "Enter a valid payment amount.";
+    }
+    if (partialValue < partialMin) {
+      return `Amount must be at least ${formatMoney(partialMin, currency)}.`;
+    }
+    if (partialValue > partialMax) {
+      return `Amount cannot exceed ${formatMoney(partialMax, currency)}.`;
+    }
+    return "";
+  }, [
+    partialOpt,
+    step,
+    partialAmount,
+    partialValue,
+    partialMin,
+    partialMax,
+    currency,
+  ]);
+
+  const remainingAfterPartial = Math.max(outstanding - Math.max(partialValue, 0), 0);
 
   const chargeAmount = useMemo(() => {
     if (!selected || !portal) return null;
     if (selected.amount_editable) {
+      if (partialError) return null;
       if (partialValue < (selected.min_amount || 0)) return null;
       if (selected.max_amount != null && partialValue > selected.max_amount) return null;
       return partialValue > 0 ? partialValue : null;
     }
     return selected.amount ?? portal.case.outstanding_balance;
-  }, [selected, partialValue, portal]);
+  }, [selected, partialValue, portal, partialError]);
 
   const isPreview = Boolean(portal?.preview_mode || previewMode);
   const brandName = portal?.brand?.name || "PayFlow";
@@ -355,9 +406,42 @@ export function CustomerPaymentPortalPage() {
     "w-full rounded-lg border border-border-strong bg-card px-4 py-3 text-[14px] font-medium text-foreground transition-colors hover:bg-surface";
 
   function goReview(option: PayflowPaymentPortalOption) {
+    if (option.amount_editable && partialError) return;
     setSelectedId(option.id);
     setActionError("");
     setStep("review");
+  }
+
+  function openPaymentPlans() {
+    setPlanFrequency(null);
+    if (availableFrequencies.length === 1) {
+      const only = availableFrequencies[0]!.id;
+      setPlanFrequency(only);
+      const matched = planOpts.filter(
+        (o) => (o.frequency || "monthly").toLowerCase() === only,
+      );
+      if (matched.length === 1) {
+        setSelectedId(matched[0]!.id);
+        setStep("plan-detail");
+        return;
+      }
+      setStep("plan-select");
+      return;
+    }
+    setStep("plan-frequency");
+  }
+
+  function selectPlanFrequency(freq: PlanFrequency) {
+    setPlanFrequency(freq);
+    const matched = planOpts.filter(
+      (o) => (o.frequency || "monthly").toLowerCase() === freq,
+    );
+    if (matched.length === 1) {
+      setSelectedId(matched[0]!.id);
+      setStep("plan-detail");
+      return;
+    }
+    setStep("plan-select");
   }
 
   async function handleConfirmPay() {
@@ -502,14 +586,7 @@ export function CustomerPaymentPortalPage() {
               </button>
             ) : null}
             {planOpts.length > 0 ? (
-              <button
-                type="button"
-                className={outlineBtn}
-                onClick={() => {
-                  setSelectedId(planOpts[0].id);
-                  setStep("plan-select");
-                }}
-              >
+              <button type="button" className={outlineBtn} onClick={openPaymentPlans}>
                 Set Up a Payment Plan
               </button>
             ) : null}
@@ -583,7 +660,12 @@ export function CustomerPaymentPortalPage() {
             >
               Payment Amount
             </label>
-            <div className="flex items-center gap-2 rounded-lg border border-border-strong bg-card px-3 py-2.5">
+            <div
+              className={cn(
+                "flex items-center gap-2 rounded-lg border bg-card px-3 py-2.5",
+                partialError ? "border-destructive" : "border-border-strong",
+              )}
+            >
               <span className="text-[15px] text-muted-foreground">$</span>
               <input
                 id="partial-amount"
@@ -591,13 +673,17 @@ export function CustomerPaymentPortalPage() {
                 value={partialAmount}
                 onChange={(e) => setPartialAmount(e.target.value.replace(/[^0-9.]/g, ""))}
                 placeholder="0.00"
+                aria-invalid={Boolean(partialError)}
                 className="tabular w-full bg-transparent text-[15px] text-foreground outline-none"
               />
             </div>
-            <p className="mt-1.5 text-[12px] text-muted-foreground">
-              Between {formatMoney(partialOpt.min_amount || 0, currency)} and{" "}
-              {formatMoney(partialOpt.max_amount || outstanding, currency)}
-            </p>
+            {partialError ? (
+              <p className="mt-1.5 text-[12px] font-medium text-destructive">{partialError}</p>
+            ) : (
+              <p className="mt-1.5 text-[12px] text-muted-foreground">
+                Between {formatMoney(partialMin, currency)} and {formatMoney(partialMax, currency)}
+              </p>
+            )}
           </div>
           <Row
             label="Remaining Balance after payment"
@@ -605,12 +691,8 @@ export function CustomerPaymentPortalPage() {
           />
           <button
             type="button"
-            className={cn(accentBtn, (!(chargeAmount && chargeAmount > 0) || (partialOpt.min_amount != null && partialValue < partialOpt.min_amount)) && "opacity-50")}
-            disabled={
-              !chargeAmount ||
-              chargeAmount <= 0 ||
-              (partialOpt.min_amount != null && partialValue < partialOpt.min_amount)
-            }
+            className={cn(accentBtn, (!chargeAmount || Boolean(partialError)) && "opacity-50")}
+            disabled={!chargeAmount || Boolean(partialError)}
             onClick={() => goReview(partialOpt)}
           >
             Continue
@@ -618,13 +700,57 @@ export function CustomerPaymentPortalPage() {
         </StepCard>
       )}
 
-      {step === "plan-select" && (
-        <StepCard title="Select a payment plan" onBack={() => setStep("options")}>
+      {step === "plan-frequency" && (
+        <StepCard title="Select how often you would like to pay" onBack={() => setStep("options")}>
           <p className="text-[13px] leading-relaxed text-muted-foreground">
-            Tip: choose a plan that fits your pay cycle so you can stay on top of your balance.
+            Tip: sync your payment plan to your pay cycle to stay on top of your balance.
           </p>
           <div className="space-y-2.5">
-            {planOpts.map((option) => (
+            {(availableFrequencies.length ? availableFrequencies : PLAN_FREQUENCIES).map(
+              (freq) => {
+                const enabled = planOpts.some(
+                  (o) => (o.frequency || "monthly").toLowerCase() === freq.id,
+                );
+                const active = planFrequency === freq.id;
+                return (
+                  <button
+                    key={freq.id}
+                    type="button"
+                    disabled={!enabled}
+                    onClick={() => selectPlanFrequency(freq.id)}
+                    className={cn(
+                      "w-full rounded-xl border bg-card px-4 py-4 text-left transition-colors",
+                      active
+                        ? "border-foreground ring-1 ring-foreground"
+                        : "border-border hover:bg-surface",
+                      !enabled && "cursor-not-allowed opacity-45",
+                    )}
+                  >
+                    <p className="text-[15px] font-semibold text-foreground">{freq.title}</p>
+                    <p className="mt-0.5 text-[13px] text-muted-foreground">{freq.description}</p>
+                  </button>
+                );
+              },
+            )}
+          </div>
+          <p className="text-[12px] leading-relaxed text-muted-foreground">{PLAN_NOTE}</p>
+        </StepCard>
+      )}
+
+      {step === "plan-select" && (
+        <StepCard
+          title="Select a payment plan"
+          onBack={() =>
+            setStep(availableFrequencies.length > 1 ? "plan-frequency" : "options")
+          }
+        >
+          <p className="text-[13px] leading-relaxed text-muted-foreground">
+            {planFrequency
+              ? `${planFrequency.charAt(0).toUpperCase()}${planFrequency.slice(1)} plans available for this account.`
+              : "Choose a plan that fits your pay cycle so you can stay on top of your balance."}
+          </p>
+          <div className="space-y-2.5">
+            {(plansForFrequency.length ? plansForFrequency : planOpts).map((option) => (
               <button
                 key={option.id}
                 type="button"
@@ -652,7 +778,16 @@ export function CustomerPaymentPortalPage() {
       )}
 
       {step === "plan-detail" && selected?.type === "payment_plan" && (
-        <StepCard title="Payment plan details" onBack={() => setStep("plan-select")}>
+        <StepCard
+          title="Payment plan details"
+          onBack={() => {
+            if (plansForFrequency.length > 1 || (!planFrequency && planOpts.length > 1)) {
+              setStep("plan-select");
+              return;
+            }
+            setStep(availableFrequencies.length > 1 ? "plan-frequency" : "options");
+          }}
+        >
           <Row label="Outstanding Balance" value={formatMoney(outstanding, currency)} />
           <Row
             label="Instalment Amount (today)"
