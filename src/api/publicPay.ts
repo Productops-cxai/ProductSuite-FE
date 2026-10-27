@@ -13,9 +13,49 @@ export function resolvePaymentPortal(token: string, opts?: { preview?: boolean }
   );
 }
 
+export type PayflowPlanQuote = {
+  frequency: string;
+  suggested_installment: number;
+  installment_amount: number;
+  installments_total: number;
+  total_payable: number;
+  currency_code: string;
+  start_date: string;
+  first_payment_date: string;
+  final_payment_date: string;
+  charge_today: boolean;
+  first_charge_amount: number;
+  setup_only: boolean;
+  auto_charge_enabled: boolean;
+  schedule: { sequence: number; amount: number; due_date: string; frequency?: string }[];
+  option_id: string;
+  label: string;
+};
+
+export function quotePaymentPlan(
+  token: string,
+  payload: {
+    frequency: string;
+    installment_amount?: number;
+    start_date?: string;
+  },
+) {
+  return apiRequest<PayflowPlanQuote>(
+    `/payflow/public/payment-links/${encodeURIComponent(token)}/plan-quote`,
+    { method: "POST", body: payload, auth: false },
+  );
+}
+
 export function initiatePaymentPortal(
   token: string,
-  payload: { option_id: string; amount?: number; idempotency_key?: string },
+  payload: {
+    option_id: string;
+    amount?: number;
+    idempotency_key?: string;
+    frequency?: string;
+    installment_amount?: number;
+    start_date?: string;
+  },
 ) {
   return apiRequest<PayflowPaymentAttempt>(
     `/payflow/public/payment-links/${encodeURIComponent(token)}/initiate`,

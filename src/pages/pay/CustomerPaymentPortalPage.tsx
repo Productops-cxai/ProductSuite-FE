@@ -6,7 +6,9 @@ import {
   getPaymentAttempt,
   initiatePaymentPortal,
   mockPaymentOutcome,
+  quotePaymentPlan,
   resolvePaymentPortal,
+  type PayflowPlanQuote,
 } from "../../api/publicPay";
 import type {
   PayflowPaymentAttempt,
@@ -20,8 +22,8 @@ type PortalStep =
   | "full"
   | "partial"
   | "plan-frequency"
-  | "plan-select"
-  | "plan-detail"
+  | "plan-schedule"
+  | "plan-amount"
   | "next"
   | "review";
 
@@ -31,11 +33,30 @@ const PLAN_FREQUENCIES: Array<{
   id: PlanFrequency;
   title: string;
   description: string;
+  every: string;
 }> = [
-  { id: "daily", title: "Daily", description: "Small amounts, paid each day" },
-  { id: "weekly", title: "Weekly", description: "Sync with a weekly pay cycle" },
-  { id: "monthly", title: "Monthly", description: "One payment each month" },
+  { id: "daily", title: "Daily", description: "Small amounts, paid each day", every: "every day" },
+  {
+    id: "weekly",
+    title: "Weekly",
+    description: "Sync with a weekly pay cycle",
+    every: "every week",
+  },
+  {
+    id: "monthly",
+    title: "Monthly",
+    description: "One payment each month",
+    every: "every month",
+  },
 ];
+
+function todayISO() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
 function formatMoney(amount: number, currency: string) {
   try {
@@ -263,7 +284,7 @@ function PortalShell({
 }
 
 const PLAN_NOTE =
-  "Future instalments are not charged automatically. You will receive a reminder before each due date.";
+  "Future instalments are auto-charged to your saved Card or Bank Account on each due date. You can still pay the next instalment manually if auto-charge is paused.";
 
 export function CustomerPaymentPortalPage() {
   const { token = "" } = useParams<{ token: string }>();
@@ -274,10 +295,16 @@ export function CustomerPaymentPortalPage() {
   const [error, setError] = useState("");
   const [step, setStep] = useState<PortalStep>("options");
   const [selectedId, setSelectedId] = useState<string>("");
-  const [planFrequency, setPlanFrequency] = useState<PlanFrequency | null>(null);
   const [partialAmount, setPartialAmount] = useState("");
   const [initiating, setInitiating] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [planFrequency, setPlanFrequency] = useState<PlanFrequency>("weekly");
+  const [planStartMode, setPlanStartMode] = useState<"today" | "custom">("today");
+  const [planStartDate, setPlanStartDate] = useState(todayISO());
+  const [planAmountInput, setPlanAmountInput] = useState("");
+  const [planQuote, setPlanQuote] = useState<PayflowPlanQuote | null>(null);
+  const [planQuoteError, setPlanQuoteError] = useState("");
+  const [quoting, setQuoting] = useState(false);
 
   useEffect(() => {
     if (!token) {
@@ -326,22 +353,12 @@ export function CustomerPaymentPortalPage() {
     () => portal?.payment_options.find((o) => o.type === "partial"),
     [portal],
   );
-  const planOpts = useMemo(
-    () => portal?.payment_options.filter((o) => o.type === "payment_plan") || [],
+  const planOpt = useMemo(
+    () =>
+      portal?.payment_options.find((o) => o.type === "payment_plan" && o.custom_plan) ||
+      portal?.payment_options.find((o) => o.type === "payment_plan"),
     [portal],
   );
-  const plansForFrequency = useMemo(() => {
-    if (!planFrequency) return planOpts;
-    return planOpts.filter(
-      (o) => (o.frequency || "monthly").toLowerCase() === planFrequency,
-    );
-  }, [planOpts, planFrequency]);
-  const availableFrequencies = useMemo(() => {
-    const set = new Set(
-      planOpts.map((o) => (o.frequency || "monthly").toLowerCase()),
-    );
-    return PLAN_FREQUENCIES.filter((f) => set.has(f.id));
-  }, [planOpts]);
   const nextOpt = useMemo(
     () => portal?.payment_options.find((o) => o.type === "pay_next_instalment"),
     [portal],
@@ -384,10 +401,17 @@ export function CustomerPaymentPortalPage() {
     currency,
   ]);
 
-  const remainingAfterPartial = Math.max(outstanding - Math.max(partialValue, 0), 0);
+  const remainingAfterPartial = Math.max(outstanding - partialValue, 0);
+
+  const effectiveStartDate = planStartMode === "today" ? todayISO() : planStartDate;
+  const freqMeta = PLAN_FREQUENCIES.find((f) => f.id === planFrequency) || PLAN_FREQUENCIES[1];
 
   const chargeAmount = useMemo(() => {
     if (!selected || !portal) return null;
+    if (selected.type === "payment_plan" && selected.custom_plan) {
+      if (!planQuote) return null;
+      return planQuote.setup_only ? 0 : planQuote.first_charge_amount;
+    }
     if (selected.amount_editable) {
       if (partialError) return null;
       if (partialValue < (selected.min_amount || 0)) return null;
@@ -395,7 +419,7 @@ export function CustomerPaymentPortalPage() {
       return partialValue > 0 ? partialValue : null;
     }
     return selected.amount ?? portal.case.outstanding_balance;
-  }, [selected, partialValue, portal, partialError]);
+  }, [selected, partialValue, portal, planQuote]);
 
   const isPreview = Boolean(portal?.preview_mode || previewMode);
   const brandName = portal?.brand?.name || "PayFlow";
@@ -405,6 +429,70 @@ export function CustomerPaymentPortalPage() {
   const outlineBtn =
     "w-full rounded-lg border border-border-strong bg-card px-4 py-3 text-[14px] font-medium text-foreground transition-colors hover:bg-surface";
 
+  // Seed suggested amount once when landing on plan-amount — never overwrite while typing.
+  useEffect(() => {
+    if (step !== "plan-amount" || !token || !planOpt) return;
+    if (planAmountInput.trim() !== "") return;
+    let cancelled = false;
+    quotePaymentPlan(token, {
+      frequency: planFrequency,
+      start_date: effectiveStartDate,
+    })
+      .then((q) => {
+        if (cancelled) return;
+        setPlanQuote(q);
+        setPlanAmountInput(String(q.suggested_installment));
+        setPlanQuoteError("");
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setPlanQuoteError(err instanceof ApiError ? err.detail : "Unable to calculate plan");
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Intentionally omit planAmountInput so typing does not re-seed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, token, planOpt, planFrequency, effectiveStartDate]);
+
+  // Live quote from whatever amount the user typed (no clamp to suggested).
+  useEffect(() => {
+    if (step !== "plan-amount" || !token || !planOpt) return;
+    const amountNum = Number(planAmountInput);
+    if (!Number.isFinite(amountNum) || amountNum <= 0 || planAmountInput.trim() === "") {
+      setPlanQuote(null);
+      setPlanQuoteError("");
+      setQuoting(false);
+      return;
+    }
+    let cancelled = false;
+    setQuoting(true);
+    setPlanQuoteError("");
+    const handle = window.setTimeout(() => {
+      quotePaymentPlan(token, {
+        frequency: planFrequency,
+        start_date: effectiveStartDate,
+        installment_amount: amountNum,
+      })
+        .then((q) => {
+          if (cancelled) return;
+          setPlanQuote(q);
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          setPlanQuote(null);
+          setPlanQuoteError(err instanceof ApiError ? err.detail : "Unable to calculate plan");
+        })
+        .finally(() => {
+          if (!cancelled) setQuoting(false);
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [step, token, planOpt, planFrequency, effectiveStartDate, planAmountInput]);
+
   function goReview(option: PayflowPaymentPortalOption) {
     if (option.amount_editable && partialError) return;
     setSelectedId(option.id);
@@ -412,42 +500,29 @@ export function CustomerPaymentPortalPage() {
     setStep("review");
   }
 
-  function openPaymentPlans() {
-    setPlanFrequency(null);
-    if (availableFrequencies.length === 1) {
-      const only = availableFrequencies[0]!.id;
-      setPlanFrequency(only);
-      const matched = planOpts.filter(
-        (o) => (o.frequency || "monthly").toLowerCase() === only,
-      );
-      if (matched.length === 1) {
-        setSelectedId(matched[0]!.id);
-        setStep("plan-detail");
-        return;
-      }
-      setStep("plan-select");
-      return;
-    }
+  function startPlanFlow() {
+    if (!planOpt) return;
+    setSelectedId(planOpt.id);
+    setPlanFrequency("weekly");
+    setPlanStartMode("today");
+    setPlanStartDate(todayISO());
+    setPlanAmountInput("");
+    setPlanQuote(null);
+    setPlanQuoteError("");
+    setActionError("");
     setStep("plan-frequency");
   }
 
-  function selectPlanFrequency(freq: PlanFrequency) {
-    setPlanFrequency(freq);
-    const matched = planOpts.filter(
-      (o) => (o.frequency || "monthly").toLowerCase() === freq,
-    );
-    if (matched.length === 1) {
-      setSelectedId(matched[0]!.id);
-      setStep("plan-detail");
-      return;
-    }
-    setStep("plan-select");
-  }
-
   async function handleConfirmPay() {
-    if (!token || !selected || chargeAmount == null || initiating) return;
+    if (!token || !selected || initiating) return;
     if (portal?.preview_mode || previewMode) {
       setActionError("Preview only — checkout is disabled.");
+      return;
+    }
+    const isCustomPlan = selected.type === "payment_plan" && Boolean(selected.custom_plan);
+    if (!isCustomPlan && chargeAmount == null) return;
+    if (isCustomPlan && !planQuote) {
+      setActionError("Please set a valid instalment amount first.");
       return;
     }
     setInitiating(true);
@@ -455,8 +530,11 @@ export function CustomerPaymentPortalPage() {
     try {
       const attempt = await initiatePaymentPortal(token, {
         option_id: selected.id,
-        amount: selected.amount_editable ? chargeAmount : undefined,
-        idempotency_key: `portal-${token.slice(0, 12)}-${selected.id}-${chargeAmount}-${Date.now()}`,
+        amount: selected.amount_editable && !isCustomPlan ? chargeAmount! : undefined,
+        frequency: isCustomPlan ? planFrequency : undefined,
+        installment_amount: isCustomPlan ? planQuote!.installment_amount : undefined,
+        start_date: isCustomPlan ? planQuote!.start_date : undefined,
+        idempotency_key: `portal-${token.slice(0, 12)}-${selected.id}-${Date.now()}`,
       });
       if (attempt.checkout_url) {
         window.location.assign(attempt.checkout_url);
@@ -585,8 +663,8 @@ export function CustomerPaymentPortalPage() {
                 Make a Partial Payment
               </button>
             ) : null}
-            {planOpts.length > 0 ? (
-              <button type="button" className={outlineBtn} onClick={openPaymentPlans}>
+            {planOpt ? (
+              <button type="button" className={outlineBtn} onClick={startPlanFlow}>
                 Set Up a Payment Plan
               </button>
             ) : null}
@@ -603,7 +681,7 @@ export function CustomerPaymentPortalPage() {
                 {nextOpt.amount != null ? ` · ${formatMoney(nextOpt.amount, currency)}` : ""}
               </button>
             ) : null}
-            {!fullOpt && !partialOpt && planOpts.length === 0 && !nextOpt ? (
+            {!fullOpt && !partialOpt && !planOpt && !nextOpt ? (
               <p className="text-[13px] text-muted-foreground">No payment options are available.</p>
             ) : null}
           </div>
@@ -700,76 +778,31 @@ export function CustomerPaymentPortalPage() {
         </StepCard>
       )}
 
-      {step === "plan-frequency" && (
+      {step === "plan-frequency" && planOpt && (
         <StepCard title="Select how often you would like to pay" onBack={() => setStep("options")}>
           <p className="text-[13px] leading-relaxed text-muted-foreground">
             Tip: sync your payment plan to your pay cycle to stay on top of your balance.
           </p>
           <div className="space-y-2.5">
-            {(availableFrequencies.length ? availableFrequencies : PLAN_FREQUENCIES).map(
-              (freq) => {
-                const enabled = planOpts.some(
-                  (o) => (o.frequency || "monthly").toLowerCase() === freq.id,
-                );
-                const active = planFrequency === freq.id;
-                return (
-                  <button
-                    key={freq.id}
-                    type="button"
-                    disabled={!enabled}
-                    onClick={() => selectPlanFrequency(freq.id)}
-                    className={cn(
-                      "w-full rounded-xl border bg-card px-4 py-4 text-left transition-colors",
-                      active
-                        ? "border-foreground ring-1 ring-foreground"
-                        : "border-border hover:bg-surface",
-                      !enabled && "cursor-not-allowed opacity-45",
-                    )}
-                  >
-                    <p className="text-[15px] font-semibold text-foreground">{freq.title}</p>
-                    <p className="mt-0.5 text-[13px] text-muted-foreground">{freq.description}</p>
-                  </button>
-                );
-              },
-            )}
-          </div>
-          <p className="text-[12px] leading-relaxed text-muted-foreground">{PLAN_NOTE}</p>
-        </StepCard>
-      )}
-
-      {step === "plan-select" && (
-        <StepCard
-          title="Select a payment plan"
-          onBack={() =>
-            setStep(availableFrequencies.length > 1 ? "plan-frequency" : "options")
-          }
-        >
-          <p className="text-[13px] leading-relaxed text-muted-foreground">
-            {planFrequency
-              ? `${planFrequency.charAt(0).toUpperCase()}${planFrequency.slice(1)} plans available for this account.`
-              : "Choose a plan that fits your pay cycle so you can stay on top of your balance."}
-          </p>
-          <div className="space-y-2.5">
-            {(plansForFrequency.length ? plansForFrequency : planOpts).map((option) => (
+            {PLAN_FREQUENCIES.map((option) => (
               <button
                 key={option.id}
                 type="button"
                 onClick={() => {
-                  setSelectedId(option.id);
-                  setStep("plan-detail");
+                  setPlanFrequency(option.id);
+                  setPlanAmountInput("");
+                  setPlanQuote(null);
+                  setStep("plan-schedule");
                 }}
                 className={cn(
                   "w-full rounded-lg border px-4 py-3 text-left transition-colors",
-                  selectedId === option.id
+                  planFrequency === option.id
                     ? "border-foreground bg-card"
                     : "border-border bg-card hover:bg-surface",
                 )}
               >
-                <p className="text-[14px] font-semibold text-foreground">{option.label}</p>
-                <p className="mt-0.5 text-[13px] text-muted-foreground">
-                  {option.installments} {option.frequency || "monthly"} payments · today{" "}
-                  {formatMoney(option.amount || 0, currency)}
-                </p>
+                <p className="text-[14px] font-semibold text-foreground">{option.title}</p>
+                <p className="mt-0.5 text-[13px] text-muted-foreground">{option.description}</p>
               </button>
             ))}
           </div>
@@ -777,57 +810,100 @@ export function CustomerPaymentPortalPage() {
         </StepCard>
       )}
 
-      {step === "plan-detail" && selected?.type === "payment_plan" && (
-        <StepCard
-          title="Payment plan details"
-          onBack={() => {
-            if (plansForFrequency.length > 1 || (!planFrequency && planOpts.length > 1)) {
-              setStep("plan-select");
-              return;
-            }
-            setStep(availableFrequencies.length > 1 ? "plan-frequency" : "options");
-          }}
-        >
+      {step === "plan-schedule" && planOpt && (
+        <StepCard title="Schedule your payment plan" onBack={() => setStep("plan-frequency")}>
+          <p className="text-[13px] leading-relaxed text-muted-foreground">
+            Select when you would like your {freqMeta.title.toLowerCase()} payments to start.
+          </p>
+          <button
+            type="button"
+            className={accentBtn}
+            onClick={() => {
+              setPlanStartMode("today");
+              setPlanStartDate(todayISO());
+              setStep("plan-amount");
+            }}
+          >
+            Start today
+          </button>
+          <div className="space-y-2">
+            <label htmlFor="plan-start" className="block text-[13px] font-medium text-foreground">
+              Or pick a custom start date
+            </label>
+            <input
+              id="plan-start"
+              type="date"
+              value={planStartDate}
+              min={todayISO()}
+              onChange={(e) => {
+                setPlanStartDate(e.target.value || todayISO());
+                setPlanStartMode("custom");
+              }}
+              className="w-full rounded-lg border border-border-strong bg-card px-3 py-2.5 text-[15px] text-foreground outline-none"
+            />
+            <button
+              type="button"
+              className={outlineBtn}
+              onClick={() => {
+                setPlanStartMode("custom");
+                setStep("plan-amount");
+              }}
+            >
+              Continue with {formatDateLabel(planStartDate)}
+            </button>
+          </div>
+        </StepCard>
+      )}
+
+      {step === "plan-amount" && planOpt && (
+        <StepCard title="Set the instalment amount" onBack={() => setStep("plan-schedule")}>
           <Row label="Outstanding Balance" value={formatMoney(outstanding, currency)} />
-          <Row
-            label="Instalment Amount (today)"
-            value={formatMoney(selected.amount || 0, currency)}
-            emphasis
-          />
-          <Row label="Number of Payments" value={String(selected.installments || "—")} />
-          <Row
-            label="Frequency"
-            value={(selected.frequency || "monthly").replace(/^\w/, (c) => c.toUpperCase())}
-          />
-          {selected.schedule?.length ? (
-            <>
-              <Row
-                label="First Payment"
-                value={formatDateLabel(selected.schedule[0]?.due_date)}
+          <div>
+            <label
+              htmlFor="installment-amount"
+              className="mb-1.5 block text-[13px] font-medium text-foreground"
+            >
+              Enter the regular amount you would like to pay {freqMeta.every}
+            </label>
+            <div className="flex items-center gap-2 rounded-lg border border-border-strong bg-card px-3 py-2.5">
+              <span className="text-[15px] text-muted-foreground">$</span>
+              <input
+                id="installment-amount"
+                inputMode="decimal"
+                value={planAmountInput}
+                onChange={(e) => setPlanAmountInput(e.target.value.replace(/[^0-9.]/g, ""))}
+                placeholder={
+                  planQuote ? String(planQuote.suggested_installment) : "0.00"
+                }
+                className="tabular w-full bg-transparent text-[15px] text-foreground outline-none"
               />
-              <Row
-                label="Final Payment"
-                value={formatDateLabel(selected.schedule[selected.schedule.length - 1]?.due_date)}
-              />
-              <ul className="space-y-1 rounded-lg border border-border bg-card px-4 py-3">
-                {selected.schedule.map((row) => (
-                  <li
-                    key={row.sequence}
-                    className="flex justify-between gap-2 text-[12px] text-muted-foreground"
-                  >
-                    <span>
-                      #{row.sequence}
-                      {row.sequence === 1 ? " (today)" : ""} · {formatDateLabel(row.due_date)}
-                    </span>
-                    <span className="tabular text-foreground">
-                      {formatMoney(row.amount, currency)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </>
+            </div>
+            <p className="mt-1.5 text-[12px] text-muted-foreground">
+              Suggested:{" "}
+              {formatMoney(planQuote?.suggested_installment || 0, currency)} {freqMeta.every}
+            </p>
+          </div>
+          {planQuoteError ? (
+            <p className="text-[12px] text-destructive">{planQuoteError}</p>
           ) : null}
-          <button type="button" className={accentBtn} onClick={() => goReview(selected)}>
+          <Row
+            label="Number of Payments"
+            value={quoting ? "…" : String(planQuote?.installments_total ?? "—")}
+          />
+          <Row
+            label="First Payment"
+            value={quoting ? "…" : formatDateLabel(planQuote?.first_payment_date)}
+          />
+          <Row
+            label="Final Payment"
+            value={quoting ? "…" : formatDateLabel(planQuote?.final_payment_date)}
+          />
+          <button
+            type="button"
+            className={accentBtn}
+            disabled={!planQuote || Boolean(planQuoteError)}
+            onClick={() => goReview(planOpt)}
+          >
             Continue
           </button>
           <p className="text-[12px] leading-relaxed text-muted-foreground">{PLAN_NOTE}</p>
@@ -855,38 +931,30 @@ export function CustomerPaymentPortalPage() {
           title={selected.type === "payment_plan" ? "Payment Plan Review" : "Payment Summary"}
           onBack={() => {
             if (selected.type === "partial") setStep("partial");
-            else if (selected.type === "payment_plan") setStep("plan-detail");
+            else if (selected.type === "payment_plan") setStep("plan-amount");
             else if (selected.type === "pay_next_instalment") setStep("next");
             else setStep("full");
           }}
         >
-          {selected.type === "payment_plan" ? (
+          {selected.type === "payment_plan" && planQuote ? (
             <>
               <Row label="Outstanding Balance" value={formatMoney(outstanding, currency)} />
-              <Row label="Plan" value={selected.label} />
+              <Row label="Frequency" value={freqMeta.title} />
               <Row
                 label="Instalment Amount"
-                value={formatMoney(selected.amount || 0, currency)}
+                value={formatMoney(planQuote.installment_amount, currency)}
                 emphasis
               />
-              <Row label="Number of Payments" value={String(selected.installments || "—")} />
-              {selected.schedule?.length ? (
-                <>
-                  <Row
-                    label="First Payment"
-                    value={formatDateLabel(selected.schedule[0]?.due_date)}
-                  />
-                  <Row
-                    label="Final Payment"
-                    value={formatDateLabel(
-                      selected.schedule[selected.schedule.length - 1]?.due_date,
-                    )}
-                  />
-                </>
-              ) : null}
+              <Row label="Number of Payments" value={String(planQuote.installments_total)} />
+              <Row label="First Payment" value={formatDateLabel(planQuote.first_payment_date)} />
+              <Row label="Final Payment" value={formatDateLabel(planQuote.final_payment_date)} />
               <Row
-                label="Amount due now"
-                value={formatMoney(chargeAmount || 0, currency)}
+                label={planQuote.setup_only ? "Due now" : "Amount due now"}
+                value={
+                  planQuote.setup_only
+                    ? "Save payment method only"
+                    : formatMoney(planQuote.first_charge_amount, currency)
+                }
               />
             </>
           ) : (
@@ -921,7 +989,7 @@ export function CustomerPaymentPortalPage() {
             disabled={
               isPreview ||
               initiating ||
-              chargeAmount == null ||
+              (selected.type === "payment_plan" ? !planQuote : chargeAmount == null) ||
               !portal.provider?.ready
             }
             onClick={() => void handleConfirmPay()}
@@ -931,7 +999,9 @@ export function CustomerPaymentPortalPage() {
               : initiating
                 ? "Starting…"
                 : selected.type === "payment_plan"
-                  ? "Confirm Payment Plan"
+                  ? planQuote?.setup_only
+                    ? "Save method & confirm plan"
+                    : "Confirm Payment Plan"
                   : `Pay ${formatMoney(chargeAmount || 0, currency)}`}
           </button>
           {selected.type === "payment_plan" ? (

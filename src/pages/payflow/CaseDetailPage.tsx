@@ -1352,12 +1352,21 @@ export function PayFlowCaseDetailPage() {
                     </div>
                     <p className="mt-1 text-[12px] text-muted-foreground">
                       {plan.installments_total} × {formatCurrency(plan.installment_amount)} ·{" "}
-                      {plan.frequency} · paid {formatCurrency(plan.amount_paid)} of{" "}
+                      <span className="font-medium capitalize text-foreground">{plan.frequency}</span>
+                      {" · "}paid {formatCurrency(plan.amount_paid)} of{" "}
                       {formatCurrency(plan.total_payable)}
                       {plan.next_due_date ? ` · next due ${plan.next_due_date}` : ""}
                     </p>
                     <p className="mt-0.5 text-[11px] text-muted-foreground">
-                      Auto-charge off — future instalments are scheduled only
+                      {plan.auto_charge_enabled && plan.has_saved_payment_method
+                        ? `Auto-charge on${plan.payment_method_type ? ` (${plan.payment_method_type})` : ""} — worker pulls on each due date`
+                        : plan.auto_charge_enabled
+                          ? "Auto-charge armed — waiting for a saved Card/Bank on the plan"
+                          : "Auto-charge off — customer must pay next instalment manually"}
+                      {typeof plan.consecutive_charge_failures === "number" &&
+                      plan.consecutive_charge_failures > 0
+                        ? ` · ${plan.consecutive_charge_failures} failed auto-charge(s)`
+                        : ""}
                     </p>
                     <ul className="mt-2 space-y-1">
                       {(plan.installments || []).map((inst) => (
