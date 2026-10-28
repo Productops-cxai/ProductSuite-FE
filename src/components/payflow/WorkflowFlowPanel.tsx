@@ -5,11 +5,14 @@ import {
   getPayflowWorkflow,
   listPayflowWorkflows,
   updatePayflowWorkflow,
+  writePayflowWorkflowMessages,
   type PayflowWorkflowStepPayload,
 } from "../../api/payflow";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import {
   addStepAfter,
+  canWriteWorkflowMessages,
+  communicationSnippet,
   ensureStepLinks,
   strategyStatusTone,
   type AddableStepKind,
@@ -108,6 +111,7 @@ export function WorkflowFlowPanel({
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [writingMessages, setWritingMessages] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -211,7 +215,7 @@ export function WorkflowFlowPanel({
   }
 
   async function closeDialog() {
-    if (busy) return;
+    if (busy || writingMessages) return;
     if (!dirty || !strategy || !canEdit) {
       setDialogOpen(false);
       setSaveError("");
@@ -236,6 +240,36 @@ export function WorkflowFlowPanel({
       setBusy(false);
     }
   }
+
+  async function rewriteSelectedMessage(remarks?: string) {
+    if (!strategy || !selectedStep?.id) return;
+    if (dirty) {
+      setSaveError(
+        "Save step changes first (close the editor), then rewrite with AI. Writing uses the saved workflow.",
+      );
+      return;
+    }
+    setWritingMessages(true);
+    setSaveError("");
+    try {
+      const updated = ensureStepLinks(
+        await writePayflowWorkflowMessages(strategy.id, {
+          step_id: selectedStep.id,
+          remarks,
+        }),
+      );
+      setStrategy(updated);
+      setDirty(false);
+    } catch (err) {
+      setSaveError(err instanceof ApiError ? err.detail : "Failed to rewrite message");
+    } finally {
+      setWritingMessages(false);
+    }
+  }
+
+  const allowWriteMessages =
+    canEdit && canWriteWorkflowMessages(strategy?.status) &&
+    (strategy?.steps || []).some((s) => s.kind === "Communication");
 
   if (loading) {
     return (
@@ -292,6 +326,9 @@ export function WorkflowFlowPanel({
         selectedId={selectedId}
         highlightId={exceptionStepId}
         onSelect={openStep}
+        templateSnippetFor={(node) =>
+          communicationSnippet(node, catalog?.message_templates || [])
+        }
       />
 
       <StepEditorDialog
@@ -299,15 +336,18 @@ export function WorkflowFlowPanel({
         step={selectedStep}
         catalog={catalog}
         open={dialogOpen}
-        canEdit={canEdit && !busy}
-        busy={busy}
+        canEdit={canEdit && !busy && !writingMessages}
+        busy={busy || writingMessages}
         error={saveError}
+        canWriteMessages={allowWriteMessages}
+        writingMessages={writingMessages}
         onClose={() => {
           void closeDialog();
         }}
         onChange={patchStep}
         onToggleDisabled={toggleDisabled}
         onAddAfter={addAfter}
+        onRewriteMessage={(remarks) => void rewriteSelectedMessage(remarks)}
       />
     </Panel>
   );

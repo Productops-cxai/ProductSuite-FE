@@ -25,11 +25,10 @@ import {
   aiSuggestionsForSegment,
   assignDraftTemplates,
   buildStepsFromDraft,
+  communicationSnippet,
   draftStepTitle,
   makeDraftStep,
-  stepConfig,
   suggestFromPrompt,
-  templateById,
   type DraftStep,
   type DraftStepKind,
 } from "../../lib/strategy-workflow";
@@ -629,12 +628,7 @@ export function PayFlowWorkflowNewPage() {
                 strategy={previewStrategy}
                 selectedId={null}
                 onSelect={() => undefined}
-                templateSnippetFor={(node) => {
-                  const cfg = stepConfig(node);
-                  const tpl = templateById(templates, cfg.template_id);
-                  if (!tpl?.body) return null;
-                  return tpl.body.slice(0, 120);
-                }}
+                templateSnippetFor={(node) => communicationSnippet(node, templates)}
               />
             ) : (
               <div className="rounded-xl border border-dashed border-border-strong bg-surface px-6 py-14 text-center">

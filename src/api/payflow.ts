@@ -788,6 +788,17 @@ export async function regeneratePayflowWorkflow(
   });
 }
 
+/** AI writes / rewrites email & SMS step text. Status & origin stay unchanged. */
+export async function writePayflowWorkflowMessages(
+  strategyId: number,
+  payload?: { step_id?: string; remarks?: string },
+) {
+  return apiRequest<PayflowStrategy>(`/payflow/workflows/${strategyId}/content`, {
+    method: "POST",
+    body: payload || {},
+  });
+}
+
 export function previewPayflowPortfolioSegments(clientId: number, portfolioId: number) {
   return apiRequest<{
     client_id: number;
