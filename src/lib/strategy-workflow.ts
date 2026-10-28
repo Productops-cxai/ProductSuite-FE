@@ -699,3 +699,56 @@ export function templateById(
   if (!templateId) return undefined;
   return templates.find((t) => t.id === templateId);
 }
+
+/** Statuses where POST /workflows/{id}/content is allowed. */
+export const WORKFLOW_MESSAGE_EDIT_STATUSES = [
+  "Draft",
+  "AI Proposed",
+  "Under Review",
+] as const;
+
+export function canWriteWorkflowMessages(status?: string | null) {
+  return !!status && (WORKFLOW_MESSAGE_EDIT_STATUSES as readonly string[]).includes(status);
+}
+
+/** Sample values for {{…}} preview (matches BE docs). */
+export const MESSAGE_PREVIEW_SAMPLES: Record<string, string> = {
+  first_name: "Alexandra",
+  outstanding_balance: "$1,250.00",
+  account_reference: "ACC-1002456",
+  payment_link: "https://pay.example.com/pay/demo",
+  brand_name: "Maple Energy",
+  promise_amount: "$300.00",
+  promise_date: "2026-11-15",
+};
+
+export function renderMessagePreview(text?: string | null) {
+  if (!text) return "";
+  return text.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, key: string) => {
+    return MESSAGE_PREVIEW_SAMPLES[key] ?? `{{${key}}}`;
+  });
+}
+
+/** Prefer AI/reviewer body snippet; fall back to catalog template. */
+export function communicationSnippet(
+  step: PayflowStrategyStep,
+  templates: { id: string; name: string; channel: string; purpose: string; subject?: string | null; body?: string | null }[],
+  maxLen = 120,
+) {
+  const cfg = stepConfig(step);
+  const own = (cfg.body || "").trim();
+  if (own) return own.slice(0, maxLen);
+  const tpl = templateById(templates, cfg.template_id);
+  if (!tpl?.body) return null;
+  return tpl.body.slice(0, maxLen);
+}
+
+export function messagesNotWrittenContext(
+  aiContext?: { label: string; value: string }[] | null,
+) {
+  return (aiContext || []).find(
+    (item) =>
+      item.label === "Messages" &&
+      /not written/i.test(item.value || ""),
+  );
+}

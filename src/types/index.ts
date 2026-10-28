@@ -1127,6 +1127,12 @@ export interface PayflowStrategyStepConfig {
   /** Lovable catalog reason shown in Human Review queue (not the step title). */
   review_reason?: string | null;
   template_id?: string | null;
+  /** AI / reviewer-written email subject. Empty → template is sent. */
+  subject?: string | null;
+  /** AI / reviewer-written message body. Empty → template is sent. */
+  body?: string | null;
+  /** Display-only tone chosen for the message (Friendly, Firm, …). */
+  tone?: string | null;
 }
 
 export interface PayflowStrategyStep {

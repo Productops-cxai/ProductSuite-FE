@@ -13,6 +13,7 @@ import {
   savePayflowWorkflowDraft,
   submitPayflowWorkflowReview,
   updatePayflowWorkflow,
+  writePayflowWorkflowMessages,
 } from "../../api/payflow";
 import { StrategyCanvas } from "../../components/payflow/strategy-canvas";
 import {
@@ -33,12 +34,13 @@ import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { SHOW_PAYFLOW_DELETE } from "../../lib/payflow-features";
 import {
   addStepAfter,
+  canWriteWorkflowMessages,
+  communicationSnippet,
   ensureStepLinks,
+  messagesNotWrittenContext,
   originTone,
   removeStep,
-  stepConfig,
   strategyStatusTone,
-  templateById,
   type AddableStepKind,
 } from "../../lib/strategy-workflow";
 import type {
@@ -48,7 +50,7 @@ import type {
   PayflowStrategyStepConfig,
 } from "../../types";
 
-type NoteAction = "update" | "approve" | "activate" | "reject";
+type NoteAction = "update" | "approve" | "activate" | "reject" | "write_all";
 
 function findStep(strategy: PayflowStrategy, id: string | null): PayflowStrategyStep | null {
   if (!id) return null;
@@ -104,6 +106,7 @@ export function PayFlowWorkflowDetailPage() {
   const [rejectNote, setRejectNote] = useState("");
   const [segmentDraft, setSegmentDraft] = useState<Record<string, string>>({});
   const [segmentDirty, setSegmentDirty] = useState(false);
+  const [writingMessages, setWritingMessages] = useState(false);
 
   async function load() {
     const id = Number(strategyId);
@@ -314,10 +317,61 @@ export function PayFlowWorkflowDetailPage() {
     }
   }
 
+  /**
+   * AI writes message text on the server. Block when local step edits are unsaved
+   * so we do not discard pending graph changes by refreshing from the response.
+   */
+  async function writeMessages(opts?: { step_id?: string; remarks?: string }) {
+    if (!strategy) return;
+    if (pendingSteps) {
+      setError(
+        "Apply unsaved step changes first, then write messages. Writing uses the saved workflow on the server.",
+      );
+      setNoteAction(null);
+      return;
+    }
+    setWritingMessages(true);
+    setBusy(true);
+    setError("");
+    try {
+      const updated = ensureStepLinks(
+        await writePayflowWorkflowMessages(strategy.id, {
+          step_id: opts?.step_id,
+          remarks: opts?.remarks,
+        }),
+      );
+      setStrategy(updated);
+      setPendingSteps(null);
+      setSegmentDraft({ ...(updated.segment || {}) });
+      setSegmentDirty(false);
+      if (selectedId) {
+        const refreshed = findStep(updated, selectedId);
+        if (refreshed) {
+          setDraftStep({ ...refreshed, id: selectedId, config: { ...(refreshed.config || {}) } });
+        }
+      }
+      setNotice(
+        opts?.step_id
+          ? "Message text rewritten by AI for this step."
+          : "Message text written by AI for all email / SMS steps.",
+      );
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail : "Failed to write messages");
+    } finally {
+      setWritingMessages(false);
+      setBusy(false);
+      setNoteAction(null);
+    }
+  }
+
   async function onNoteConfirm(note: string) {
     if (!strategy || !noteAction) return;
     if (noteAction === "update") {
       await persistSteps(note);
+      return;
+    }
+    if (noteAction === "write_all") {
+      await writeMessages({ remarks: note.trim() || undefined });
       return;
     }
     if (noteAction === "approve") {
@@ -412,6 +466,12 @@ export function PayFlowWorkflowDetailPage() {
   const showAiBanner = strategy.origin === "AI Proposed" && strategy.status !== "Active";
   // Request regeneration for AI Proposed, Human Modified, and Human Created.
   const showRequestRegen = canEdit;
+  const hasCommSteps = (displayStrategy.steps || []).some(
+    (s) => s.kind === "Communication",
+  );
+  const allowWriteMessages =
+    canEdit && canWriteWorkflowMessages(strategy.status) && hasCommSteps;
+  const messagesGap = messagesNotWrittenContext(strategy.ai_context);
   const excluded =
     catalog?.excluded_targeting_attributes || [
       "Ethnicity",
@@ -472,6 +532,14 @@ export function PayFlowWorkflowDetailPage() {
                 }
               >
                 Save Draft
+              </Btn>
+            )}
+            {allowWriteMessages && (
+              <Btn
+                disabled={busy || writingMessages}
+                onClick={() => setNoteAction("write_all")}
+              >
+                {writingMessages ? "Writing messages…" : "Write all messages with AI"}
               </Btn>
             )}
             {showDelete && (
@@ -579,6 +647,24 @@ export function PayFlowWorkflowDetailPage() {
         </div>
       )}
 
+      {messagesGap && allowWriteMessages && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-warning/30 bg-warning/[0.08] px-4 py-3">
+          <div className="min-w-0">
+            <p className="text-[13px] font-semibold text-foreground">Messages not written</p>
+            <p className="mt-0.5 text-[12.5px] leading-relaxed text-muted-foreground">
+              {messagesGap.value}
+            </p>
+          </div>
+          <Btn
+            variant="primary"
+            disabled={busy || writingMessages}
+            onClick={() => void writeMessages()}
+          >
+            {writingMessages ? "Writing…" : "Write messages"}
+          </Btn>
+        </div>
+      )}
+
       {showContext && (
         <Panel
           title="Why PayFlow proposed this strategy"
@@ -594,10 +680,23 @@ export function PayFlowWorkflowDetailPage() {
               {strategy.ai_context.map((item) => (
                 <div
                   key={item.label}
-                  className="flex items-baseline justify-between gap-4 border-b border-border/50 pb-1.5"
+                  className="flex flex-col gap-1 border-b border-border/50 pb-1.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4"
                 >
                   <dt className="text-[12px] text-muted-foreground">{item.label}</dt>
-                  <dd className="text-[12.5px] font-medium text-foreground">{item.value}</dd>
+                  <dd className="text-[12.5px] font-medium text-foreground sm:text-right">
+                    {item.value}
+                    {item.label === "Messages" &&
+                    allowWriteMessages &&
+                    /not written/i.test(item.value) ? (
+                      <Btn
+                        className="ml-2 align-middle"
+                        disabled={busy || writingMessages}
+                        onClick={() => void writeMessages()}
+                      >
+                        Write messages
+                      </Btn>
+                    ) : null}
+                  </dd>
                 </div>
               ))}
             </dl>
@@ -647,12 +746,9 @@ export function PayFlowWorkflowDetailPage() {
               selectStep(id);
               setExpandOpen(true);
             }}
-            templateSnippetFor={(node) => {
-              const cfg = stepConfig(node);
-              const tpl = templateById(catalog?.message_templates || [], cfg.template_id);
-              if (!tpl?.body) return null;
-              return tpl.body.slice(0, 120);
-            }}
+            templateSnippetFor={(node) =>
+              communicationSnippet(node, catalog?.message_templates || [])
+            }
           />
         </Panel>
 
@@ -679,7 +775,13 @@ export function PayFlowWorkflowDetailPage() {
                 step={draftStep}
                 catalog={catalog}
                 canEdit={!!canMutateGraph && !busy}
+                canWriteMessages={allowWriteMessages}
+                writingMessages={writingMessages}
                 onChange={patchDraft}
+                onRewriteMessage={(remarks) => {
+                  if (!draftStep.id) return;
+                  void writeMessages({ step_id: draftStep.id, remarks });
+                }}
                 onToggleDisabled={() => {
                   const flipped = {
                     ...draftStep,
@@ -846,8 +948,14 @@ export function PayFlowWorkflowDetailPage() {
         catalog={catalog}
         open={expandOpen}
         canEdit={!!canMutateGraph && !busy}
+        canWriteMessages={allowWriteMessages}
+        writingMessages={writingMessages}
         onClose={() => setExpandOpen(false)}
         onChange={patchDraft}
+        onRewriteMessage={(remarks) => {
+          if (!draftStep?.id) return;
+          void writeMessages({ step_id: draftStep.id, remarks });
+        }}
         onToggleDisabled={() => {
           if (!draftStep) return;
           const flipped = {
@@ -885,6 +993,17 @@ export function PayFlowWorkflowDetailPage() {
         busy={busy}
         required={false}
         placeholder="e.g. SMS timing reduced from 5 days to 3 days after previous email"
+        onClose={() => setNoteAction(null)}
+        onConfirm={(note) => void onNoteConfirm(note)}
+      />
+      <WorkflowActionNoteModal
+        open={noteAction === "write_all"}
+        title="Write all messages with AI"
+        description="PayFlow will write (or improve) the text of every email and SMS step. Optional remarks guide the tone. Status and origin stay unchanged. Takes about 5–20 seconds."
+        confirmLabel={writingMessages ? "Writing…" : "Write messages"}
+        busy={busy || writingMessages}
+        required={false}
+        placeholder="e.g. shorter, firmer, mention payment plans"
         onClose={() => setNoteAction(null)}
         onConfirm={(note) => void onNoteConfirm(note)}
       />

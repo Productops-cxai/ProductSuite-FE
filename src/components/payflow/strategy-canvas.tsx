@@ -235,6 +235,7 @@ function NodeCard({
       <div className="mt-2 flex flex-wrap gap-1.5">
         {channel && <StatusPill tone={stepTone(node.kind)}>{channel}</StatusPill>}
         {purpose && <StatusPill>{purpose}</StatusPill>}
+        {cfg.tone && <StatusPill tone="ai">{cfg.tone}</StatusPill>}
         {cfg.action && <StatusPill>{cfg.action}</StatusPill>}
         {cfg.outcome && <StatusPill tone="success">{cfg.outcome}</StatusPill>}
         {node.disabled && <StatusPill tone="neutral">Disabled</StatusPill>}

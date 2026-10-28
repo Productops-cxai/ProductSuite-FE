@@ -410,6 +410,14 @@ export function PayFlowPortfolioDetailPage() {
                   {segmentPreview.segments.map((seg) => {
                     const accounts =
                       typeof seg.stats?.accounts === "number" ? seg.stats.accounts : null;
+                    const consentPct =
+                      typeof seg.stats?.email_consent_pct === "number"
+                        ? seg.stats.email_consent_pct
+                        : null;
+                    const allowedPct =
+                      typeof seg.stats?.email_allowed_pct === "number"
+                        ? seg.stats.email_allowed_pct
+                        : null;
                     return (
                       <li
                         key={seg.segment_id}
@@ -419,6 +427,13 @@ export function PayFlowPortfolioDetailPage() {
                         {accounts != null ? (
                           <p className="mt-0.5 text-[11.5px] text-muted-foreground">
                             {formatNumber(accounts)} account{accounts === 1 ? "" : "s"}
+                          </p>
+                        ) : null}
+                        {consentPct != null || allowedPct != null ? (
+                          <p className="mt-0.5 text-[11.5px] text-muted-foreground">
+                            {consentPct != null ? `Email consent ${consentPct}%` : null}
+                            {consentPct != null && allowedPct != null ? " · " : null}
+                            {allowedPct != null ? `Email allowed ${allowedPct}%` : null}
                           </p>
                         ) : null}
                       </li>
