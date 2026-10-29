@@ -2,7 +2,6 @@ import { FormEvent, useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import { listEmailLogs } from "../../api/platform";
-import { EMAIL_LOGS_ADMIN_EMAIL } from "../../components/layout/PlatformLayout";
 import { PageHeader } from "../../components/payflow-ui";
 import { Button } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
@@ -11,15 +10,13 @@ import { ui } from "../../lib/ui";
 import type { EmailLog } from "../../types";
 
 export function EmailLogsPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { loading: authLoading, isSuperAdmin } = useAuth();
   const [rows, setRows] = useState<EmailLog[]>([]);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(true);
-
-  const allowed = (user?.email || "").toLowerCase() === EMAIL_LOGS_ADMIN_EMAIL;
 
   async function load() {
     setLoading(true);
@@ -40,13 +37,13 @@ export function EmailLogsPage() {
   }
 
   useEffect(() => {
-    if (!allowed) return;
+    if (!isSuperAdmin) return;
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [typeFilter, allowed]);
+  }, [typeFilter, isSuperAdmin]);
 
   if (authLoading) return <div className={ui.loading}>Loading…</div>;
-  if (!allowed) return <Navigate to="/platform" replace />;
+  if (!isSuperAdmin) return <Navigate to="/platform" replace />;
 
   async function onSearch(e: FormEvent) {
     e.preventDefault();
@@ -66,7 +63,7 @@ export function EmailLogsPage() {
     <div className={ui.page}>
       <PageHeader
         title="Email Logs"
-        description={`SMTP is not configured yet. Outbound emails (activation, password reset) are saved here so you can open the action link and complete the flow. Visible only to ${EMAIL_LOGS_ADMIN_EMAIL}.`}
+        description="Outbound emails (activation, password reset, collection) are saved here so you can open the action link and complete the flow. Visible only to the suite seed admin (SEED_SUPER_ADMIN_EMAIL on the API)."
         breadcrumb={[{ label: "Logs" }, { label: "Email Logs" }]}
         actions={
           <Button variant="secondary" onClick={() => void load()}>

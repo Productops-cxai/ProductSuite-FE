@@ -49,10 +49,22 @@ function commStatusTone(status: string): Tone {
     case "Prepared":
       return "warning";
     case "Failed":
+    case "Cancelled":
     case "Suppressed":
       return "danger";
     default:
       return "neutral";
+  }
+}
+
+function previewPayUrl(url: string | null | undefined) {
+  if (!url) return null;
+  try {
+    const u = new URL(url, window.location.origin);
+    u.searchParams.set("preview", "1");
+    return u.toString();
+  } catch {
+    return url.includes("?") ? `${url}&preview=1` : `${url}?preview=1`;
   }
 }
 
@@ -134,6 +146,12 @@ export function PayFlowCommDetailPage() {
     };
   }, [communicationId, reloadTick]);
 
+  useEffect(() => {
+    const onFocus = () => setReloadTick((n) => n + 1);
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
+
   if (loading) {
     return <p className="text-sm text-muted-foreground">Loading communication…</p>;
   }
@@ -154,16 +172,15 @@ export function PayFlowCommDetailPage() {
   const brandName = comm.brand_name || comm.client_name || "PayFlow";
   const senderName = comm.sender_name || brandName;
   const payLink = comm.payment_link ? comm.payment_link_url : null;
+  const previewLink = previewPayUrl(payLink);
+  // Always use ISO timestamps (same TZ as Created/Delivered) — date_label/time_label
+  // were frozen at prepare time in server-local TZ and drifted from delivered_at.
   const sentLabel =
     comm.status === "Prepared" ||
     comm.status === "Awaiting Governance" ||
     comm.status === "Scheduled"
       ? "Not sent"
-      : comm.status === "Queued"
-        ? [comm.date_label, comm.time_label].filter(Boolean).join(" ") ||
-          formatStamp(comm.sent_at || comm.created_at)
-        : [comm.date_label, comm.time_label].filter(Boolean).join(" ") ||
-          formatStamp(comm.sent_at || comm.created_at);
+      : formatStamp(comm.sent_at || comm.created_at);
 
   const facts = [
     { label: "Client", value: comm.client_name || "—" },
@@ -173,7 +190,10 @@ export function PayFlowCommDetailPage() {
     { label: "Channel", value: comm.channel },
     { label: "Recipient", value: comm.recipient || "—" },
     { label: "Purpose", value: comm.purpose },
-    { label: "Workflow", value: comm.workflow_name || "—" },
+    {
+      label: "Workflow",
+      value: comm.workflow_name || "—",
+    },
     { label: "Status", value: comm.status },
     { label: "Created", value: formatStamp(comm.created_at) },
     { label: "Sent", value: sentLabel },
@@ -184,9 +204,14 @@ export function PayFlowCommDetailPage() {
       : []),
   ];
 
+  const stripeCheckoutOpens =
+    comm.stripe_checkout_opens_count ??
+    (comm.events || []).filter((e) => e.label === "Stripe Checkout Opened").length;
+
   const engagementFacts = [
-    { label: "Opens", value: String(comm.opens_count ?? 0) },
-    { label: "Clicks", value: String(comm.clicks_count ?? 0) },
+    { label: "Opens (email)", value: String(comm.opens_count ?? 0) },
+    { label: "Clicks (PayFlow portal)", value: String(comm.clicks_count ?? 0) },
+    { label: "Stripe Checkout opened", value: String(stripeCheckoutOpens) },
     { label: "First opened", value: formatStamp(comm.first_opened_at) },
     { label: "Last opened", value: formatStamp(comm.last_opened_at) },
     { label: "First clicked", value: formatStamp(comm.first_clicked_at) },
@@ -251,7 +276,7 @@ export function PayFlowCommDetailPage() {
           { label: comm.code },
         ]}
         title={`${comm.channel} · ${comm.purpose}`}
-        description={`${comm.customer_name || "Customer"} · ${comm.account_reference || "—"} · ${[comm.date_label, comm.time_label].filter(Boolean).join(" ") || "—"}`}
+        description={`${comm.customer_name || "Customer"} · ${comm.account_reference || "—"} · ${formatStamp(comm.sent_at || comm.created_at)}`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <StatusPill tone={commStatusTone(comm.status)}>{comm.status}</StatusPill>
@@ -261,8 +286,8 @@ export function PayFlowCommDetailPage() {
                 {resending ? "Resending…" : "Resend"}
               </Btn>
             ) : null}
-            {payLink ? (
-              <a href={payLink} target="_blank" rel="noreferrer">
+            {previewLink ? (
+              <a href={previewLink} target="_blank" rel="noreferrer">
                 <Btn variant="primary">Preview Payment Experience</Btn>
               </a>
             ) : null}
@@ -292,7 +317,18 @@ export function PayFlowCommDetailPage() {
               {facts.map((f) => (
                 <div key={f.label} className="flex items-center justify-between gap-4 px-4 py-2.5">
                   <dt className="text-[13px] text-muted-foreground">{f.label}</dt>
-                  <dd className="tabular text-[13px] font-medium text-foreground">{f.value}</dd>
+                  <dd className="tabular text-[13px] font-medium text-foreground">
+                    {f.label === "Workflow" && comm.strategy_id ? (
+                      <Link
+                        to={`/payflow/workflows/${comm.strategy_id}`}
+                        className="text-primary hover:underline"
+                      >
+                        {f.value}
+                      </Link>
+                    ) : (
+                      f.value
+                    )}
+                  </dd>
                 </div>
               ))}
             </dl>

@@ -568,6 +568,14 @@ export interface PayflowClientDetail extends PayflowClient {
   sms_sender_id: string;
   channels: PayflowClientChannels;
   governance_rules: string[];
+  payment_settings?: {
+    allow_partial?: boolean;
+    allow_plans?: boolean;
+    min_partial_amount?: number;
+    min_plan_amount?: number;
+    stripe_payments_enabled?: boolean;
+    accepted_currencies?: string[] | string;
+  } | null;
   mappings: PayflowClientMapping[];
   mapping_summary: PayflowClientMappingSummary;
   portfolios: PayflowPortfolio[];
@@ -717,6 +725,7 @@ export interface PayflowAccount {
   next_action?: string | null;
   human_review: boolean;
   timeline: PayflowAccountTimelineEvent[];
+  ai_decision_context?: Array<Record<string, unknown>> | null;
   portfolio_code?: string | null;
   customer_first_name?: string | null;
   customer_last_name?: string | null;
@@ -1118,6 +1127,12 @@ export interface PayflowStrategyStepConfig {
   /** Lovable catalog reason shown in Human Review queue (not the step title). */
   review_reason?: string | null;
   template_id?: string | null;
+  /** AI / reviewer-written email subject. Empty → template is sent. */
+  subject?: string | null;
+  /** AI / reviewer-written message body. Empty → template is sent. */
+  body?: string | null;
+  /** Display-only tone chosen for the message (Friendly, Firm, …). */
+  tone?: string | null;
 }
 
 export interface PayflowStrategyStep {
@@ -1275,6 +1290,7 @@ export interface PayflowCommunication {
   purpose: string;
   status: string;
   workflow_name?: string | null;
+  strategy_id?: number | null;
   engagement?: string | null;
   engagement_tracking?: string | null;
   date_bucket?: string | null;
@@ -1303,6 +1319,8 @@ export interface PayflowCommunication {
   delivered_at?: string | null;
   opens_count?: number;
   clicks_count?: number;
+  /** Times customer was redirected to checkout.stripe.com (Pay Now). */
+  stripe_checkout_opens_count?: number;
   first_opened_at?: string | null;
   last_opened_at?: string | null;
   first_clicked_at?: string | null;
@@ -1409,6 +1427,9 @@ export interface PayflowPaymentPortalOption {
   installments?: number;
   plan_id?: string;
   frequency?: string;
+  frequencies?: string[];
+  custom_plan?: boolean;
+  auto_charge_enabled?: boolean;
   total_payable?: number;
   installment_amount?: number;
   schedule?: {
@@ -1429,6 +1450,7 @@ export interface PayflowPaymentPortalResolve {
   customer: { display_name?: string };
   case: {
     account_reference?: string;
+    account_reference_masked?: string | null;
     original_balance?: number;
     outstanding_balance: number;
     recovered_balance?: number;
@@ -1440,9 +1462,13 @@ export interface PayflowPaymentPortalResolve {
     name: string;
     logo_url?: string | null;
     on_behalf_of?: string | null;
+    client_name?: string | null;
+    support_email?: string | null;
+    support_phone?: string | null;
   };
   payment_options: PayflowPaymentPortalOption[];
   active_payment_plans?: PayflowPaymentPlanSummary[];
+  preview_mode?: boolean;
   provider: {
     name?: string;
     ready?: boolean;
@@ -1474,6 +1500,9 @@ export interface PayflowPaymentPlanSummary {
   start_date?: string | null;
   next_due_date?: string | null;
   auto_charge_enabled?: boolean;
+  payment_method_type?: string | null;
+  consecutive_charge_failures?: number;
+  has_saved_payment_method?: boolean;
   installments: PayflowPaymentPlanInstallment[];
   created_at?: string | null;
   completed_at?: string | null;
@@ -1519,6 +1548,7 @@ export interface PayflowPaymentAttempt {
   id: string;
   status: string;
   option_type: string;
+  option_label?: string | null;
   plan_id?: string | null;
   amount: number;
   currency_code: string;
@@ -1526,12 +1556,28 @@ export interface PayflowPaymentAttempt {
   checkout_url?: string | null;
   error_message?: string | null;
   balance_at_initiation?: number | null;
+  remaining_balance?: number | null;
+  outstanding_balance?: number | null;
+  account_reference?: string | null;
+  account_reference_masked?: string | null;
+  payment_method?: string | null;
   stripe_session_id?: string | null;
   reference?: string | null;
   confirmed: boolean;
   events?: { at?: string; label?: string; detail?: string | null }[];
   created_at?: string | null;
   completed_at?: string | null;
+  paid_at?: string | null;
+  plan?: (PayflowPaymentPlanSummary & { final_payment_date?: string | null }) | null;
+  brand?: {
+    mode?: string;
+    name: string;
+    logo_url?: string | null;
+    on_behalf_of?: string | null;
+    client_name?: string | null;
+    support_email?: string | null;
+    support_phone?: string | null;
+  } | null;
 }
 
 export interface PayflowOperationalException {

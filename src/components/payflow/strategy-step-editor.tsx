@@ -22,6 +22,7 @@ import {
   REVIEW_REASONS,
   TIME_DIRECTIONS,
   TIME_UNITS,
+  renderMessagePreview,
   stepConfig,
   templateById,
   templatesForChannelPurpose,
@@ -34,6 +35,17 @@ import type {
   PayflowStrategyStep,
   PayflowStrategyStepConfig,
 } from "../../types";
+
+const SUBJECT_MAX = 255;
+const BODY_MAX = 5000;
+const REMARKS_MAX = 2000;
+
+/** Clear AI/reviewer text when channel or purpose changes so email copy does not stick on SMS. */
+function clearMessageTextPatch(
+  patch: Partial<PayflowStrategyStepConfig>,
+): Partial<PayflowStrategyStepConfig> {
+  return { ...patch, subject: null, body: null, tone: null };
+}
 
 function catalogLists(catalog?: PayflowStrategyCatalog | null) {
   return {
@@ -102,26 +114,38 @@ export function StepConfigForm({
   catalog,
   canEdit = true,
   showTitle = true,
+  canWriteMessages = false,
+  writingMessages = false,
   onChange,
   onToggleDisabled,
   onAddAfter,
   onRemove,
+  onRewriteMessage,
 }: {
   strategy: PayflowStrategy;
   step: PayflowStrategyStep;
   catalog?: PayflowStrategyCatalog | null;
   canEdit?: boolean;
   showTitle?: boolean;
+  /** Show Rewrite with AI (Draft / AI Proposed / Under Review only). */
+  canWriteMessages?: boolean;
+  writingMessages?: boolean;
   onChange: (patch: Partial<PayflowStrategyStepConfig> & { title?: string }) => void;
   onToggleDisabled: () => void;
   onAddAfter: (kind: AddableStepKind) => void;
   onRemove?: () => void;
+  onRewriteMessage?: (remarks?: string) => void;
 }) {
   const [addKind, setAddKind] = useState<AddableStepKind>("Communication");
+  const [rewriteRemarks, setRewriteRemarks] = useState("");
   const lists = catalogLists(catalog);
   const cfg = stepConfig(step);
   const templates = templatesForChannelPurpose(lists.templates, cfg.channel, cfg.purpose);
   const activeTemplate = templateById(lists.templates, cfg.template_id) || templates[0];
+  const isEmail = (cfg.channel || "Email") === "Email";
+  const hasOwnText = !!(cfg.subject || cfg.body);
+  const previewSubject = renderMessagePreview(cfg.subject);
+  const previewBody = renderMessagePreview(cfg.body);
   const conditionValueOptions =
     lists.conditionValues[cfg.attribute || ""] ||
     CONDITION_VALUES[cfg.attribute || ""] ||
@@ -150,7 +174,9 @@ export function StepConfigForm({
                 value={cfg.channel ?? "Email"}
                 options={lists.channels}
                 disabled={!canEdit}
-                onChange={(v) => onChange({ channel: v, template_id: "" })}
+                onChange={(v) =>
+                  onChange(clearMessageTextPatch({ channel: v, template_id: "" }))
+                }
               />
             </Field>
             <Field label="Message Purpose">
@@ -158,13 +184,87 @@ export function StepConfigForm({
                 value={cfg.purpose ?? lists.purposes[0]!}
                 options={lists.purposes}
                 disabled={!canEdit}
-                onChange={(v) => onChange({ purpose: v, template_id: "" })}
+                onChange={(v) =>
+                  onChange(clearMessageTextPatch({ purpose: v, template_id: "" }))
+                }
               />
             </Field>
           </div>
+
+          <div className="space-y-2 rounded-lg border border-border/70 bg-surface/60 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[12.5px] font-semibold text-foreground">Message text</p>
+              {cfg.tone ? <StatusPill tone="ai">{cfg.tone}</StatusPill> : null}
+            </div>
+            <p className="text-[11.5px] text-muted-foreground">
+              Leave blank to send the template below. Edited text is saved with the step and
+              becomes Human Modified.
+            </p>
+            {isEmail ? (
+              <Field label="Subject" hint={`Max ${SUBJECT_MAX} characters.`}>
+                <TextInput
+                  value={cfg.subject ?? ""}
+                  disabled={!canEdit}
+                  onChange={(v) =>
+                    onChange({ subject: v.slice(0, SUBJECT_MAX) || null })
+                  }
+                />
+              </Field>
+            ) : null}
+            <Field label="Body" hint={`Max ${BODY_MAX} characters. Use {{first_name}}, {{outstanding_balance}}, {{payment_link}}, {{brand_name}}, …`}>
+              <TextArea
+                value={cfg.body ?? ""}
+                disabled={!canEdit}
+                onChange={(v) => onChange({ body: v.slice(0, BODY_MAX) || null })}
+              />
+            </Field>
+            {hasOwnText ? (
+              <div className="rounded-lg border border-border/70 bg-card p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Preview (sample values)
+                </p>
+                {isEmail && previewSubject ? (
+                  <p className="mt-2 text-[12.5px] text-foreground">
+                    <span className="text-muted-foreground">Subject: </span>
+                    {previewSubject}
+                  </p>
+                ) : null}
+                <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap font-sans text-[11.5px] leading-relaxed text-muted-foreground">
+                  {previewBody || "(empty body)"}
+                </pre>
+              </div>
+            ) : null}
+            {canWriteMessages && onRewriteMessage ? (
+              <div className="space-y-2 border-t border-border/60 pt-3">
+                <Field
+                  label="Rewrite with AI"
+                  hint="Optional remarks for this message only. Takes a few seconds."
+                >
+                  <TextArea
+                    value={rewriteRemarks}
+                    disabled={!canEdit || writingMessages}
+                    onChange={(v) => setRewriteRemarks(v.slice(0, REMARKS_MAX))}
+                    placeholder="e.g. softer tone, mention the payment plan"
+                  />
+                </Field>
+                <Btn
+                  disabled={!canEdit || writingMessages}
+                  onClick={() =>
+                    onRewriteMessage(rewriteRemarks.trim() || undefined)
+                  }
+                >
+                  {writingMessages ? "Writing…" : "Rewrite with AI"}
+                </Btn>
+              </div>
+            ) : null}
+          </div>
+
           {templates.length > 0 && (
             <>
-              <Field label="Template" hint="What the customer receives at this step.">
+              <Field
+                label="Fallback template"
+                hint="Used when message text above is empty."
+              >
                 <SelectInput
                   value={activeTemplate?.name ?? ""}
                   options={templates.map((t) => t.name)}
@@ -175,7 +275,7 @@ export function StepConfigForm({
                   }}
                 />
               </Field>
-              <TemplatePreview template={activeTemplate} />
+              {!hasOwnText ? <TemplatePreview template={activeTemplate} /> : null}
             </>
           )}
         </>
@@ -395,11 +495,14 @@ export function StepEditorDialog({
   canEdit = true,
   busy = false,
   error,
+  canWriteMessages = false,
+  writingMessages = false,
   onClose,
   onChange,
   onToggleDisabled,
   onAddAfter,
   onRemove,
+  onRewriteMessage,
 }: {
   strategy: PayflowStrategy;
   step: PayflowStrategyStep | null;
@@ -408,11 +511,14 @@ export function StepEditorDialog({
   canEdit?: boolean;
   busy?: boolean;
   error?: string;
+  canWriteMessages?: boolean;
+  writingMessages?: boolean;
   onClose: () => void;
   onChange: (patch: Partial<PayflowStrategyStepConfig> & { title?: string }) => void;
   onToggleDisabled: () => void;
   onAddAfter: (kind: AddableStepKind) => void;
   onRemove?: () => void;
+  onRewriteMessage?: (remarks?: string) => void;
 }) {
   if (!open || !step) return null;
   return (
@@ -444,10 +550,13 @@ export function StepEditorDialog({
         catalog={catalog}
         canEdit={canEdit}
         showTitle={false}
+        canWriteMessages={canWriteMessages}
+        writingMessages={writingMessages}
         onChange={onChange}
         onToggleDisabled={onToggleDisabled}
         onAddAfter={onAddAfter}
         onRemove={onRemove}
+        onRewriteMessage={onRewriteMessage}
       />
     </Modal>
   );

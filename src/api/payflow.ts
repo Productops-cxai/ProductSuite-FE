@@ -212,6 +212,15 @@ export interface UpdatePayflowClientPayload {
   sms_sender_id?: string;
   channels?: { email?: boolean; sms?: boolean; whatsapp?: boolean };
   governance_rules?: string[];
+  payment_settings?: {
+    allow_partial?: boolean;
+    allow_plans?: boolean;
+    allow_payment_plan?: boolean;
+    min_partial_amount?: number;
+    min_plan_amount?: number;
+    stripe_payments_enabled?: boolean;
+    accepted_currencies?: string[];
+  };
   mappings?: {
     source_field: string;
     payflow_field?: string | null;
@@ -500,6 +509,8 @@ export function listPayflowReviews(params?: {
   proposed_action?: string;
   search?: string;
   waiting_bucket?: string;
+  sort_by?: string;
+  sort_dir?: "asc" | "desc";
   page?: number;
   page_size?: number;
 }) {
@@ -512,6 +523,8 @@ export function listPayflowReviews(params?: {
   if (params?.proposed_action) q.set("proposed_action", params.proposed_action);
   if (params?.search) q.set("search", params.search);
   if (params?.waiting_bucket) q.set("waiting_bucket", params.waiting_bucket);
+  q.set("sort_by", params?.sort_by || "created_at");
+  q.set("sort_dir", params?.sort_dir || "desc");
   if (params?.page != null) q.set("page", String(params.page));
   if (params?.page_size != null) q.set("page_size", String(params.page_size));
   const qs = q.toString();
@@ -775,6 +788,17 @@ export async function regeneratePayflowWorkflow(
   });
 }
 
+/** AI writes / rewrites email & SMS step text. Status & origin stay unchanged. */
+export async function writePayflowWorkflowMessages(
+  strategyId: number,
+  payload?: { step_id?: string; remarks?: string },
+) {
+  return apiRequest<PayflowStrategy>(`/payflow/workflows/${strategyId}/content`, {
+    method: "POST",
+    body: payload || {},
+  });
+}
+
 export function previewPayflowPortfolioSegments(clientId: number, portfolioId: number) {
   return apiRequest<{
     client_id: number;
@@ -1027,4 +1051,89 @@ export function listPayflowDeletionLogs(params?: {
   if (params?.limit) q.set("limit", String(params.limit));
   const qs = q.toString();
   return apiRequest<DeletionLog[]>(`/payflow/deletion-logs${qs ? `?${qs}` : ""}`);
+}
+
+export function previewPaymentReconciliation(params?: {
+  client_id?: number;
+  portfolio_id?: number;
+  date_from?: string;
+  date_to?: string;
+  status?: string;
+  limit?: number;
+}) {
+  const q = new URLSearchParams();
+  if (params?.client_id) q.set("client_id", String(params.client_id));
+  if (params?.portfolio_id) q.set("portfolio_id", String(params.portfolio_id));
+  if (params?.date_from) {
+    q.set(
+      "date_from",
+      params.date_from.includes("T")
+        ? params.date_from
+        : new Date(params.date_from).toISOString(),
+    );
+  }
+  if (params?.date_to) {
+    q.set(
+      "date_to",
+      params.date_to.includes("T")
+        ? params.date_to
+        : new Date(`${params.date_to}T23:59:59`).toISOString(),
+    );
+  }
+  if (params?.status) q.set("status", params.status);
+  if (params?.limit) q.set("limit", String(params.limit));
+  const qs = q.toString();
+  return apiRequest<{
+    generated_at?: string;
+    export_reference?: string;
+    totals?: {
+      transaction_count?: number;
+      payment_amount_total?: number;
+      refund_amount_total?: number;
+    };
+    row_count?: number;
+    rows?: Record<string, string | number | null | undefined>[];
+  }>(`/payflow/reports/payment-reconciliation${qs ? `?${qs}` : ""}`);
+}
+
+export function previewAiEvalExport(params?: { client_id?: number; limit?: number }) {
+  const q = new URLSearchParams();
+  if (params?.client_id) q.set("client_id", String(params.client_id));
+  if (params?.limit) q.set("limit", String(params.limit));
+  const qs = q.toString();
+  return apiRequest<{
+    generated_at?: string;
+    export_reference?: string;
+    totals?: {
+      row_count?: number;
+      workflow_versions?: number;
+      human_reviews?: number;
+    };
+    performance?: {
+      workflow_versions?: number;
+      ai_origin_versions?: number;
+      human_created_versions?: number;
+      human_reviews?: number;
+      hr_approved?: number;
+      hr_rejected?: number;
+      hr_modified?: number;
+      hr_held?: number;
+      hr_decided?: number;
+      approval_rate_pct?: number | null;
+      rejection_rate_pct?: number | null;
+      modify_rate_pct?: number | null;
+      avg_confidence?: number | null;
+    };
+    rows?: Record<string, unknown>[];
+  }>(`/payflow/reports/ai-eval${qs ? `?${qs}` : ""}`);
+}
+
+export async function reassessPayflowCase(accountId: number) {
+  const res = await apiRequest<{
+    account_id: number;
+    recommendation: Record<string, unknown>;
+    case: PayflowAccount;
+  }>(`/payflow/accounts/${accountId}/ai-reassess`, { method: "POST", body: {} });
+  invalidateCache("payflow:");
+  return res;
 }

@@ -71,6 +71,16 @@ export interface ClientDraftConfig {
   smsSenderId: string;
   channels: { email: boolean; sms: boolean; whatsapp: boolean };
   governanceRules: string[];
+  paymentSettings: {
+    allow_partial: boolean;
+    allow_plans: boolean;
+    min_partial_amount: number;
+    min_plan_amount: number;
+    /** When false, public portal will not start Stripe Checkout for this client. */
+    stripe_payments_enabled: boolean;
+    /** Comma-separated ISO codes; empty = allow case/client currency only (no extra list). */
+    accepted_currencies: string;
+  };
 }
 
 export interface ClientDraft {
@@ -194,6 +204,14 @@ export function emptyDraft(): ClientDraft {
       smsSenderId: "PAYFLOW",
       channels: { email: true, sms: true, whatsapp: false },
       governanceRules: [],
+      paymentSettings: {
+        allow_partial: true,
+        allow_plans: true,
+        min_partial_amount: 25,
+        min_plan_amount: 100,
+        stripe_payments_enabled: true,
+        accepted_currencies: "",
+      },
     },
   };
 }
@@ -232,8 +250,21 @@ export function draftFromDetail(
     governance_rules?: string[];
     mappings?: PayflowClientMapping[];
     supervisor_user_ids?: string[];
+    payment_settings?: {
+      allow_partial?: boolean;
+      allow_plans?: boolean;
+      allow_payment_plan?: boolean;
+      min_partial_amount?: number;
+      min_plan_amount?: number;
+      stripe_payments_enabled?: boolean;
+      accepted_currencies?: string[] | string;
+    } | null;
   },
 ): ClientDraft {
+  const ps = detail.payment_settings || {};
+  const acceptedList = Array.isArray(ps.accepted_currencies)
+    ? ps.accepted_currencies.join(", ")
+    : String(ps.accepted_currencies || "");
   return {
     name: detail.name || "",
     industry: detail.industry || detail.category || "",
@@ -274,6 +305,15 @@ export function draftFromDetail(
       smsSenderId: detail.sms_sender_id || "PAYFLOW",
       channels: detail.channels || { email: true, sms: true, whatsapp: false },
       governanceRules: detail.governance_rules || [],
+      paymentSettings: {
+        allow_partial: ps.allow_partial !== false,
+        allow_plans:
+          ps.allow_payment_plan !== false && ps.allow_plans !== false,
+        min_partial_amount: Number(ps.min_partial_amount ?? 25),
+        min_plan_amount: Number(ps.min_plan_amount ?? 100),
+        stripe_payments_enabled: ps.stripe_payments_enabled !== false,
+        accepted_currencies: acceptedList,
+      },
     },
   };
 }
@@ -311,6 +351,18 @@ export function draftToUpdatePayload(draft: ClientDraft) {
     sms_sender_id: draft.config.smsSenderId,
     channels: draft.config.channels,
     governance_rules: draft.config.governanceRules,
+    payment_settings: {
+      allow_partial: draft.config.paymentSettings.allow_partial,
+      allow_plans: draft.config.paymentSettings.allow_plans,
+      allow_payment_plan: draft.config.paymentSettings.allow_plans,
+      min_partial_amount: draft.config.paymentSettings.min_partial_amount,
+      min_plan_amount: draft.config.paymentSettings.min_plan_amount,
+      stripe_payments_enabled: draft.config.paymentSettings.stripe_payments_enabled,
+      accepted_currencies: draft.config.paymentSettings.accepted_currencies
+        .split(",")
+        .map((c) => c.trim().toUpperCase())
+        .filter(Boolean),
+    },
     mappings: draft.config.mappings.map((m) => ({
       source_field: m.sourceField,
       payflow_field: m.payflowField,
@@ -319,6 +371,97 @@ export function draftToUpdatePayload(draft: ClientDraft) {
     })),
     supervisor_user_ids: draft.supervisorUserIds,
   };
+}
+
+/* ---------------- Payment options ---------------- */
+
+export function PaymentSettingsSection({ draft, patchConfig, readOnly }: SectionProps) {
+  const ps = draft.config.paymentSettings;
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="text-[13px] font-semibold text-foreground">Customer payment options</p>
+        <p className="text-[12px] text-muted-foreground">
+          Controls what the public payment portal offers for this client. Future instalments are
+          never auto-charged.
+        </p>
+      </div>
+      <ToggleRow
+        label="Allow partial payments"
+        description="Customer can enter an amount within configured limits"
+        checked={ps.allow_partial}
+        onChange={
+          readOnly
+            ? undefined
+            : (v) => patchConfig({ paymentSettings: { ...ps, allow_partial: v } })
+        }
+        disabled={readOnly}
+      />
+      <ToggleRow
+        label="Allow payment plans"
+        description="Show installment schedule options on the portal"
+        checked={ps.allow_plans}
+        onChange={
+          readOnly
+            ? undefined
+            : (v) => patchConfig({ paymentSettings: { ...ps, allow_plans: v } })
+        }
+        disabled={readOnly}
+      />
+      <ToggleRow
+        label="Enable Stripe online payments"
+        description="When off, this client cannot start Checkout even if platform Stripe keys are set"
+        checked={ps.stripe_payments_enabled}
+        onChange={
+          readOnly
+            ? undefined
+            : (v) =>
+                patchConfig({ paymentSettings: { ...ps, stripe_payments_enabled: v } })
+        }
+        disabled={readOnly}
+      />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Minimum partial amount">
+          <TextInput
+            value={String(ps.min_partial_amount)}
+            onChange={(v) =>
+              !readOnly &&
+              patchConfig({
+                paymentSettings: { ...ps, min_partial_amount: Math.max(0, Number(v) || 0) },
+              })
+            }
+            disabled={readOnly}
+          />
+        </Field>
+        <Field label="Minimum plan total">
+          <TextInput
+            value={String(ps.min_plan_amount)}
+            onChange={(v) =>
+              !readOnly &&
+              patchConfig({
+                paymentSettings: { ...ps, min_plan_amount: Math.max(0, Number(v) || 0) },
+              })
+            }
+            disabled={readOnly}
+          />
+        </Field>
+      </div>
+      <Field label="Accepted currencies (optional)">
+        <TextInput
+          value={ps.accepted_currencies}
+          onChange={(v) =>
+            !readOnly &&
+            patchConfig({ paymentSettings: { ...ps, accepted_currencies: v } })
+          }
+          disabled={readOnly}
+          placeholder="e.g. CAD, USD — leave blank to use case currency"
+        />
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          Comma-separated ISO codes. Blank = no extra restriction beyond the case currency.
+        </p>
+      </Field>
+    </div>
+  );
 }
 
 /* ---------------- Profile ---------------- */
@@ -1151,11 +1294,18 @@ export function BrandingSection({
         </div>
 
         {c.channels.email && (
-          <Field label="Email From Address">
+          <Field
+            label="Email From Address"
+            hint={
+              thirdParty
+                ? "Third Party sends from the PayFlow operator address (SENDGRID_FROM_EMAIL on the server), not this field."
+                : "Must be a verified Sender Identity in SendGrid."
+            }
+          >
             <TextInput
-              value={c.emailFrom}
+              value={thirdParty ? "PayFlow operator (NCRi)" : c.emailFrom}
               onChange={(v) => patchConfig({ emailFrom: v })}
-              disabled={readOnly}
+              disabled={readOnly || thirdParty}
             />
           </Field>
         )}
@@ -1188,7 +1338,9 @@ export function BrandingSection({
             </div>
             <div className="text-[12px]">
               <p className="font-medium text-foreground">{previewSender}</p>
-              <p className="text-muted-foreground">{c.emailFrom}</p>
+              <p className="text-muted-foreground">
+                {thirdParty ? "PayFlow operator (SENDGRID_FROM_EMAIL)" : c.emailFrom}
+              </p>
             </div>
           </div>
           <p className="mt-3 text-[13px] font-medium text-foreground">

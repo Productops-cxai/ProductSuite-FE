@@ -9,6 +9,7 @@ import {
   listPayflowAccountPayments,
   listPayflowComms,
   listPayflowReviews,
+  reassessPayflowCase,
   revokePayflowPaymentLink,
   sendPayflowManualEmail,
   sendPayflowManualSms,
@@ -323,6 +324,8 @@ export function PayFlowCaseDetailPage() {
   const [paymentsError, setPaymentsError] = useState("");
   const [copyFlashId, setCopyFlashId] = useState<number | null>(null);
   const [revokingId, setRevokingId] = useState<number | null>(null);
+  const [reassessing, setReassessing] = useState(false);
+  const [reassessMsg, setReassessMsg] = useState("");
 
   useEffect(() => {
     const id = Number(accountId);
@@ -381,6 +384,8 @@ export function PayFlowCaseDetailPage() {
       listPayflowReviews({
         client_id: account.client_id,
         search: account.account_reference,
+        sort_by: "created_at",
+        sort_dir: "desc",
       }),
       listPayflowComms({ account_id: account.id }),
       getPayflowAccountCommunicationEligibility(account.id).catch(() => null),
@@ -658,11 +663,13 @@ export function PayFlowCaseDetailPage() {
       });
     }
 
-    // Origin (file upload / created) first, then chronological for the rest.
+    // Latest first; file-upload / created origin stays at the bottom.
     events.sort((a, b) => {
-      const rankDiff = lifecycleRank(a.label) - lifecycleRank(b.label);
-      if (rankDiff !== 0) return rankDiff;
-      if (a.atMs !== b.atMs) return a.atMs - b.atMs;
+      const ra = lifecycleRank(a.label);
+      const rb = lifecycleRank(b.label);
+      if (ra === 0 && rb !== 0) return 1;
+      if (rb === 0 && ra !== 0) return -1;
+      if (a.atMs !== b.atMs) return b.atMs - a.atMs;
       return a.label.localeCompare(b.label);
     });
 
@@ -808,7 +815,10 @@ export function PayFlowCaseDetailPage() {
             <StatusPill tone={statusTone(account.collection_status)}>
               {account.collection_status}
             </StatusPill>
-            {(account.human_review || reviews.length > 0) &&
+            {(account.human_review ||
+              reviews.some(
+                (r) => r.status === "Awaiting Review" || r.status === "On Hold",
+              )) &&
             (account.collection_status || "").toLowerCase() !== "human review" ? (
               <StatusPill tone="danger">Human review</StatusPill>
             ) : null}
@@ -821,6 +831,83 @@ export function PayFlowCaseDetailPage() {
           <Panel title="Case Summary" bodyClassName="p-0">
             <FactRows rows={summaryFacts} />
           </Panel>
+
+          {(() => {
+            const ctx = [...(account.ai_decision_context || [])].reverse();
+            const latestRec = ctx.find((e) => e.kind === "ai_recommendation");
+            const latestHr = ctx.find((e) => e.kind === "human_decision");
+            const canSuggest =
+              hasPermission("manage_workflows") || hasPermission("view_workflows");
+            return (
+              <Panel
+                title="AI recommendation"
+                description="Case-level reassessment (not portfolio Suggest)"
+                action={
+                  canSuggest ? (
+                    <Btn
+                      variant="secondary"
+                      disabled={reassessing}
+                      onClick={() => {
+                        void (async () => {
+                          setReassessing(true);
+                          setReassessMsg("");
+                          try {
+                            const res = await reassessPayflowCase(account.id);
+                            if (res.case) setAccount(res.case);
+                            setReassessMsg("Recommendation updated");
+                          } catch (err) {
+                            setReassessMsg(
+                              err instanceof ApiError
+                                ? err.detail
+                                : "Reassessment failed",
+                            );
+                          } finally {
+                            setReassessing(false);
+                          }
+                        })();
+                      }}
+                    >
+                      {reassessing ? "Suggesting…" : "Suggest for case"}
+                    </Btn>
+                  ) : undefined
+                }
+              >
+                {reassessMsg ? (
+                  <p className="mb-2 text-[12px] text-muted-foreground">{reassessMsg}</p>
+                ) : null}
+                {latestRec ? (
+                  <div className="space-y-1 text-[13px]">
+                    <p className="font-medium text-foreground">
+                      {String(latestRec.action || "—")}
+                    </p>
+                    <p className="text-muted-foreground">
+                      {String(latestRec.rationale || "")}
+                    </p>
+                    {latestRec.channel ? (
+                      <p className="text-[12px] text-muted-foreground">
+                        Channel: {String(latestRec.channel)}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="text-[13px] text-muted-foreground">
+                    No AI recommendation stored yet for this case.
+                  </p>
+                )}
+                {latestHr ? (
+                  <p className="mt-3 border-t border-border pt-3 text-[12.5px] text-muted-foreground">
+                    Last human decision:{" "}
+                    <span className="font-medium text-foreground">
+                      {String(latestHr.decision)}
+                    </span>
+                    {latestHr.final_action
+                      ? ` · ${String(latestHr.final_action)}`
+                      : ""}
+                  </p>
+                ) : null}
+              </Panel>
+            );
+          })()}
 
           <Panel
             title="Customer profile"
@@ -983,7 +1070,15 @@ export function PayFlowCaseDetailPage() {
             ) : null}
             {!sideLoading && reviews.length > 0 ? (
               <ul className="divide-y divide-border">
-                {reviews.map((r) => (
+                {[...reviews]
+                  .sort((a, b) => {
+                    const open = (s: string) =>
+                      s === "Awaiting Review" || s === "On Hold" ? 0 : 1;
+                    const d = open(a.status) - open(b.status);
+                    if (d !== 0) return d;
+                    return 0;
+                  })
+                  .map((r) => (
                   <li key={r.id} className="px-4 py-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <Link
@@ -997,7 +1092,8 @@ export function PayFlowCaseDetailPage() {
                     <p className="mt-1 text-xs text-muted-foreground">
                       Rule: {r.rule_name || "—"} · Proposed: {r.proposed_action}
                     </p>
-                    {r.waiting_label ? (
+                    {r.waiting_label &&
+                    (r.status === "Awaiting Review" || r.status === "On Hold") ? (
                       <p className="mt-0.5 text-[11px] text-muted-foreground">
                         Waiting {r.waiting_label}
                       </p>
@@ -1256,12 +1352,21 @@ export function PayFlowCaseDetailPage() {
                     </div>
                     <p className="mt-1 text-[12px] text-muted-foreground">
                       {plan.installments_total} × {formatCurrency(plan.installment_amount)} ·{" "}
-                      {plan.frequency} · paid {formatCurrency(plan.amount_paid)} of{" "}
+                      <span className="font-medium capitalize text-foreground">{plan.frequency}</span>
+                      {" · "}paid {formatCurrency(plan.amount_paid)} of{" "}
                       {formatCurrency(plan.total_payable)}
                       {plan.next_due_date ? ` · next due ${plan.next_due_date}` : ""}
                     </p>
                     <p className="mt-0.5 text-[11px] text-muted-foreground">
-                      Auto-charge off — future instalments are scheduled only
+                      {plan.auto_charge_enabled && plan.has_saved_payment_method
+                        ? `Auto-charge on${plan.payment_method_type ? ` (${plan.payment_method_type})` : ""} — worker pulls on each due date`
+                        : plan.auto_charge_enabled
+                          ? "Auto-charge armed — waiting for a saved Card/Bank on the plan"
+                          : "Auto-charge off — customer must pay next instalment manually"}
+                      {typeof plan.consecutive_charge_failures === "number" &&
+                      plan.consecutive_charge_failures > 0
+                        ? ` · ${plan.consecutive_charge_failures} failed auto-charge(s)`
+                        : ""}
                     </p>
                     <ul className="mt-2 space-y-1">
                       {(plan.installments || []).map((inst) => (
@@ -1363,6 +1468,22 @@ export function PayFlowCaseDetailPage() {
                       ? ` · Last click ${formatStamp(link.last_clicked_at)}`
                       : ""}
                   </p>
+                  {(link.events || []).length > 0 ? (
+                    <ul className="mt-2 space-y-1 border-t border-border/60 pt-2">
+                      {(link.events || []).slice(-6).reverse().map((ev, idx) => (
+                        <li
+                          key={`${link.id}-ev-${idx}`}
+                          className="text-[11px] text-muted-foreground"
+                        >
+                          <span className="font-medium text-foreground">
+                            {ev.label || "Event"}
+                          </span>
+                          {ev.detail ? ` · ${ev.detail}` : ""}
+                          {ev.at ? ` · ${formatStamp(ev.at)}` : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
                 </li>
               ))}
             </ul>

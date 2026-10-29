@@ -260,13 +260,24 @@ export function DataTable({
   head,
   children,
   minWidth = 720,
+  embedded = false,
+  className,
 }: {
   head: ReactNode[];
   children: ReactNode;
   minWidth?: number;
+  /** When true, skip outer card chrome (use inside an existing Panel). */
+  embedded?: boolean;
+  className?: string | undefined;
 }) {
   return (
-    <div className="panel max-h-[70vh] overflow-auto">
+    <div
+      className={cn(
+        "max-h-[70vh] overflow-auto",
+        !embedded && "panel",
+        className,
+      )}
+    >
       <table className="w-full border-collapse text-[13px]" style={{ minWidth }}>
         <thead className="sticky top-0 z-10">
           <tr>
@@ -290,13 +301,16 @@ export function Tr({
   children,
   onClick,
   className,
+  id,
 }: {
   children: ReactNode;
   onClick?: () => void;
   className?: string | undefined;
+  id?: string | undefined;
 }) {
   return (
     <tr
+      id={id}
       onClick={onClick}
       className={cn(
          "border-b border-border/40 transition-colors last:border-0 hover:bg-accent/40",
@@ -309,11 +323,20 @@ export function Tr({
   );
 }
 
-export function Td({ children, className }: { children: ReactNode; className?: string }) {
+export function Td({
+  children,
+  className,
+  title,
+}: {
+  children: ReactNode;
+  className?: string;
+  title?: string;
+}) {
   // Default nowrap; allow callers to opt into wrap via whitespace-normal / break-words.
   const wrap = Boolean(className?.match(/\bwhitespace-(normal|pre-wrap|pre-line)\b/));
   return (
     <td
+      title={title}
       className={cn("px-4 py-3 align-middle", !wrap && "whitespace-nowrap", className)}
     >
       {children}
