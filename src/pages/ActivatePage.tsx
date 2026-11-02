@@ -6,6 +6,7 @@ import { AuthShell } from "../components/auth/AuthShell";
 import { Button } from "../components/ui/Button";
 import { PasswordInput } from "../components/ui/PasswordInput";
 import { ui } from "../lib/ui";
+import { takeQueryToken } from "../lib/urlToken";
 
 const PASSWORD_MIN_LENGTH = 8;
 
@@ -14,7 +15,7 @@ const INVALID_LINK_MESSAGE =
 
 export function ActivatePage() {
   const [params] = useSearchParams();
-  const token = params.get("token") || "";
+  const [token] = useState(() => takeQueryToken(params));
   const navigate = useNavigate();
 
   const [email, setEmail] = useState("");

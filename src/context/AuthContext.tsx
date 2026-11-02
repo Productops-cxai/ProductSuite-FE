@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import * as authApi from "../api/auth";
-import { ApiError, clearTokens, getAccessToken } from "../api/client";
+import { ApiError, clearTokens } from "../api/client";
 import type { LoginNextStep, LoginResponse, MeResponse, PersonBrief, ProductBrief } from "../types";
 
 type AuthState = {
@@ -39,13 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshMe = useCallback(async () => {
-    if (!getAccessToken()) {
-      setUser(null);
-      setProducts([]);
-      setNextStep(null);
-      setLoading(false);
-      return;
-    }
+    // Session lives in HttpOnly cookies — probe /auth/me; 401 means logged out.
     try {
       const me = await authApi.fetchMe();
       applyMe(me);

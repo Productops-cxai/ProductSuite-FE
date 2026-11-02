@@ -158,29 +158,20 @@ const seedRuns: ImportRun[] = [
   { id: "imp-1038", kind: "client", fileName: "CRM_CLIENTS_Q3.csv", dateTime: "28 Sep 2026, 14:40", uploadedBy: "Daniya", status: "Completed", counts: { total: 940, created: 96, updated: 820, unchanged: 24, failed: 0 }, errors: [] },
 ];
 
-function loadRuns(): ImportRun[] {
-  if (typeof window === "undefined") return [...seedRuns];
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [...seedRuns];
-    const parsed = JSON.parse(raw) as ImportRun[];
-    if (!Array.isArray(parsed) || parsed.length === 0) return [...seedRuns];
-    return parsed;
-  } catch {
-    return [...seedRuns];
-  }
-}
-
-function persistRuns(next: ImportRun[]) {
+/** Drop any legacy localStorage import history (could contain PII in error rows). */
+function purgeLegacyImportStorage() {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    window.localStorage.removeItem(STORAGE_KEY);
   } catch {
-    /* ignore quota */
+    /* ignore */
   }
 }
 
-let runs: ImportRun[] = loadRuns();
+purgeLegacyImportStorage();
+
+// In-memory only — never write import error payloads to browser storage.
+let runs: ImportRun[] = [...seedRuns];
 
 export function listImports(kind?: ImportKind) {
   return kind ? runs.filter((r) => r.kind === kind) : runs;
@@ -190,7 +181,10 @@ export function getImport(id: string) {
 }
 export function addImport(run: ImportRun) {
   runs = [run, ...runs];
-  persistRuns(runs);
+}
+export function clearImportRuns() {
+  runs = [...seedRuns];
+  purgeLegacyImportStorage();
 }
 export function lastImport(kind: ImportKind) {
   return runs.find((r) => r.kind === kind);

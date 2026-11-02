@@ -1,4 +1,4 @@
-import { apiRequest, apiRequestMultipart, clearTokens, getRefreshToken, setTokens } from "./client";
+import { apiRequest, apiRequestMultipart, clearTokens } from "./client";
 import { cachedAsync, invalidateCache } from "../lib/dedupeAsync";
 import type { LoginResponse, MeResponse } from "../types";
 
@@ -8,7 +8,8 @@ export async function login(email: string, password: string): Promise<LoginRespo
     body: { email, password },
     auth: false,
   });
-  setTokens(data.access_token, data.refresh_token);
+  // Session cookies are Set-Cookie by the API — never persist JWTs in JS storage.
+  clearTokens();
   invalidateCache();
   return data;
 }
@@ -52,15 +53,19 @@ export async function changePassword(
 }
 
 export async function logout(): Promise<void> {
-  const refresh = getRefreshToken();
   try {
     await apiRequest<{ message: string }>("/auth/logout", {
       method: "POST",
-      headers: refresh ? { "X-Refresh-Token": refresh } : {},
     });
   } finally {
     clearTokens();
     invalidateCache();
+    try {
+      const { clearImportRuns } = await import("../lib/import-data");
+      clearImportRuns();
+    } catch {
+      /* ignore */
+    }
   }
 }
 

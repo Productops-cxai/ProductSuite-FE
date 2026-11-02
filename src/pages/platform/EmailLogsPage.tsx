@@ -22,7 +22,6 @@ export function EmailLogsPage() {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [error, setError] = useState("");
-  const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(true);
   const resetKey = `${search}|${typeFilter}`;
   const { pageItems, total, offset, pageSize, goPrev, goNext } = useClientPagedList(
@@ -63,32 +62,21 @@ export function EmailLogsPage() {
     await load();
   }
 
-  async function copyLink(link: string) {
-    try {
-      await navigator.clipboard.writeText(link);
-      setInfo("Link copied to clipboard.");
-    } catch {
-      setInfo(link);
-    }
-  }
-
   function actionFooter(row: EmailLog) {
-    if (!row.action_link) return <span className="text-slate-500">—</span>;
+    if (!row.action_link) {
+      return (
+        <span className="text-slate-500" title="One-time links are hidden in production">
+          —
+        </span>
+      );
+    }
+    // Dev-only: API omits action_link in production. Still avoid copying raw tokens.
     return (
-      <>
-        <a href={row.action_link} target="_blank" rel="noreferrer">
-          <Button variant="secondary" size="sm">
-            Open
-          </Button>
-        </a>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => void copyLink(row.action_link!)}
-        >
-          Copy
+      <a href={row.action_link} target="_blank" rel="noreferrer noopener">
+        <Button variant="secondary" size="sm">
+          Open (dev)
         </Button>
-      </>
+      </a>
     );
   }
 
@@ -96,7 +84,7 @@ export function EmailLogsPage() {
     <div className={ui.page}>
       <PageHeader
         title="Email Logs"
-        description="Outbound emails (activation, password reset, collection) are saved here so you can open the action link and complete the flow. Visible only to the suite seed admin (SEED_SUPER_ADMIN_EMAIL on the API)."
+        description="Outbound emails (activation, password reset, collection). One-time action links are hidden in production. Visible only to the suite seed admin."
         breadcrumb={[{ label: "Logs" }, { label: "Email Logs" }]}
         actions={
           <Button variant="secondary" onClick={() => void load()}>
@@ -106,7 +94,6 @@ export function EmailLogsPage() {
       />
 
       {error ? <div className={ui.error}>{error}</div> : null}
-      {info ? <div className={ui.success}>{info}</div> : null}
 
       <form className="mb-3.5 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-3" onSubmit={onSearch}>
         <div className={ui.search}>
