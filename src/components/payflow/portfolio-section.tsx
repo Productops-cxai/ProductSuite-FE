@@ -4,6 +4,10 @@ import { ApiError } from "../../api/client";
 import { deletePayflowClientPortfolio } from "../../api/payflow";
 import { SHOW_PAYFLOW_DELETE } from "../../lib/payflow-features";
 import { ConfirmDelete } from "../ui/ConfirmDelete";
+import { MobileRecordCard, MobileRecordCards } from "../ui/MobileRecordCards";
+import { Pagination } from "../ui/Pagination";
+import { useClientPagedList } from "../../hooks/useOffsetPagination";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import {
   Btn,
   DataTable,
@@ -19,6 +23,8 @@ import {
   type Tone,
 } from "./lovable/payflow-ui";
 import type { PayflowPortfolio } from "../../types";
+
+const PAGE_SIZE = 10;
 
 const STATUS_OPTIONS = ["Onboarding", "Active", "Paused"] as const;
 
@@ -69,12 +75,18 @@ export function PortfolioSection({
   onError?: (message: string) => void;
   onDeleted?: () => void;
 }) {
+  const isMobile = useIsMobile();
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [status, setStatus] = useState<string>("Onboarding");
   const [pendingDelete, setPendingDelete] = useState<PayflowPortfolio | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const { pageItems, total, offset, pageSize, goPrev, goNext } = useClientPagedList(
+    portfolios,
+    PAGE_SIZE,
+    clientId,
+  );
 
   async function submit(e?: FormEvent) {
     e?.preventDefault();
@@ -176,82 +188,130 @@ export function PortfolioSection({
           }
         />
       ) : (
-        <DataTable
-          minWidth={900}
-          head={[
-            "Portfolio",
-            "Reference",
-            "Status",
-            "Accounts / Cases",
-            "Outstanding",
-            "Active Strategy",
-            "",
-          ]}
-        >
-          {portfolios.map((p) => (
-            <Tr key={p.id}>
-              <Td>
-                <Link to={`/payflow/clients/${clientId}/portfolios/${p.id}`}>
-                  <PrimaryCell
-                    title={
-                      <span className="text-primary hover:underline">
-                        {clientName} &gt; {p.name}
+        <>
+          {isMobile ? (
+            <MobileRecordCards>
+              {pageItems.map((p) => (
+                <MobileRecordCard
+                  key={p.id}
+                  to={`/payflow/clients/${clientId}/portfolios/${p.id}`}
+                  title={p.name}
+                  subtitle={p.code}
+                  badges={
+                    <StatusPill tone={portfolioStatusTone(p.status)} dot>
+                      {statusLabel(p)}
+                    </StatusPill>
+                  }
+                  meta={
+                    <div className="flex flex-wrap gap-x-3 gap-y-1">
+                      <span>
+                        {formatNumber(p.account_count ?? 0)} / {formatNumber(p.case_count ?? 0)}{" "}
+                        accounts
                       </span>
-                    }
-                    subtitle={
-                      p.crm_client_number
-                        ? `CRM #${p.crm_client_number}${p.description ? ` · ${p.description}` : ""}`
-                        : p.description || "Portfolio under this client"
-                    }
-                  />
-                </Link>
-              </Td>
-              <Td className="tabular text-muted-foreground">{p.code}</Td>
-              <Td>
-                <StatusPill tone={portfolioStatusTone(p.status)} dot>
-                  {statusLabel(p)}
-                </StatusPill>
-              </Td>
-              <Td className="tabular">
-                {formatNumber(p.account_count ?? 0)} / {formatNumber(p.case_count ?? 0)}
-              </Td>
-              <Td className="tabular font-medium">
-                {formatCurrency(p.outstanding ?? 0)}
-              </Td>
-              <Td className="text-muted-foreground">
-                {p.active_strategy_id && p.active_strategy_name ? (
-                  <Link
-                    to={`/payflow/workflows/${p.active_strategy_id}`}
-                    className="text-primary hover:underline"
-                  >
-                    {p.active_strategy_name}
-                  </Link>
-                ) : (
-                  "None applied"
-                )}
-              </Td>
-              <Td>
-                <div className="flex flex-col items-end gap-1">
-                  <Link
-                    to={`/payflow/clients/${clientId}/portfolios/${p.id}`}
-                    className="text-[12.5px] font-semibold text-primary hover:underline"
-                  >
-                    View details
-                  </Link>
-                  {SHOW_PAYFLOW_DELETE && canEdit ? (
-                    <button
-                      type="button"
-                      className="text-[12.5px] font-semibold text-destructive hover:underline"
-                      onClick={() => setPendingDelete(p)}
-                    >
-                      Delete
-                    </button>
-                  ) : null}
-                </div>
-              </Td>
-            </Tr>
-          ))}
-        </DataTable>
+                      <span>{formatCurrency(p.outstanding ?? 0)}</span>
+                    </div>
+                  }
+                  footer={
+                    SHOW_PAYFLOW_DELETE && canEdit ? (
+                      <button
+                        type="button"
+                        className="text-[12.5px] font-semibold text-destructive hover:underline"
+                        onClick={() => setPendingDelete(p)}
+                      >
+                        Delete
+                      </button>
+                    ) : undefined
+                  }
+                />
+              ))}
+            </MobileRecordCards>
+          ) : (
+            <DataTable
+              minWidth={900}
+              head={[
+                "Portfolio",
+                "Reference",
+                "Status",
+                "Accounts / Cases",
+                "Outstanding",
+                "Active Strategy",
+                "",
+              ]}
+            >
+              {pageItems.map((p) => (
+                <Tr key={p.id}>
+                  <Td>
+                    <Link to={`/payflow/clients/${clientId}/portfolios/${p.id}`}>
+                      <PrimaryCell
+                        title={
+                          <span className="text-primary hover:underline">
+                            {clientName} &gt; {p.name}
+                          </span>
+                        }
+                        subtitle={
+                          p.crm_client_number
+                            ? `CRM #${p.crm_client_number}${p.description ? ` · ${p.description}` : ""}`
+                            : p.description || "Portfolio under this client"
+                        }
+                      />
+                    </Link>
+                  </Td>
+                  <Td className="tabular text-muted-foreground">{p.code}</Td>
+                  <Td>
+                    <StatusPill tone={portfolioStatusTone(p.status)} dot>
+                      {statusLabel(p)}
+                    </StatusPill>
+                  </Td>
+                  <Td className="tabular">
+                    {formatNumber(p.account_count ?? 0)} / {formatNumber(p.case_count ?? 0)}
+                  </Td>
+                  <Td className="tabular font-medium">
+                    {formatCurrency(p.outstanding ?? 0)}
+                  </Td>
+                  <Td className="text-muted-foreground">
+                    {p.active_strategy_id && p.active_strategy_name ? (
+                      <Link
+                        to={`/payflow/workflows/${p.active_strategy_id}`}
+                        className="text-primary hover:underline"
+                      >
+                        {p.active_strategy_name}
+                      </Link>
+                    ) : (
+                      "None applied"
+                    )}
+                  </Td>
+                  <Td>
+                    <div className="flex flex-col items-end gap-1">
+                      <Link
+                        to={`/payflow/clients/${clientId}/portfolios/${p.id}`}
+                        className="text-[12.5px] font-semibold text-primary hover:underline"
+                      >
+                        View details
+                      </Link>
+                      {SHOW_PAYFLOW_DELETE && canEdit ? (
+                        <button
+                          type="button"
+                          className="text-[12.5px] font-semibold text-destructive hover:underline"
+                          onClick={() => setPendingDelete(p)}
+                        >
+                          Delete
+                        </button>
+                      ) : null}
+                    </div>
+                  </Td>
+                </Tr>
+              ))}
+            </DataTable>
+          )}
+          <Pagination
+            total={total}
+            offset={offset}
+            pageSize={pageSize}
+            rowCount={pageItems.length}
+            onPrevious={goPrev}
+            onNext={goNext}
+          />
+        </>
       )}
 
       <ConfirmDelete

@@ -17,6 +17,7 @@ import { resolveAvatarUrl } from "../ui/UserAvatar";
 import { LogoCropModal } from "./LogoCropModal";
 import { removePayflowClientLogo, uploadPayflowClientLogo } from "../../api/payflow";
 import { ApiError } from "../../api/client";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import {
   fetchCities,
   fetchCountryNames,
@@ -872,6 +873,7 @@ export function MappingSection({
   payflowFields = ["— Not mapped —"],
   readOnly,
 }: SectionProps) {
+  const isMobile = useIsMobile();
   const summary = mappingSummary(draft.config);
 
   const setField = (index: number, payflowField: string) => {
@@ -910,39 +912,95 @@ export function MappingSection({
           {summary.unmapped} Unmapped
         </StatusPill>
       </div>
-      <DataTable head={["CRM Source", "PayFlow Field", "Sample", "Status"]}>
-        {draft.config.mappings.map((m, i) => (
-          <tr key={m.sourceField} className="border-b border-border last:border-0">
-            <Td className="tabular text-muted-foreground">
-              {m.sourceField}
-              {m.isRequired ? " *" : ""}
-            </Td>
-            <Td>
-              <SelectInput
-                value={m.payflowField}
-                options={payflowFields}
-                onChange={(v) => setField(i, v)}
-                disabled={readOnly}
-              />
-            </Td>
-            <Td className="tabular text-muted-foreground">{m.sampleValue || "—"}</Td>
-            <Td>
-              <select
-                value={m.status}
-                onChange={(e) => setStatus(i, e.target.value as MappingStatusLabel)}
-                disabled={readOnly}
-                className="rounded-md border border-border bg-card px-2 py-1 text-[12px] outline-none"
-              >
-                {mappingStatuses.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </Td>
-          </tr>
-        ))}
-      </DataTable>
+      {isMobile ? (
+        <div className="flex flex-col gap-2">
+          {draft.config.mappings.map((m, i) => (
+            <div
+              key={m.sourceField}
+              className="space-y-2 rounded-lg border border-border bg-card px-3.5 py-3"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <p className="min-w-0 text-[13px] font-semibold text-foreground">
+                  {m.sourceField}
+                  {m.isRequired ? " *" : ""}
+                </p>
+                <StatusPill
+                  tone={
+                    m.status === "Mapped" || m.status === "Validated"
+                      ? "success"
+                      : m.status === "Needs Attention"
+                        ? "warning"
+                        : "neutral"
+                  }
+                >
+                  {m.status}
+                </StatusPill>
+              </div>
+              {m.sampleValue ? (
+                <p className="text-[12px] text-muted-foreground">Sample · {m.sampleValue}</p>
+              ) : null}
+              <label className="block space-y-1">
+                <span className="text-[11px] font-medium text-muted-foreground">PayFlow field</span>
+                <SelectInput
+                  value={m.payflowField}
+                  options={payflowFields}
+                  onChange={(v) => setField(i, v)}
+                  disabled={readOnly}
+                />
+              </label>
+              <label className="block space-y-1">
+                <span className="text-[11px] font-medium text-muted-foreground">Status</span>
+                <select
+                  value={m.status}
+                  onChange={(e) => setStatus(i, e.target.value as MappingStatusLabel)}
+                  disabled={readOnly}
+                  className="w-full rounded-md border border-border bg-card px-2 py-1.5 text-[12px] outline-none"
+                >
+                  {mappingStatuses.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <DataTable head={["CRM Source", "PayFlow Field", "Sample", "Status"]}>
+          {draft.config.mappings.map((m, i) => (
+            <tr key={m.sourceField} className="border-b border-border last:border-0">
+              <Td className="tabular text-muted-foreground">
+                {m.sourceField}
+                {m.isRequired ? " *" : ""}
+              </Td>
+              <Td>
+                <SelectInput
+                  value={m.payflowField}
+                  options={payflowFields}
+                  onChange={(v) => setField(i, v)}
+                  disabled={readOnly}
+                />
+              </Td>
+              <Td className="tabular text-muted-foreground">{m.sampleValue || "—"}</Td>
+              <Td>
+                <select
+                  value={m.status}
+                  onChange={(e) => setStatus(i, e.target.value as MappingStatusLabel)}
+                  disabled={readOnly}
+                  className="rounded-md border border-border bg-card px-2 py-1 text-[12px] outline-none"
+                >
+                  {mappingStatuses.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </Td>
+            </tr>
+          ))}
+        </DataTable>
+      )}
       <p className="text-[11px] text-muted-foreground">
         Catalog v0.3 — CRM placement columns → PayFlow fields. Required (*). Contact needs at least
         one channel (email and/or phone). History fields are PayFlow-built. Ambiguous / missing

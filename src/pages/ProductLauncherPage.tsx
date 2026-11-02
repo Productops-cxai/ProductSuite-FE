@@ -25,21 +25,21 @@ function LauncherHeader({
 }) {
   const { user } = useAuth();
   return (
-    <header className="sticky top-0 z-20 flex h-[68px] items-center justify-between gap-4 border-b border-slate-200/80 bg-white/90 px-5 shadow-card backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 lg:px-10">
-      <div className="flex items-center gap-3">
-        <img src="/assets/payflow-mark.png" alt="" className="h-9 w-auto" />
-        <div>
+    <header className="sticky top-0 z-20 flex min-h-[68px] flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-slate-200/80 bg-white/90 px-4 py-2.5 shadow-card backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:px-5 lg:px-10">
+      <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
+        <img src="/assets/payflow-mark.png" alt="" className="h-8 w-auto shrink-0 sm:h-9" />
+        <div className="min-w-0">
           <strong className="block text-[15px] font-semibold leading-tight text-primary">PayFlow</strong>
           <span className="block text-[10px] font-semibold tracking-[0.1em] text-slate-400">
             AUTOMATE. ENGAGE. RECOVER.
           </span>
         </div>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
         {user ? (
           <Link
             to="/profile"
-            className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-[13px] font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 text-[12.5px] font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800 sm:px-3 sm:text-[13px]"
           >
             My Profile
           </Link>
@@ -47,12 +47,12 @@ function LauncherHeader({
         {isSuperAdmin ? (
           <Link
             to="/platform"
-            className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-white px-3 text-[13px] font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+            className="inline-flex h-9 items-center rounded-md border border-slate-200 bg-white px-2.5 text-[12.5px] font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800 sm:px-3 sm:text-[13px]"
           >
             Platform administration
           </Link>
         ) : null}
-        <button type="button" className={`${ui.link} text-[13px]`} onClick={onLogout}>
+        <button type="button" className={`${ui.link} text-[12.5px] sm:text-[13px]`} onClick={onLogout}>
           Sign out
         </button>
       </div>

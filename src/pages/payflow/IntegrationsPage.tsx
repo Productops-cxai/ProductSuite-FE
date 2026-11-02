@@ -6,6 +6,7 @@ import {
   EmptyState,
   FilterSelect,
   KpiCard,
+  KpiGrid,
   PageHeader,
   Panel,
   SectionHeading,
@@ -14,7 +15,13 @@ import {
   Tr,
   type Tone,
 } from "../../components/payflow/lovable/payflow-ui";
+import { MobileRecordCard, MobileRecordCards } from "../../components/ui/MobileRecordCards";
+import { Pagination } from "../../components/ui/Pagination";
+import { useIsMobile } from "../../hooks/useIsMobile";
+import { useClientPagedList } from "../../hooks/useOffsetPagination";
 import type { PayflowMappingCatalogField, PayflowMappingOutboundField } from "../../types";
+
+const PAGE_SIZE = 10;
 
 function availableTone(available?: string): Tone {
   switch ((available || "").trim()) {
@@ -38,51 +45,162 @@ function MappingFieldsTable({
   fields,
   emptyTitle,
   emptyDescription,
+  resetKey,
 }: {
   fields: PayflowMappingCatalogField[];
   emptyTitle: string;
   emptyDescription: string;
+  resetKey: string;
 }) {
+  const isMobile = useIsMobile();
+  const { pageItems, total, offset, pageSize, goPrev, goNext } = useClientPagedList(
+    fields,
+    PAGE_SIZE,
+    resetKey,
+  );
+
   if (fields.length === 0) {
     return <EmptyState title={emptyTitle} description={emptyDescription} />;
   }
+
   return (
-    <DataTable
-      minWidth={880}
-      head={["Group", "CRM / source field", "PayFlow field", "Required", "Available", "Sample"]}
-    >
-      {fields.map((f) => (
-        <Tr key={`${f.feed || "map"}-${f.group}-${f.source_field}-${f.payflow_field}`}>
-          <Td className="align-top text-muted-foreground">
-            <div className="w-[8.5rem] whitespace-normal">{f.group}</div>
-          </Td>
-          <Td className="align-top">
-            <div className="max-w-[22rem] whitespace-normal">
-              <span className="font-medium text-foreground">{f.source_field}</span>
-              {f.meaning ? (
-                <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{f.meaning}</p>
-              ) : null}
-            </div>
-          </Td>
-          <Td className="align-top font-medium text-foreground">
-            <div className="w-[10.5rem] whitespace-normal">{f.payflow_field || "—"}</div>
-          </Td>
-          <Td>
-            <StatusPill tone={f.required ? "warning" : "neutral"}>
-              {f.required ? "Required" : "Optional"}
-            </StatusPill>
-          </Td>
-          <Td>
-            <StatusPill tone={availableTone(f.available)}>{f.available || "—"}</StatusPill>
-          </Td>
-          <Td className="tabular text-muted-foreground">
-            <div className="max-w-[9rem] truncate" title={f.sample_value || undefined}>
-              {f.sample_value || "—"}
-            </div>
-          </Td>
-        </Tr>
-      ))}
-    </DataTable>
+    <>
+      {isMobile ? (
+        <MobileRecordCards>
+          {pageItems.map((f) => (
+            <MobileRecordCard
+              key={`${f.feed || "map"}-${f.group}-${f.source_field}-${f.payflow_field}`}
+              title={f.source_field}
+              subtitle={f.payflow_field || "—"}
+              badges={
+                <>
+                  <StatusPill tone={f.required ? "warning" : "neutral"}>
+                    {f.required ? "Required" : "Optional"}
+                  </StatusPill>
+                  <StatusPill tone={availableTone(f.available)}>
+                    {f.available || "—"}
+                  </StatusPill>
+                </>
+              }
+              meta={
+                <div className="space-y-0.5">
+                  <p>{f.group}</p>
+                  {f.meaning ? <p>{f.meaning}</p> : null}
+                  {f.sample_value ? <p>Sample: {f.sample_value}</p> : null}
+                </div>
+              }
+            />
+          ))}
+        </MobileRecordCards>
+      ) : (
+        <DataTable
+          minWidth={880}
+          head={["Group", "CRM / source field", "PayFlow field", "Required", "Available", "Sample"]}
+        >
+          {pageItems.map((f) => (
+            <Tr key={`${f.feed || "map"}-${f.group}-${f.source_field}-${f.payflow_field}`}>
+              <Td className="align-top text-muted-foreground">
+                <div className="w-[8.5rem] whitespace-normal">{f.group}</div>
+              </Td>
+              <Td className="align-top">
+                <div className="max-w-[22rem] whitespace-normal">
+                  <span className="font-medium text-foreground">{f.source_field}</span>
+                  {f.meaning ? (
+                    <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{f.meaning}</p>
+                  ) : null}
+                </div>
+              </Td>
+              <Td className="align-top font-medium text-foreground">
+                <div className="w-[10.5rem] whitespace-normal">{f.payflow_field || "—"}</div>
+              </Td>
+              <Td>
+                <StatusPill tone={f.required ? "warning" : "neutral"}>
+                  {f.required ? "Required" : "Optional"}
+                </StatusPill>
+              </Td>
+              <Td>
+                <StatusPill tone={availableTone(f.available)}>{f.available || "—"}</StatusPill>
+              </Td>
+              <Td className="tabular text-muted-foreground">
+                <div className="max-w-[9rem] truncate" title={f.sample_value || undefined}>
+                  {f.sample_value || "—"}
+                </div>
+              </Td>
+            </Tr>
+          ))}
+        </DataTable>
+      )}
+      <Pagination
+        total={total}
+        offset={offset}
+        pageSize={pageSize}
+        rowCount={pageItems.length}
+        onPrevious={goPrev}
+        onNext={goNext}
+      />
+    </>
+  );
+}
+
+function OutboundFieldsTable({ fields }: { fields: PayflowMappingOutboundField[] }) {
+  const isMobile = useIsMobile();
+  const { pageItems, total, offset, pageSize, goPrev, goNext } = useClientPagedList(
+    fields,
+    PAGE_SIZE,
+    fields.length,
+  );
+
+  if (fields.length === 0) return null;
+
+  return (
+    <>
+      {isMobile ? (
+        <MobileRecordCards>
+          {pageItems.map((o) => (
+            <MobileRecordCard
+              key={`${o.file}-${o.field}`}
+              title={o.field}
+              subtitle={o.file}
+              badges={
+                <StatusPill tone={o.required ? "warning" : "neutral"}>
+                  {o.required ? "Required" : "Optional"}
+                </StatusPill>
+              }
+              meta={
+                <div className="space-y-0.5">
+                  <p>{o.meaning}</p>
+                  {o.format ? <p>Format: {o.format}</p> : null}
+                </div>
+              }
+            />
+          ))}
+        </MobileRecordCards>
+      ) : (
+        <DataTable minWidth={880} head={["File", "Field", "Meaning", "Required", "Format"]}>
+          {pageItems.map((o) => (
+            <Tr key={`${o.file}-${o.field}`}>
+              <Td className="text-muted-foreground">{o.file}</Td>
+              <Td className="font-medium">{o.field}</Td>
+              <Td className="text-muted-foreground">{o.meaning}</Td>
+              <Td>
+                <StatusPill tone={o.required ? "warning" : "neutral"}>
+                  {o.required ? "Required" : "Optional"}
+                </StatusPill>
+              </Td>
+              <Td className="text-muted-foreground">{o.format || "—"}</Td>
+            </Tr>
+          ))}
+        </DataTable>
+      )}
+      <Pagination
+        total={total}
+        offset={offset}
+        pageSize={pageSize}
+        rowCount={pageItems.length}
+        onPrevious={goPrev}
+        onNext={goNext}
+      />
+    </>
   );
 }
 
@@ -160,12 +278,12 @@ export function PayFlowIntegrationsPage() {
         description="One global CRM → PayFlow field mapping for all clients. Client hierarchy and daily account files are listed separately so source columns stay clear."
       />
 
-      <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <KpiGrid>
         <KpiCard label="Inbound fields" value={String(totalFields)} />
         <KpiCard label="Mapped targets" value={String(mappedCount)} />
         <KpiCard label="Required fields" value={String(requiredCount)} />
         <KpiCard label="Catalog version" value={version || "—"} />
-      </div>
+      </KpiGrid>
 
       {error ? (
         <p className="mb-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-[13px] text-destructive">
@@ -193,6 +311,7 @@ export function PayFlowIntegrationsPage() {
               fields={filteredClients}
               emptyTitle="No client-file mappings"
               emptyDescription="No client hierarchy fields in the catalog."
+              resetKey={`client|${clientGroup}`}
             />
           </Panel>
 
@@ -213,6 +332,7 @@ export function PayFlowIntegrationsPage() {
                 fields={filteredAccounts}
                 emptyTitle="No account-file mappings"
                 emptyDescription="No daily account fields in the catalog."
+                resetKey={`account|${accountGroup}`}
               />
             </Panel>
           </div>
@@ -226,21 +346,7 @@ export function PayFlowIntegrationsPage() {
             description="CRM remittance / status files PayFlow may produce later (documentation)."
           />
           <Panel title="Outbound fields" className="mt-3">
-            <DataTable minWidth={880} head={["File", "Field", "Meaning", "Required", "Format"]}>
-              {outbound.map((o) => (
-                <Tr key={`${o.file}-${o.field}`}>
-                  <Td className="text-muted-foreground">{o.file}</Td>
-                  <Td className="font-medium">{o.field}</Td>
-                  <Td className="text-muted-foreground">{o.meaning}</Td>
-                  <Td>
-                    <StatusPill tone={o.required ? "warning" : "neutral"}>
-                      {o.required ? "Required" : "Optional"}
-                    </StatusPill>
-                  </Td>
-                  <Td className="text-muted-foreground">{o.format || "—"}</Td>
-                </Tr>
-              ))}
-            </DataTable>
+            <OutboundFieldsTable fields={outbound} />
           </Panel>
         </div>
       ) : null}

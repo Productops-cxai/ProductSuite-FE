@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
-import { listPayflowAccounts, listPayflowClients } from "../../api/payflow";
+import {
+  listPayflowAccounts,
+  listPayflowClientPortfolios,
+  listPayflowClients,
+} from "../../api/payflow";
 import {
   Btn,
   DataTable,
+  FilterBar,
   FilterSelect,
   PageHeader,
   SearchInput,
@@ -12,8 +17,19 @@ import {
   Td,
   statusTone,
 } from "../../components/payflow/lovable/payflow-ui";
+import { MobileRecordCard, MobileRecordCards } from "../../components/ui/MobileRecordCards";
+import { Pagination } from "../../components/ui/Pagination";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
-import type { PayflowAccount, PayflowAccountsIntake, PayflowClient } from "../../types";
+import { useIsMobile } from "../../hooks/useIsMobile";
+import { useOffsetPagination } from "../../hooks/useOffsetPagination";
+import type {
+  PayflowAccount,
+  PayflowAccountsIntake,
+  PayflowClient,
+  PayflowPortfolio,
+} from "../../types";
+
+const PAGE_SIZE = 10;
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-US", {
@@ -43,9 +59,12 @@ function formatStamp(value?: string | null) {
 export function PayFlowCasesPage() {
   const { hasPermission } = usePayFlowAccess();
   const canImport = hasPermission("import_accounts");
+  const isMobile = useIsMobile();
   const [searchParams] = useSearchParams();
   const [accounts, setAccounts] = useState<PayflowAccount[]>([]);
+  const [total, setTotal] = useState(0);
   const [clients, setClients] = useState<PayflowClient[]>([]);
+  const [portfolios, setPortfolios] = useState<PayflowPortfolio[]>([]);
   const [statuses, setStatuses] = useState<string[]>([]);
   const [workflows, setWorkflows] = useState<string[]>([]);
   const [intake, setIntake] = useState<PayflowAccountsIntake>({
@@ -58,11 +77,22 @@ export function PayFlowCasesPage() {
   const [error, setError] = useState("");
 
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [clientFilter, setClientFilter] = useState("All Clients");
   const [subClient, setSubClient] = useState("All Sub-Clients");
   const [status, setStatus] = useState(searchParams.get("status") || "All Statuses");
   const [workflow, setWorkflow] = useState("All Workflows");
   const [humanReview, setHumanReview] = useState("All");
+
+  const filterKey = [
+    debouncedSearch,
+    clientFilter,
+    subClient,
+    status,
+    workflow,
+    humanReview,
+  ].join("|");
+  const { offset, pageSize, goPrev, goNext } = useOffsetPagination(PAGE_SIZE, filterKey);
 
   useEffect(() => {
     const nextStatus = searchParams.get("status");
@@ -70,21 +100,84 @@ export function PayFlowCasesPage() {
   }, [searchParams]);
 
   useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => window.clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => {
+    let cancelled = false;
+    listPayflowClients({})
+      .then((clientRes) => {
+        if (!cancelled) setClients(clientRes.clients || []);
+      })
+      .catch(() => {
+        /* filters still work without names */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const selectedClientId = useMemo(() => {
+    if (clientFilter === "All Clients") return undefined;
+    return clients.find((c) => c.name === clientFilter)?.id;
+  }, [clientFilter, clients]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (selectedClientId == null) {
+      setPortfolios([]);
+      return;
+    }
+    listPayflowClientPortfolios(selectedClientId)
+      .then((res) => {
+        if (!cancelled) setPortfolios(res.portfolios || []);
+      })
+      .catch(() => {
+        if (!cancelled) setPortfolios([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedClientId]);
+
+  const selectedPortfolioId = useMemo(() => {
+    if (subClient === "All Sub-Clients") return undefined;
+    return portfolios.find((p) => p.name === subClient)?.id;
+  }, [subClient, portfolios]);
+
+  const subClientOptions = useMemo(
+    () => ["All Sub-Clients", ...portfolios.map((p) => p.name)],
+    [portfolios],
+  );
+
+  useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError("");
-    Promise.all([listPayflowAccounts({}), listPayflowClients({})])
-      .then(([accountRes, clientRes]) => {
+    listPayflowAccounts({
+      client_id: selectedClientId,
+      portfolio_id: selectedPortfolioId,
+      status: status !== "All Statuses" ? status : undefined,
+      workflow: workflow !== "All Workflows" ? workflow : undefined,
+      human_review: humanReview !== "All" ? humanReview : undefined,
+      search: debouncedSearch || undefined,
+      limit: pageSize,
+      offset,
+    })
+      .then((accountRes) => {
         if (cancelled) return;
         setAccounts(accountRes.accounts || []);
+        setTotal(accountRes.total ?? (accountRes.accounts || []).length);
         setIntake(accountRes.intake);
         setStatuses(accountRes.statuses || []);
         setWorkflows(accountRes.workflows || []);
-        setClients(clientRes.clients || []);
       })
       .catch((err) => {
         if (!cancelled) {
           setError(err instanceof ApiError ? err.detail : "Failed to load accounts");
+          setAccounts([]);
+          setTotal(0);
         }
       })
       .finally(() => {
@@ -93,47 +186,16 @@ export function PayFlowCasesPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
-
-  const subClientOptions = useMemo(() => {
-    const names = new Set<string>();
-    for (const a of accounts) {
-      if (clientFilter !== "All Clients" && a.client_name !== clientFilter) continue;
-      if (a.portfolio_name) names.add(a.portfolio_name);
-    }
-    return ["All Sub-Clients", ...[...names].sort()];
-  }, [accounts, clientFilter]);
-
-  const rows = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return accounts.filter((a) => {
-      if (
-        q &&
-        !`${a.account_reference} ${a.customer_name} ${a.email || ""} ${a.client_name || ""}`
-          .toLowerCase()
-          .includes(q)
-      ) {
-        return false;
-      }
-      if (clientFilter !== "All Clients" && a.client_name !== clientFilter) return false;
-      if (subClient !== "All Sub-Clients" && a.portfolio_name !== subClient) return false;
-      if (status !== "All Statuses" && a.collection_status !== status) return false;
-      if (workflow !== "All Workflows" && (a.current_workflow || "") !== workflow) return false;
-      if (humanReview === "Yes" && !a.human_review) return false;
-      if (humanReview === "No" && a.human_review) return false;
-      return true;
-    });
-  }, [accounts, search, clientFilter, subClient, status, workflow, humanReview]);
-
-  const scopedIntake = useMemo(() => {
-    if (clientFilter === "All Clients") return intake;
-    const scoped = accounts.filter((a) => a.client_name === clientFilter);
-    return {
-      ...intake,
-      files: scoped.length > 0 ? 1 : 0,
-      accounts_in_files: scoped.length,
-    };
-  }, [accounts, clientFilter, intake]);
+  }, [
+    selectedClientId,
+    selectedPortfolioId,
+    status,
+    workflow,
+    humanReview,
+    debouncedSearch,
+    pageSize,
+    offset,
+  ]);
 
   return (
     <>
@@ -157,30 +219,30 @@ export function PayFlowCasesPage() {
       <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border border-border bg-card px-4 py-3">
         <div>
           <p className="text-eyebrow">File Received</p>
-          <p className="text-[13px] font-semibold text-foreground">{scopedIntake.latest_received_at}</p>
+          <p className="text-[13px] font-semibold text-foreground">{intake.latest_received_at}</p>
         </div>
         <div>
           <p className="text-eyebrow">Assigned To Collections</p>
-          <p className="text-[13px] font-semibold text-foreground">{scopedIntake.latest_assigned_at}</p>
+          <p className="text-[13px] font-semibold text-foreground">{intake.latest_assigned_at}</p>
         </div>
         <div>
           <p className="text-eyebrow">Accounts In Current File</p>
           <p className="tabular text-[13px] font-semibold text-foreground">
-            {formatNumber(scopedIntake.accounts_in_files)}
+            {formatNumber(intake.accounts_in_files)}
           </p>
         </div>
         <p className="text-[11.5px] text-muted-foreground">
           Figures below reflect the most recently received source-system file
-          {scopedIntake.files > 1 ? `s (${scopedIntake.files} clients)` : ""}.
+          {intake.files > 1 ? `s (${intake.files} clients)` : ""}.
         </p>
       </div>
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <FilterBar>
         <SearchInput
           value={search}
           onChange={setSearch}
           placeholder="Search account ID or customer"
-          className="w-64"
+          className="w-full md:col-span-2 xl:w-64"
         />
         <FilterSelect
           label="Client"
@@ -191,12 +253,14 @@ export function PayFlowCasesPage() {
           }}
           options={["All Clients", ...clients.map((c) => c.name)]}
         />
-        <FilterSelect
-          label="Sub-Client"
-          value={subClient}
-          onChange={setSubClient}
-          options={subClientOptions}
-        />
+        {selectedClientId != null ? (
+          <FilterSelect
+            label="Sub-Client"
+            value={subClient}
+            onChange={setSubClient}
+            options={subClientOptions}
+          />
+        ) : null}
         <FilterSelect
           label="Status"
           value={status}
@@ -215,75 +279,118 @@ export function PayFlowCasesPage() {
           onChange={setHumanReview}
           options={["All", "Yes", "No"]}
         />
-      </div>
+      </FilterBar>
 
       {error ? <p className="mb-3 text-sm text-destructive">{error}</p> : null}
       {loading ? <p className="text-sm text-muted-foreground">Loading accounts…</p> : null}
 
-      {!loading && !error && accounts.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No accounts yet. Upload the daily CRM file to create them.</p>
+      {!loading && !error && total === 0 && !debouncedSearch && clientFilter === "All Clients" ? (
+        <p className="text-sm text-muted-foreground">
+          No accounts yet. Upload the daily CRM file to create them.
+        </p>
+      ) : null}
+
+      {!loading && !error && accounts.length === 0 && total === 0 && (debouncedSearch || clientFilter !== "All Clients") ? (
+        <p className="text-sm text-muted-foreground">No accounts match these filters.</p>
       ) : null}
 
       {!loading && !error && accounts.length > 0 ? (
         <>
-          <DataTable
-            minWidth={1180}
-            head={[
-              "Account ID",
-              "Customer",
-              "Client",
-              "Sub-Client",
-              "Outstanding",
-              "Status",
-              "Days past due",
-              "Last updated",
-              "",
-            ]}
-          >
-            {rows.map((a) => (
-              <tr key={a.id} className="border-b border-border last:border-0 hover:bg-surface">
-                <Td className="tabular font-medium">{a.account_reference}</Td>
-                <Td>
-                  <Link
-                    to={`/payflow/cases/${a.id}`}
-                    className="font-medium text-foreground hover:underline"
-                  >
-                    {a.customer_name}
-                  </Link>
-                </Td>
-                <Td>
-                  <Link
-                    to={`/payflow/clients/${a.client_id}`}
-                    className="text-muted-foreground hover:text-foreground hover:underline"
-                  >
-                    {a.client_name}
-                  </Link>
-                </Td>
-                <Td className="text-muted-foreground">{a.portfolio_name || "—"}</Td>
-                <Td className="tabular font-medium">{formatCurrency(a.outstanding_balance)}</Td>
-                <Td>
-                  <StatusPill tone={statusTone(a.collection_status)}>{a.collection_status}</StatusPill>
-                </Td>
-                <Td className="tabular text-muted-foreground">
-                  {a.days_past_due == null ? "—" : a.days_past_due}
-                </Td>
-                <Td className="text-muted-foreground">
-                  {formatStamp(a.last_crm_refresh_at || a.updated_at)}
-                </Td>
-                <Td>
-                  <Link
-                    to={`/payflow/cases/${a.id}`}
-                    className="text-[12.5px] font-semibold text-primary hover:underline"
-                  >
-                    View Account
-                  </Link>
-                </Td>
-              </tr>
-            ))}
-          </DataTable>
-          {rows.length === 0 ? (
-            <p className="mt-3 text-sm text-muted-foreground">No accounts match these filters.</p>
-          ) : null}
+          {isMobile ? (
+            <MobileRecordCards>
+              {accounts.map((a) => (
+                <MobileRecordCard
+                  key={a.id}
+                  to={`/payflow/cases/${a.id}`}
+                  title={a.customer_name}
+                  subtitle={`${a.account_reference} · ${a.client_name}`}
+                  badges={
+                    <StatusPill tone={statusTone(a.collection_status)}>
+                      {a.collection_status}
+                    </StatusPill>
+                  }
+                  meta={
+                    <div className="flex flex-wrap gap-x-3 gap-y-1">
+                      <span>{formatCurrency(a.outstanding_balance)}</span>
+                      <span>
+                        DPD {a.days_past_due == null ? "—" : a.days_past_due}
+                      </span>
+                      {a.portfolio_name ? <span>{a.portfolio_name}</span> : null}
+                    </div>
+                  }
+                />
+              ))}
+            </MobileRecordCards>
+          ) : (
+            <DataTable
+              minWidth={1180}
+              head={[
+                "Account ID",
+                "Customer",
+                "Client",
+                "Sub-Client",
+                "Outstanding",
+                "Status",
+                "Days past due",
+                "Last updated",
+                "",
+              ]}
+            >
+              {accounts.map((a) => (
+                <tr key={a.id} className="border-b border-border last:border-0 hover:bg-surface">
+                  <Td className="tabular font-medium">{a.account_reference}</Td>
+                  <Td>
+                    <Link
+                      to={`/payflow/cases/${a.id}`}
+                      className="font-medium text-foreground hover:underline"
+                    >
+                      {a.customer_name}
+                    </Link>
+                  </Td>
+                  <Td>
+                    <Link
+                      to={`/payflow/clients/${a.client_id}`}
+                      className="text-muted-foreground hover:text-foreground hover:underline"
+                    >
+                      {a.client_name}
+                    </Link>
+                  </Td>
+                  <Td className="text-muted-foreground">{a.portfolio_name || "—"}</Td>
+                  <Td className="tabular font-medium">
+                    {formatCurrency(a.outstanding_balance)}
+                  </Td>
+                  <Td>
+                    <StatusPill tone={statusTone(a.collection_status)}>
+                      {a.collection_status}
+                    </StatusPill>
+                  </Td>
+                  <Td className="tabular text-muted-foreground">
+                    {a.days_past_due == null ? "—" : a.days_past_due}
+                  </Td>
+                  <Td className="text-muted-foreground">
+                    {formatStamp(a.last_crm_refresh_at || a.updated_at)}
+                  </Td>
+                  <Td>
+                    <Link
+                      to={`/payflow/cases/${a.id}`}
+                      className="text-[12.5px] font-semibold text-primary hover:underline"
+                    >
+                      View Account
+                    </Link>
+                  </Td>
+                </tr>
+              ))}
+            </DataTable>
+          )}
+          <Pagination
+            total={total}
+            offset={offset}
+            pageSize={pageSize}
+            rowCount={accounts.length}
+            onPrevious={goPrev}
+            onNext={goNext}
+            disabled={loading}
+          />
         </>
       ) : null}
     </>

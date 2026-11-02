@@ -10,8 +10,10 @@ import {
   Td,
   Tr,
 } from "./lovable/payflow-ui";
+import { MobileRecordCard, MobileRecordCards } from "../ui/MobileRecordCards";
 import { cn } from "../../lib/utils";
 import { useAuth } from "../../context/AuthContext";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import { ApiError } from "../../api/client";
 import {
   downloadPayflowAccountImportTemplate,
@@ -226,8 +228,41 @@ function StageBar({ stage }: { stage: Stage }) {
 }
 
 export function ImportErrorTable({ errors }: { errors: ImportError[] }) {
+  const isMobile = useIsMobile();
   if (errors.length === 0)
     return <p className="text-[13px] text-muted-foreground">No errors were found in this import.</p>;
+  if (isMobile) {
+    return (
+      <MobileRecordCards>
+        {errors.map((e, i) => (
+          <MobileRecordCard
+            key={i}
+            title={e.recordId}
+            subtitle={`${e.client}${e.subClient ? ` · ${e.subClient}` : ""}`}
+            badges={
+              <StatusPill
+                tone={
+                  e.status === "Rejected"
+                    ? "danger"
+                    : e.status === "Attention"
+                      ? "warning"
+                      : "warning"
+                }
+              >
+                {e.status}
+              </StatusPill>
+            }
+            meta={
+              <div className="space-y-0.5">
+                <p className="font-medium text-foreground">{e.field}</p>
+                <p>{e.error}</p>
+              </div>
+            }
+          />
+        ))}
+      </MobileRecordCards>
+    );
+  }
   return (
     <DataTable minWidth={860} head={["Record", "Client", "Sub-Client", "Field", "What needs fixing", "Status"]}>
       {errors.map((e, i) => (
@@ -296,7 +331,7 @@ export function ImportResult({
         </div>
       </Panel>
       {run.status !== "Failed" && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+        <div className="grid grid-cols-2 gap-2 sm:gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
           {(() => {
             const c = normalizeImportCounts(run.counts, run.errors);
             return (
@@ -328,6 +363,7 @@ export function ImportResult({
 }
 
 function ClientPreviewTable({ records }: { records: ImportRecord[] }) {
+  const isMobile = useIsMobile();
   type Group = {
     name: string;
     clientId: string;
@@ -352,9 +388,47 @@ function ClientPreviewTable({ records }: { records: ImportRecord[] }) {
     return acc;
   }, {});
 
+  const groupList = Object.values(groups);
+
+  if (isMobile) {
+    return (
+      <MobileRecordCards>
+        {groupList.map((g) => (
+          <MobileRecordCard
+            key={g.name}
+            title={g.name}
+            subtitle={`${g.clientId || "—"} · ${g.subs.length} sub-client${g.subs.length === 1 ? "" : "s"}`}
+            badges={
+              g.master ? (
+                <StatusPill tone={actionTone(g.master.action)}>{g.master.action}</StatusPill>
+              ) : undefined
+            }
+            meta={
+              <div className="space-y-1">
+                {g.master?.action === "Error" ? (
+                  <p className="text-destructive">{g.master.note}</p>
+                ) : g.master?.setupIssues && g.master.setupIssues.length > 0 ? (
+                  <p className="text-warning">Setup incomplete</p>
+                ) : g.master ? (
+                  <p>Valid</p>
+                ) : null}
+                {g.subs.slice(0, 3).map((r) => (
+                  <p key={r.id}>
+                    {r.subClientName || "—"} · {r.action}
+                  </p>
+                ))}
+                {g.subs.length > 3 ? <p>+{g.subs.length - 3} more…</p> : null}
+              </div>
+            }
+          />
+        ))}
+      </MobileRecordCards>
+    );
+  }
+
   return (
     <DataTable minWidth={760} head={["Client / Sub-Client", "Client ID", "Sub-Client ID", "Action", "Status"]}>
-      {Object.values(groups).map((g) => (
+      {groupList.map((g) => (
         <Fragment key={g.name}>
           <tr className="bg-muted/40">
             <Td>
@@ -410,6 +484,44 @@ function ClientPreviewTable({ records }: { records: ImportRecord[] }) {
 }
 
 function AccountPreviewTable({ records }: { records: ImportRecord[] }) {
+  const isMobile = useIsMobile();
+  if (isMobile) {
+    return (
+      <MobileRecordCards>
+        {records.map((r) => (
+          <MobileRecordCard
+            key={r.id}
+            title={r.note || "Account"}
+            subtitle={
+              r.subClientId && r.subClientId !== "—"
+                ? `${r.clientName} → ${r.subClientName} (${r.subClientId})`
+                : `${r.clientName} → ${r.subClientName || "—"}`
+            }
+            badges={<StatusPill tone={actionTone(r.action)}>{r.action}</StatusPill>}
+            meta={
+              <div className="flex flex-wrap gap-x-3 gap-y-1">
+                <span>
+                  Incoming {formatCurrency(r.incomingBalance ?? 0)}
+                  {r.currentBalance != null && r.incomingBalance !== r.currentBalance
+                    ? (r.incomingBalance ?? 0) < r.currentBalance
+                      ? " (↓)"
+                      : " (↑)"
+                    : ""}
+                </span>
+                <span>
+                  In PayFlow{" "}
+                  {r.currentBalance == null ? "—" : formatCurrency(r.currentBalance)}
+                </span>
+                <span className={r.action === "Error" ? "text-destructive" : undefined}>
+                  {r.action === "Error" ? "Needs correction" : "Valid"}
+                </span>
+              </div>
+            }
+          />
+        ))}
+      </MobileRecordCards>
+    );
+  }
   return (
     <DataTable
       minWidth={880}
@@ -785,7 +897,7 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
 
       {stage === "preview" && (
         <div className="space-y-5">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+          <div className="grid grid-cols-2 gap-2 sm:gap-3 sm:grid-cols-3 xl:grid-cols-6">
             {isClient ? (
               <>
                 <KpiCard label="Total Records" value={formatNumber(previewTotal)} tone="primary" />

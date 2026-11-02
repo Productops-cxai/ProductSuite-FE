@@ -364,7 +364,21 @@ export function PayFlowClientDetailPage() {
           { label: detail.name },
         ]}
         title={detail.name}
-        description={`${detail.business_domain_label || detail.industry || "Collections"} · ${detail.code} · ${detail.client_type_label || "—"}`}
+        description={
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="whitespace-nowrap">
+              {detail.business_domain_label || detail.industry || "Collections"}
+            </span>
+            <span className="select-none opacity-40" aria-hidden>
+              ·
+            </span>
+            <span className="whitespace-nowrap tabular-nums">{detail.code}</span>
+            <span className="select-none opacity-40" aria-hidden>
+              ·
+            </span>
+            <span className="whitespace-nowrap">{detail.client_type_label || "—"}</span>
+          </span>
+        }
         actions={
           <>
             <Link
@@ -378,54 +392,15 @@ export function PayFlowClientDetailPage() {
                 <Btn variant="primary" onClick={() => changeTab("Configuration")}>
                   Edit configuration
                 </Btn>
-                <span className="flex items-center gap-1.5">
-                  <Btn
-                    variant="primary"
-                    disabled={!canActivate || busy}
-                    onClick={() => void activate()}
-                  >
-                    Activate Client
-                  </Btn>
-                  {!canActivate ? (
-                    <span className="text-[11px] text-muted-foreground">
-                      Complete all required setup first
-                    </span>
-                  ) : null}
-                </span>
+                <Btn
+                  variant="primary"
+                  disabled={!canActivate || busy}
+                  onClick={() => void activate()}
+                >
+                  Activate Client
+                </Btn>
               </>
             ) : null}
-            <StatusPill tone={statusTone(statusLabel)}>{statusLabel}</StatusPill>
-            <StatusPill
-              tone={
-                (detail.added_through || "") === "file_upload" ||
-                (detail.added_through_label || "").toLowerCase().includes("file upload")
-                  ? "info"
-                  : "neutral"
-              }
-            >
-              {detail.added_through_label ||
-                ((detail.added_through || "") === "file_upload"
-                  ? "Created from file upload"
-                  : "Created")}
-            </StatusPill>
-            {detail.ai_mode_label ? (
-              <StatusPill tone={detail.ai_mode_label === "Autopilot" ? "ai" : "neutral"}>
-                {detail.ai_mode_label}
-              </StatusPill>
-            ) : null}
-            <StatusPill
-              tone={
-                (detail.data_source_type || "").toLowerCase() === "file" ||
-                (detail.connection_status || "").toLowerCase() === "connected"
-                  ? "info"
-                  : "warning"
-              }
-            >
-              {(detail.data_source_type || "").toLowerCase() === "file"
-                ? "Daily file"
-                : (detail.data_source_type || "").toUpperCase() || "No data source"}
-            </StatusPill>
-            <StatusPill>Supervisor: {supervisorLabel}</StatusPill>
             {canDelete ? (
               <Btn variant="danger" onClick={() => setConfirmDelete(true)}>
                 Delete
@@ -434,6 +409,41 @@ export function PayFlowClientDetailPage() {
           </>
         }
       />
+
+      <div className="-mt-5 mb-6 flex flex-wrap items-center gap-2">
+        <StatusPill tone={statusTone(statusLabel)}>{statusLabel}</StatusPill>
+        <StatusPill
+          tone={
+            (detail.added_through || "") === "file_upload" ||
+            (detail.added_through_label || "").toLowerCase().includes("file upload")
+              ? "info"
+              : "neutral"
+          }
+        >
+          {detail.added_through_label ||
+            ((detail.added_through || "") === "file_upload"
+              ? "Created from file upload"
+              : "Created")}
+        </StatusPill>
+        {detail.ai_mode_label ? (
+          <StatusPill tone={detail.ai_mode_label === "Autopilot" ? "ai" : "neutral"}>
+            {detail.ai_mode_label}
+          </StatusPill>
+        ) : null}
+        <StatusPill
+          tone={
+            (detail.data_source_type || "").toLowerCase() === "file" ||
+            (detail.connection_status || "").toLowerCase() === "connected"
+              ? "info"
+              : "warning"
+          }
+        >
+          {(detail.data_source_type || "").toLowerCase() === "file"
+            ? "Daily file"
+            : (detail.data_source_type || "").toUpperCase() || "No data source"}
+        </StatusPill>
+        <StatusPill>Supervisor: {supervisorLabel}</StatusPill>
+      </div>
 
       {error && (
         <p className="mb-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-[13px] text-destructive">
@@ -460,8 +470,8 @@ export function PayFlowClientDetailPage() {
             const issueCount = Math.max(missing.length, issueMessages.length);
             return (
               <div className="mb-4 rounded-lg border border-warning/40 bg-warning/8 px-4 py-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="min-w-0">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 flex-1">
                     <p className="text-[13px] font-semibold text-foreground">
                       <span className="mr-1.5 inline-block" aria-hidden>
                         ⚠
@@ -529,7 +539,7 @@ export function PayFlowClientDetailPage() {
             title="Latest Source File"
             description="Every figure on this page is based on the most recently received and assigned file."
           >
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
               <PrimaryCell
                 title={detail.updated_at ? new Date(detail.updated_at).toLocaleString() : "—"}
                 subtitle="Last updated"
@@ -539,7 +549,7 @@ export function PayFlowClientDetailPage() {
               <PrimaryCell title="—" subtitle="Change Since Previous File" />
             </div>
           </Panel>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
             <KpiCard label="Customer Accounts" value="0" />
             <KpiCard label="Active Cases" value="0" />
             <KpiCard label="Outstanding" value="—" />

@@ -283,7 +283,7 @@ export function PayFlowPortfolioDetailPage() {
         </p>
       ) : null}
 
-      <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-5 grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
         <KpiCard label="Customer Accounts" value={formatNumber(detail.account_count ?? 0)} />
         <KpiCard label="Collection Cases" value={formatNumber(detail.case_count ?? 0)} />
         <KpiCard label="Outstanding" value={formatCurrency(detail.outstanding ?? 0)} />

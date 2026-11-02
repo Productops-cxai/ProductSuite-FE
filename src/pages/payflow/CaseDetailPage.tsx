@@ -259,9 +259,12 @@ function FactRows({ rows }: { rows: { label: string; value: string }[] }) {
   return (
     <dl className="divide-y divide-border">
       {rows.map((f) => (
-        <div key={f.label} className="flex items-start justify-between gap-6 px-4 py-2.5">
-          <dt className="shrink-0 text-[13px] text-muted-foreground">{f.label}</dt>
-          <dd className="tabular min-w-0 text-right text-[13px] font-medium break-words text-foreground">
+        <div
+          key={f.label}
+          className="flex flex-col gap-0.5 px-4 py-2.5 sm:flex-row sm:items-start sm:justify-between sm:gap-6"
+        >
+          <dt className="text-[13px] text-muted-foreground sm:shrink-0">{f.label}</dt>
+          <dd className="tabular min-w-0 text-[13px] font-medium break-words text-foreground sm:text-right">
             {f.value}
           </dd>
         </div>

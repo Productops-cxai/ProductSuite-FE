@@ -792,6 +792,9 @@ export interface PayflowAccountsListResponse {
   intake: PayflowAccountsIntake;
   workflows: string[];
   statuses: string[];
+  total?: number;
+  limit?: number;
+  offset?: number;
 }
 
 export interface PayflowImportErrorItem {
@@ -1028,6 +1031,10 @@ export interface PayflowReviewsSummary {
 export interface PayflowReviewsListResponse {
   reviews: PayflowReview[];
   summary: PayflowReviewsSummary;
+  page?: number;
+  page_size?: number;
+  total?: number;
+  total_pages?: number;
   statuses: string[];
   priorities: string[];
   reasons: string[];

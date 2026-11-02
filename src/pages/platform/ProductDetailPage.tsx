@@ -6,9 +6,13 @@ import { PageHeader } from "../../components/payflow-ui";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
+import { Pagination } from "../../components/ui/Pagination";
+import { useClientPagedList } from "../../hooks/useOffsetPagination";
 import { ui } from "../../lib/ui";
 import { titleCaseStatus } from "../../lib/utils";
 import type { Product, ProductAccessItem } from "../../types";
+
+const PAGE_SIZE = 10;
 
 export function ProductDetailPage() {
   const { productId } = useParams();
@@ -23,6 +27,11 @@ export function ProductDetailPage() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const { pageItems, total, offset, pageSize, goPrev, goNext } = useClientPagedList(
+    entitlements,
+    PAGE_SIZE,
+    id,
+  );
   const [form, setForm] = useState({
     name: "",
     code: "",
@@ -269,17 +278,29 @@ export function ProductDetailPage() {
           {entitlements.length === 0 ? (
             <div className="px-3 py-6 text-center text-slate-500">No organizations entitled yet.</div>
           ) : (
-            <ul className="grid gap-2.5">
-              {entitlements.map((row) => (
-                <li
-                  key={`${row.organization_id}-${row.product_id}`}
-                  className="flex items-center justify-between gap-3 rounded-[10px] border border-slate-200 bg-white px-3.5 py-3"
-                >
-                  <span className="text-[0.92rem] font-semibold">{row.organization_name}</span>
-                  <Badge tone="success">Granted</Badge>
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className="grid gap-2.5">
+                {pageItems.map((row) => (
+                  <li
+                    key={`${row.organization_id}-${row.product_id}`}
+                    className="flex items-center justify-between gap-3 rounded-[10px] border border-slate-200 bg-white px-3.5 py-3"
+                  >
+                    <span className="min-w-0 truncate text-[0.92rem] font-semibold">
+                      {row.organization_name}
+                    </span>
+                    <Badge tone="success">Granted</Badge>
+                  </li>
+                ))}
+              </ul>
+              <Pagination
+                total={total}
+                offset={offset}
+                pageSize={pageSize}
+                rowCount={pageItems.length}
+                onPrevious={goPrev}
+                onNext={goNext}
+              />
+            </>
           )}
         </section>
       </div>

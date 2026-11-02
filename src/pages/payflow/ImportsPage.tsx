@@ -11,6 +11,10 @@ import {
   Tr,
   PrimaryCell,
 } from "../../components/payflow/lovable/payflow-ui";
+import { MobileRecordCard, MobileRecordCards } from "../../components/ui/MobileRecordCards";
+import { Pagination } from "../../components/ui/Pagination";
+import { useIsMobile } from "../../hooks/useIsMobile";
+import { useClientPagedList } from "../../hooks/useOffsetPagination";
 import {
   formatNumber,
   importKindLabel,
@@ -21,9 +25,11 @@ import {
   type ImportRun,
 } from "../../lib/import-data";
 
+const PAGE_SIZE = 10;
 const typeOptions = ["All Import Types", importKindLabel.client, importKindLabel.account];
 
 export function PayFlowImportsPage() {
+  const isMobile = useIsMobile();
   const [searchParams, setSearchParams] = useSearchParams();
   const raw = searchParams.get("type");
   const type: ImportKind | undefined = raw === "client" || raw === "account" ? raw : undefined;
@@ -34,6 +40,15 @@ export function PayFlowImportsPage() {
     type === "client"
       ? { to: "/payflow/clients", label: "Clients" }
       : { to: "/payflow/cases", label: "Accounts / Cases" };
+
+  const {
+    pageItems,
+    total,
+    offset,
+    pageSize,
+    goPrev,
+    goNext,
+  } = useClientPagedList(rows, PAGE_SIZE, type || "all");
 
   useEffect(() => {
     let cancelled = false;
@@ -79,58 +94,115 @@ export function PayFlowImportsPage() {
         <p className="text-sm text-muted-foreground">No imports have been processed yet.</p>
       ) : null}
       {!loading && rows.length > 0 ? (
-        <DataTable
-          minWidth={1180}
-          head={[
-            "File Name",
-            "Date / Time",
-            "Import Type",
-            "Total",
-            "Successful",
-            "Created",
-            "Updated",
-            "Unchanged",
-            "Rejected",
-            "Failed",
-            "Status",
-            "",
-          ]}
-        >
-          {rows.map((r) => {
-            const c = normalizeImportCounts(r.counts, r.errors);
-            return (
-            <Tr key={r.id}>
-              <Td>
-                <PrimaryCell title={r.fileName} subtitle={`By ${r.uploadedBy}`} />
-              </Td>
-              <Td className="text-muted-foreground">{r.dateTime}</Td>
-              <Td>{importKindLabel[r.kind]}</Td>
-              <Td className="tabular">{formatNumber(c.total)}</Td>
-              <Td className="tabular">{formatNumber(c.successful)}</Td>
-              <Td className="tabular">{formatNumber(c.created)}</Td>
-              <Td className="tabular">{formatNumber(c.updated)}</Td>
-              <Td className="tabular">{formatNumber(c.unchanged)}</Td>
-              <Td className="tabular">{formatNumber(c.rejected)}</Td>
-              <Td className="tabular">{formatNumber(c.failed)}</Td>
-              <Td>
-                <StatusPill tone={importStatusTone(r.status)}>{r.status}</StatusPill>
-              </Td>
-              <Td>
-                <div className="flex gap-3 text-[12.5px] font-semibold text-primary">
-                  <Link to={`/payflow/imports/${r.id}`} className="hover:underline">
-                    View Details
-                  </Link>
-                  {r.errors.length > 0 && (
-                    <Link to={`/payflow/imports/${r.id}?errors=1`} className="hover:underline">
-                      View Errors
-                    </Link>
-                  )}
-                </div>
-              </Td>
-            </Tr>
-            );
-          })}
-        </DataTable>
+        <>
+          {isMobile ? (
+            <MobileRecordCards>
+              {pageItems.map((r) => {
+                const c = normalizeImportCounts(r.counts, r.errors);
+                return (
+                  <MobileRecordCard
+                    key={r.id}
+                    to={`/payflow/imports/${r.id}`}
+                    title={r.fileName}
+                    subtitle={`By ${r.uploadedBy} · ${r.dateTime}`}
+                    badges={
+                      <StatusPill tone={importStatusTone(r.status)}>{r.status}</StatusPill>
+                    }
+                    meta={
+                      <div className="space-y-0.5">
+                        <p>{importKindLabel[r.kind]}</p>
+                        <p>
+                          {formatNumber(c.successful)} ok · {formatNumber(c.failed)} failed ·{" "}
+                          {formatNumber(c.rejected)} rejected
+                        </p>
+                        <p>Total {formatNumber(c.total)}</p>
+                      </div>
+                    }
+                    footer={
+                      <>
+                        <Link
+                          to={`/payflow/imports/${r.id}`}
+                          className="text-[12.5px] font-semibold text-primary hover:underline"
+                        >
+                          View Details
+                        </Link>
+                        {r.errors.length > 0 ? (
+                          <Link
+                            to={`/payflow/imports/${r.id}?errors=1`}
+                            className="text-[12.5px] font-semibold text-primary hover:underline"
+                          >
+                            View Errors
+                          </Link>
+                        ) : null}
+                      </>
+                    }
+                  />
+                );
+              })}
+            </MobileRecordCards>
+          ) : (
+            <DataTable
+              minWidth={1180}
+              head={[
+                "File Name",
+                "Date / Time",
+                "Import Type",
+                "Total",
+                "Successful",
+                "Created",
+                "Updated",
+                "Unchanged",
+                "Rejected",
+                "Failed",
+                "Status",
+                "",
+              ]}
+            >
+              {pageItems.map((r) => {
+                const c = normalizeImportCounts(r.counts, r.errors);
+                return (
+                  <Tr key={r.id}>
+                    <Td>
+                      <PrimaryCell title={r.fileName} subtitle={`By ${r.uploadedBy}`} />
+                    </Td>
+                    <Td className="text-muted-foreground">{r.dateTime}</Td>
+                    <Td>{importKindLabel[r.kind]}</Td>
+                    <Td className="tabular">{formatNumber(c.total)}</Td>
+                    <Td className="tabular">{formatNumber(c.successful)}</Td>
+                    <Td className="tabular">{formatNumber(c.created)}</Td>
+                    <Td className="tabular">{formatNumber(c.updated)}</Td>
+                    <Td className="tabular">{formatNumber(c.unchanged)}</Td>
+                    <Td className="tabular">{formatNumber(c.rejected)}</Td>
+                    <Td className="tabular">{formatNumber(c.failed)}</Td>
+                    <Td>
+                      <StatusPill tone={importStatusTone(r.status)}>{r.status}</StatusPill>
+                    </Td>
+                    <Td>
+                      <div className="flex gap-3 text-[12.5px] font-semibold text-primary">
+                        <Link to={`/payflow/imports/${r.id}`} className="hover:underline">
+                          View Details
+                        </Link>
+                        {r.errors.length > 0 && (
+                          <Link to={`/payflow/imports/${r.id}?errors=1`} className="hover:underline">
+                            View Errors
+                          </Link>
+                        )}
+                      </div>
+                    </Td>
+                  </Tr>
+                );
+              })}
+            </DataTable>
+          )}
+          <Pagination
+            total={total}
+            offset={offset}
+            pageSize={pageSize}
+            rowCount={pageItems.length}
+            onPrevious={goPrev}
+            onNext={goNext}
+          />
+        </>
       ) : null}
     </>
   );
