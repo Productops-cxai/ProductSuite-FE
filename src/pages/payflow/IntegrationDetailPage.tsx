@@ -13,8 +13,14 @@ import {
   Tr,
   type Tone,
 } from "../../components/payflow/lovable/payflow-ui";
+import { MobileRecordCard, MobileRecordCards } from "../../components/ui/MobileRecordCards";
+import { Pagination } from "../../components/ui/Pagination";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
+import { useClientPagedList } from "../../hooks/useOffsetPagination";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import type { PayflowIntegration } from "../../types";
+
+const PAGE_SIZE = 10;
 
 function integrationTone(status: string): Tone {
   switch (status) {
@@ -46,12 +52,21 @@ function mappingTone(status: string): Tone {
 export function PayFlowIntegrationDetailPage() {
   const { integrationId } = useParams<{ integrationId: string }>();
   const { isOperationsAdmin } = usePayFlowAccess();
+  const isMobile = useIsMobile();
   const [integration, setIntegration] = useState<PayflowIntegration | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [testing, setTesting] = useState(false);
   const [testedMessage, setTestedMessage] = useState("");
   const [showMapping, setShowMapping] = useState(false);
+  const {
+    pageItems: mappingPage,
+    total: mappingTotal,
+    offset: mappingOffset,
+    pageSize: mappingPageSize,
+    goPrev: mappingPrev,
+    goNext: mappingNext,
+  } = useClientPagedList(integration?.mappings || [], PAGE_SIZE, integrationId || "none");
 
   useEffect(() => {
     if (!integrationId) {
@@ -249,18 +264,47 @@ export function PayFlowIntegrationDetailPage() {
                 No field mappings configured for this client yet.
               </p>
             ) : (
-              <DataTable minWidth={620} head={["Source Field", "PayFlow Field", "Sample Value", "Status"]}>
-                {mappings.map((m) => (
-                  <Tr key={m.source_field}>
-                    <Td>{m.source_field}</Td>
-                    <Td className="text-muted-foreground">{m.payflow_field || "—"}</Td>
-                    <Td className="text-muted-foreground">{m.sample_value || "—"}</Td>
-                    <Td>
-                      <StatusPill tone={mappingTone(m.status)}>{m.status}</StatusPill>
-                    </Td>
-                  </Tr>
-                ))}
-              </DataTable>
+              <>
+                {isMobile ? (
+                  <MobileRecordCards>
+                    {mappingPage.map((m) => (
+                      <MobileRecordCard
+                        key={m.source_field}
+                        title={m.source_field}
+                        subtitle={m.payflow_field || "—"}
+                        badges={
+                          <StatusPill tone={mappingTone(m.status)}>{m.status}</StatusPill>
+                        }
+                        meta={m.sample_value || undefined}
+                      />
+                    ))}
+                  </MobileRecordCards>
+                ) : (
+                  <DataTable
+                    minWidth={620}
+                    head={["Source Field", "PayFlow Field", "Sample Value", "Status"]}
+                  >
+                    {mappingPage.map((m) => (
+                      <Tr key={m.source_field}>
+                        <Td>{m.source_field}</Td>
+                        <Td className="text-muted-foreground">{m.payflow_field || "—"}</Td>
+                        <Td className="text-muted-foreground">{m.sample_value || "—"}</Td>
+                        <Td>
+                          <StatusPill tone={mappingTone(m.status)}>{m.status}</StatusPill>
+                        </Td>
+                      </Tr>
+                    ))}
+                  </DataTable>
+                )}
+                <Pagination
+                  total={mappingTotal}
+                  offset={mappingOffset}
+                  pageSize={mappingPageSize}
+                  rowCount={mappingPage.length}
+                  onPrevious={mappingPrev}
+                  onNext={mappingNext}
+                />
+              </>
             )
           ) : (
             <p className="text-[12px] text-muted-foreground">

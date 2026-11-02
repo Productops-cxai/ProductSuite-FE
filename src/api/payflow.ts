@@ -413,6 +413,8 @@ export function listPayflowAccounts(params?: {
   workflow?: string;
   human_review?: string;
   search?: string;
+  limit?: number;
+  offset?: number;
 }) {
   const q = new URLSearchParams();
   if (params?.client_id != null) q.set("client_id", String(params.client_id));
@@ -421,6 +423,8 @@ export function listPayflowAccounts(params?: {
   if (params?.workflow) q.set("workflow", params.workflow);
   if (params?.human_review) q.set("human_review", params.human_review);
   if (params?.search) q.set("search", params.search);
+  if (params?.limit != null) q.set("limit", String(params.limit));
+  if (params?.offset != null) q.set("offset", String(params.offset));
   const qs = q.toString();
   return apiRequest<PayflowAccountsListResponse>(`/payflow/accounts${qs ? `?${qs}` : ""}`);
 }

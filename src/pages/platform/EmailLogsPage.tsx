@@ -5,18 +5,31 @@ import { listEmailLogs } from "../../api/platform";
 import { PageHeader } from "../../components/payflow-ui";
 import { Button } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
+import { MobileRecordCard, MobileRecordCards } from "../../components/ui/MobileRecordCards";
+import { Pagination } from "../../components/ui/Pagination";
 import { useAuth } from "../../context/AuthContext";
+import { useClientPagedList } from "../../hooks/useOffsetPagination";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import { ui } from "../../lib/ui";
 import type { EmailLog } from "../../types";
 
+const PAGE_SIZE = 10;
+
 export function EmailLogsPage() {
   const { loading: authLoading, isSuperAdmin } = useAuth();
+  const isMobile = useIsMobile();
   const [rows, setRows] = useState<EmailLog[]>([]);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(true);
+  const resetKey = `${search}|${typeFilter}`;
+  const { pageItems, total, offset, pageSize, goPrev, goNext } = useClientPagedList(
+    rows,
+    PAGE_SIZE,
+    resetKey,
+  );
 
   async function load() {
     setLoading(true);
@@ -26,7 +39,7 @@ export function EmailLogsPage() {
         await listEmailLogs({
           search: search.trim() || undefined,
           email_type: typeFilter || undefined,
-          limit: 200,
+          limit: 500,
         }),
       );
     } catch (err) {
@@ -59,6 +72,26 @@ export function EmailLogsPage() {
     }
   }
 
+  function actionFooter(row: EmailLog) {
+    if (!row.action_link) return <span className="text-slate-500">—</span>;
+    return (
+      <>
+        <a href={row.action_link} target="_blank" rel="noreferrer">
+          <Button variant="secondary" size="sm">
+            Open
+          </Button>
+        </a>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => void copyLink(row.action_link!)}
+        >
+          Copy
+        </Button>
+      </>
+    );
+  }
+
   return (
     <div className={ui.page}>
       <PageHeader
@@ -75,7 +108,7 @@ export function EmailLogsPage() {
       {error ? <div className={ui.error}>{error}</div> : null}
       {info ? <div className={ui.success}>{info}</div> : null}
 
-      <form className="mb-3.5 flex flex-wrap gap-3" onSubmit={onSearch}>
+      <form className="mb-3.5 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-3" onSubmit={onSearch}>
         <div className={ui.search}>
           <span className={ui.searchIcon}>
             <Icon name="search" />
@@ -104,6 +137,27 @@ export function EmailLogsPage() {
           <div className={ui.empty}>Loading email logs…</div>
         ) : rows.length === 0 ? (
           <div className={ui.empty}>No emails logged yet. Add a person to generate an invite.</div>
+        ) : isMobile ? (
+          <MobileRecordCards>
+            {pageItems.map((row) => (
+              <MobileRecordCard
+                key={row.id}
+                title={row.to_email}
+                subtitle={row.subject}
+                badges={
+                  <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium capitalize text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                    {row.email_type}
+                  </span>
+                }
+                meta={
+                  <span>
+                    #{row.id} · {new Date(row.created_at).toLocaleString()}
+                  </span>
+                }
+                footer={actionFooter(row)}
+              />
+            ))}
+          </MobileRecordCards>
         ) : (
           <table className={ui.table}>
             <thead>
@@ -117,7 +171,7 @@ export function EmailLogsPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
+              {pageItems.map((row) => (
                 <tr key={row.id}>
                   <td className={ui.td}>{row.id}</td>
                   <td className={ui.td}>
@@ -130,20 +184,7 @@ export function EmailLogsPage() {
                   </td>
                   <td className={ui.td}>
                     {row.action_link ? (
-                      <div className={ui.cellActions}>
-                        <a href={row.action_link} target="_blank" rel="noreferrer">
-                          <Button variant="secondary" size="sm">
-                            Open
-                          </Button>
-                        </a>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => void copyLink(row.action_link!)}
-                        >
-                          Copy
-                        </Button>
-                      </div>
+                      <div className={ui.cellActions}>{actionFooter(row)}</div>
                     ) : (
                       <span className="text-slate-500">—</span>
                     )}
@@ -153,6 +194,16 @@ export function EmailLogsPage() {
             </tbody>
           </table>
         )}
+        {!loading && total > 0 ? (
+          <Pagination
+            total={total}
+            offset={offset}
+            pageSize={pageSize}
+            rowCount={pageItems.length}
+            onPrevious={goPrev}
+            onNext={goNext}
+          />
+        ) : null}
       </div>
     </div>
   );

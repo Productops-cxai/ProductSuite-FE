@@ -6,12 +6,19 @@ import { PageHeader } from "../../components/payflow-ui";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
+import { MobileRecordCard, MobileRecordCards } from "../../components/ui/MobileRecordCards";
+import { Pagination } from "../../components/ui/Pagination";
+import { useClientPagedList } from "../../hooks/useOffsetPagination";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import { ui } from "../../lib/ui";
 import { titleCaseStatus } from "../../lib/utils";
 import type { Product } from "../../types";
 
+const PAGE_SIZE = 10;
+
 export function ProductsPage() {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const [products, setProducts] = useState<Product[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -41,6 +48,11 @@ export function ProductsPage() {
   useEffect(() => {
     void load();
   }, []);
+
+  const { pageItems, total, offset, pageSize, goPrev, goNext } = useClientPagedList(
+    products,
+    PAGE_SIZE,
+  );
 
   function closeRegister() {
     setRegisterOpen(false);
@@ -199,6 +211,35 @@ export function ProductsPage() {
           <div className={ui.empty}>Loading products…</div>
         ) : products.length === 0 ? (
           <div className={ui.empty}>No products registered yet.</div>
+        ) : isMobile ? (
+          <MobileRecordCards>
+            {pageItems.map((p) => (
+              <MobileRecordCard
+                key={p.id}
+                title={p.name}
+                subtitle={p.code}
+                badges={
+                  <Badge tone={p.status === "active" ? "success" : "danger"}>
+                    {titleCaseStatus(p.status)}
+                  </Badge>
+                }
+                meta={<p>{p.description || "—"}</p>}
+                footer={
+                  <>
+                    <Link
+                      to={`/platform/products/${p.id}`}
+                      className="text-[12.5px] font-semibold text-primary hover:underline"
+                    >
+                      View
+                    </Link>
+                    <Button variant="danger" size="sm" onClick={() => setPendingDelete(p)}>
+                      Delete
+                    </Button>
+                  </>
+                }
+              />
+            ))}
+          </MobileRecordCards>
         ) : (
           <table className={ui.table}>
             <thead>
@@ -211,7 +252,7 @@ export function ProductsPage() {
               </tr>
             </thead>
             <tbody>
-              {products.map((p) => (
+              {pageItems.map((p) => (
                 <tr key={p.id}>
                   <td className={ui.td}>
                     <strong>{p.name}</strong>
@@ -240,6 +281,16 @@ export function ProductsPage() {
             </tbody>
           </table>
         )}
+        {!loading && total > 0 ? (
+          <Pagination
+            total={total}
+            offset={offset}
+            pageSize={pageSize}
+            rowCount={pageItems.length}
+            onPrevious={goPrev}
+            onNext={goNext}
+          />
+        ) : null}
       </div>
 
       <ConfirmDelete

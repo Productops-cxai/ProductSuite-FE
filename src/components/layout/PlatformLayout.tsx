@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { NavLink, Navigate, Outlet } from "react-router-dom";
+import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { getMenus } from "../../api/platform";
 import { AccessDenied } from "../auth/AccessDenied";
 import { useAuth } from "../../context/AuthContext";
-import { normalizeMenuRoute } from "../../lib/utils";
 import type { MenuSection } from "../../types";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
@@ -115,9 +114,11 @@ const BASE_FALLBACK_MENUS: MenuSection[] = [
 
 export function PlatformLayout() {
   const { loading, user, isSuperAdmin } = useAuth();
+  const location = useLocation();
   // Fallback shows all platform menus; BE getMenus() filters Email/SMS Logs to SEED_SUPER_ADMIN_EMAIL.
   const fallback = useMemo(() => BASE_FALLBACK_MENUS, []);
   const [sections, setSections] = useState<MenuSection[]>(fallback);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
     setSections(fallback);
@@ -134,7 +135,26 @@ export function PlatformLayout() {
       });
   }, [isSuperAdmin, user?.email]);
 
-  if (loading) return <div className="grid min-h-screen place-items-center text-slate-500 dark:text-slate-400">Loading…</div>;
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [mobileOpen]);
+
+  if (loading) {
+    return (
+      <div className="grid min-h-screen place-items-center text-slate-500 dark:text-slate-400">
+        Loading…
+      </div>
+    );
+  }
   if (!user) return <Navigate to="/login" replace />;
   if (!isSuperAdmin) {
     return (
@@ -146,36 +166,31 @@ export function PlatformLayout() {
     );
   }
 
-  const mobileItems = sections
-    .flatMap((s) => s.items)
-    .filter((item) => !item.is_coming_soon);
-
   return (
     <div className="flex min-h-screen w-full bg-bg">
       <Sidebar sections={sections} />
+
+      {mobileOpen ? (
+        <div className="fixed inset-0 z-40 lg:hidden">
+          <button
+            type="button"
+            className="absolute inset-0 bg-slate-900/50"
+            aria-label="Close navigation"
+            onClick={() => setMobileOpen(false)}
+          />
+          <Sidebar
+            sections={sections}
+            onNavigate={() => setMobileOpen(false)}
+            className="absolute inset-y-0 left-0 flex w-[min(18rem,88vw)] shadow-2xl"
+          />
+        </div>
+      ) : null}
+
       <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar />
-        <nav className="flex gap-1.5 overflow-x-auto border-b border-slate-200/70 bg-white px-4 py-2.5 [-ms-overflow-style:none] [scrollbar-width:none] dark:border-slate-800 dark:bg-slate-900 lg:hidden [&::-webkit-scrollbar]:hidden">
-          {mobileItems.map((item) => {
-            const route = normalizeMenuRoute(item.route);
-            return (
-              <NavLink
-                key={item.key}
-                to={route}
-                end={route === "/platform"}
-                className={({ isActive }) =>
-                  `shrink-0 rounded-md px-3 py-2 text-[12.5px] font-medium whitespace-nowrap ${
-                    isActive
-                      ? "bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-slate-100"
-                      : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
-                  }`
-                }
-              >
-                {item.label}
-              </NavLink>
-            );
-          })}
-        </nav>
+        <TopBar
+          menuOpen={mobileOpen}
+          onMenuClick={() => setMobileOpen((v) => !v)}
+        />
         <main className="relative min-w-0 flex-1 overflow-x-hidden">
           <Outlet />
         </main>

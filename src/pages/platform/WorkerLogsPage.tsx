@@ -5,9 +5,15 @@ import { listWorkflowWorkerLogs } from "../../api/platform";
 import { PageHeader } from "../../components/payflow-ui";
 import { Button } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
+import { MobileRecordCard, MobileRecordCards } from "../../components/ui/MobileRecordCards";
+import { Pagination } from "../../components/ui/Pagination";
 import { useAuth } from "../../context/AuthContext";
+import { useClientPagedList } from "../../hooks/useOffsetPagination";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import { ui } from "../../lib/ui";
 import type { PayflowWorkflowWorkerLog } from "../../types";
+
+const PAGE_SIZE = 10;
 
 function levelClass(level: string): string {
   if (level === "error") return "text-red-700 dark:text-red-300";
@@ -22,12 +28,19 @@ function eventLabel(eventType: string): string {
 export function WorkerLogsPage() {
   const navigate = useNavigate();
   const { loading: authLoading, isSuperAdmin } = useAuth();
+  const isMobile = useIsMobile();
   const [rows, setRows] = useState<PayflowWorkflowWorkerLog[]>([]);
   const [search, setSearch] = useState("");
   const [eventFilter, setEventFilter] = useState("");
   const [levelFilter, setLevelFilter] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const resetKey = `${search}|${eventFilter}|${levelFilter}`;
+  const { pageItems, total, offset, pageSize, goPrev, goNext } = useClientPagedList(
+    rows,
+    PAGE_SIZE,
+    resetKey,
+  );
 
   async function load() {
     setLoading(true);
@@ -38,7 +51,7 @@ export function WorkerLogsPage() {
           search: search.trim() || undefined,
           event_type: eventFilter || undefined,
           level: levelFilter || undefined,
-          limit: 200,
+          limit: 500,
         }),
       );
     } catch (err) {
@@ -77,7 +90,7 @@ export function WorkerLogsPage() {
 
       {error ? <div className={ui.error}>{error}</div> : null}
 
-      <form className="mb-3.5 flex flex-wrap gap-3" onSubmit={onSearch}>
+      <form className="mb-3.5 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-3" onSubmit={onSearch}>
         <div className={ui.search}>
           <span className={ui.searchIcon}>
             <Icon name="search" />
@@ -123,6 +136,49 @@ export function WorkerLogsPage() {
             No worker events yet. Activate a workflow and keep{" "}
             <code className="text-xs">python -m app.worker</code> running.
           </div>
+        ) : isMobile ? (
+          <MobileRecordCards>
+            {pageItems.map((row) => {
+              const steps = row.event_count && row.event_count > 1 ? row.event_count : null;
+              return (
+                <MobileRecordCard
+                  key={row.group_key || row.id}
+                  to={`/platform/worker-logs/${row.id}`}
+                  title={eventLabel(row.event_type)}
+                  subtitle={row.message}
+                  badges={
+                    <span className={`text-[11px] font-semibold uppercase ${levelClass(row.level)}`}>
+                      {row.level}
+                    </span>
+                  }
+                  meta={
+                    <div className="space-y-0.5">
+                      <p>
+                        {row.created_at ? new Date(row.created_at).toLocaleString() : "—"}
+                        {steps ? ` · ${steps} steps` : ""}
+                      </p>
+                      <p>
+                        {row.client_name || (row.client_id != null ? `#${row.client_id}` : "—")}
+                        {" · "}
+                        {row.portfolio_name ||
+                          (row.portfolio_id != null ? `#${row.portfolio_id}` : "—")}
+                      </p>
+                      <p>
+                        {row.account_reference ||
+                          row.customer_name ||
+                          (row.account_id != null ? `#${row.account_id}` : "—")}
+                      </p>
+                      {row.step_summary ? (
+                        <p className="capitalize">{row.step_summary.replace(/_/g, " ")}</p>
+                      ) : row.strategy_name ? (
+                        <p>{row.strategy_name}</p>
+                      ) : null}
+                    </div>
+                  }
+                />
+              );
+            })}
+          </MobileRecordCards>
         ) : (
           <table className={ui.table}>
             <thead>
@@ -137,7 +193,7 @@ export function WorkerLogsPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => {
+              {pageItems.map((row) => {
                 const steps = row.event_count && row.event_count > 1 ? row.event_count : null;
                 return (
                   <tr
@@ -224,6 +280,16 @@ export function WorkerLogsPage() {
             </tbody>
           </table>
         )}
+        {!loading && total > 0 ? (
+          <Pagination
+            total={total}
+            offset={offset}
+            pageSize={pageSize}
+            rowCount={pageItems.length}
+            onPrevious={goPrev}
+            onNext={goNext}
+          />
+        ) : null}
       </div>
     </div>
   );

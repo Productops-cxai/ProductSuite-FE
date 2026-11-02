@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import { getPayflowDashboard } from "../../api/payflow";
-import { PageHeader, Panel, KpiCard, FilterSelect } from "../../components/payflow-ui";
+import { PageHeader, Panel, KpiCard, KpiGrid, FilterBar, FilterSelect } from "../../components/payflow-ui";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import type { PayflowDashboardResponse } from "../../types";
 
@@ -144,7 +144,7 @@ export function PayFlowDashboardPage() {
         </div>
       ) : null}
 
-      <div className="mb-5 flex flex-wrap gap-x-2 gap-y-2.5">
+      <FilterBar className="mb-5">
         <FilterSelect
           label="Date"
           value={dateRange}
@@ -168,14 +168,14 @@ export function PayFlowDashboardPage() {
           onChange={setChannel}
           options={channelOptions}
         />
-      </div>
+      </FilterBar>
 
-      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <KpiGrid className="mb-6 lg:grid-cols-5">
         {loading && data.kpis.length === 0
           ? Array.from({ length: 5 }).map((_, i) => (
               <div
                 key={i}
-                className="min-h-[112px] animate-pulse rounded-lg border border-slate-200/80 bg-slate-100 dark:border-slate-700 dark:bg-slate-900"
+                className="h-[72px] animate-pulse rounded-lg border border-slate-200/80 bg-slate-100 sm:min-h-[96px] dark:border-slate-700 dark:bg-slate-900"
               />
             ))
           : data.kpis.map((k) => (
@@ -188,7 +188,7 @@ export function PayFlowDashboardPage() {
                 to={k.href || undefined}
               />
             ))}
-      </div>
+      </KpiGrid>
 
       <Panel
         title="Attention Required"
@@ -226,7 +226,7 @@ export function PayFlowDashboardPage() {
         title="Communication to Payment Performance"
         description="Conversion from outreach to completed payment."
       >
-        <div className="mb-3 flex flex-wrap items-center gap-2">
+        <FilterBar className="mb-3">
           <FilterSelect
             label="Client"
             value={funnelClientId}
@@ -249,9 +249,9 @@ export function PayFlowDashboardPage() {
             onChange={setFunnelChannel}
             options={channelOptions}
           />
-          <span className="flex h-9 cursor-not-allowed items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 opacity-60 dark:border-slate-600 dark:bg-slate-950">
-            <span className="text-[11px] font-medium text-slate-400">Channel</span>
-            <span className="text-[13px] font-medium text-slate-400">WhatsApp · soon</span>
+          <span className="flex h-9 w-full min-w-0 cursor-not-allowed items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 opacity-60 dark:border-slate-600 dark:bg-slate-950 xl:w-auto">
+            <span className="shrink-0 text-[11px] font-medium text-slate-400">Channel</span>
+            <span className="truncate text-[13px] font-medium text-slate-400">WhatsApp · soon</span>
           </span>
           <FilterSelect
             label="Workflow"
@@ -259,30 +259,32 @@ export function PayFlowDashboardPage() {
             onChange={setFunnelWorkflow}
             options={workflowOptions}
           />
-        </div>
+        </FilterBar>
         {data.funnel.length === 0 ? (
           <p className="px-1 py-6 text-center text-[13px] text-slate-500 dark:text-slate-400">
             No communication activity for this filter scope.
           </p>
         ) : (
-          <div className="grid gap-px overflow-hidden rounded-lg border border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-2 xl:grid-cols-6">
+          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-3 xl:grid-cols-6">
             {data.funnel.map((step) => {
               const body = (
                 <>
-                  <div className="flex items-center gap-1.5">
-                    <span className="tabular text-[10px] font-semibold text-slate-400">{step.step}</span>
+                  <div className="flex min-w-0 items-center gap-1">
+                    <span className="tabular shrink-0 text-[10px] font-semibold text-slate-400">
+                      {step.step}
+                    </span>
                     <span
-                      className={`text-[11.5px] font-semibold ${
+                      className={`truncate text-[11px] font-semibold sm:text-[11.5px] ${
                         step.paid ? "text-emerald-600" : "text-slate-800 dark:text-slate-100"
                       }`}
                     >
                       {step.label}
                     </span>
                   </div>
-                  <p className="tabular mt-2 text-[19px] font-bold leading-none tracking-tight text-slate-900 dark:text-slate-50">
+                  <p className="tabular mt-1.5 text-[17px] font-bold leading-none tracking-tight text-slate-900 sm:mt-2 sm:text-[19px] dark:text-slate-50">
                     {step.display}
                   </p>
-                  <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                  <div className="mt-2 h-1 overflow-hidden rounded-full bg-slate-100 sm:mt-2.5 sm:h-1.5 dark:bg-slate-800">
                     <span
                       className={`block h-full rounded-full ${
                         step.paid
@@ -294,14 +296,20 @@ export function PayFlowDashboardPage() {
                       style={{ width: `${step.bar}%` }}
                     />
                   </div>
-                  <div className="mt-2 flex items-baseline justify-between gap-2">
+                  <div className="mt-1.5 flex items-baseline justify-between gap-1 sm:mt-2 sm:gap-2">
                     {step.rate ? (
                       <>
-                        <span className="tabular text-[11.5px] font-semibold text-primary">{step.rate}</span>
-                        <span className="tabular text-[10.5px] text-slate-400">{step.drop}</span>
+                        <span className="tabular text-[11px] font-semibold text-primary sm:text-[11.5px]">
+                          {step.rate}
+                        </span>
+                        <span className="tabular text-[10px] text-slate-400 sm:text-[10.5px]">
+                          {step.drop}
+                        </span>
                       </>
                     ) : (
-                      <span className="tabular text-[11.5px] font-semibold text-primary">Start</span>
+                      <span className="tabular text-[11px] font-semibold text-primary sm:text-[11.5px]">
+                        Start
+                      </span>
                     )}
                   </div>
                 </>
@@ -310,12 +318,15 @@ export function PayFlowDashboardPage() {
                 <Link
                   key={step.label}
                   to={step.href}
-                  className="block bg-white px-4 py-3.5 transition hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-800"
+                  className="block bg-white px-3 py-2.5 transition hover:bg-slate-50 sm:px-4 sm:py-3.5 dark:bg-slate-900 dark:hover:bg-slate-800"
                 >
                   {body}
                 </Link>
               ) : (
-                <div className="bg-white px-4 py-3.5 dark:bg-slate-900" key={step.label}>
+                <div
+                  className="bg-white px-3 py-2.5 sm:px-4 sm:py-3.5 dark:bg-slate-900"
+                  key={step.label}
+                >
                   {body}
                 </div>
               );
@@ -328,11 +339,11 @@ export function PayFlowDashboardPage() {
         title="Payment Outcomes"
         description="Outcomes received back from the customer payment experience."
       >
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <KpiGrid className="mb-0 lg:grid-cols-5">
           {data.outcomes.map((o) => (
             <KpiCard key={o.id} label={o.label} value={o.display} to={o.href || undefined} />
           ))}
-        </div>
+        </KpiGrid>
       </Panel>
 
       <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">

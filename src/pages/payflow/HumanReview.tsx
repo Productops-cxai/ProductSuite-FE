@@ -5,8 +5,10 @@ import { listPayflowClients, listPayflowReviews } from "../../api/payflow";
 import {
   DataTable,
   EmptyState,
+  FilterBar,
   FilterSelect,
   KpiCard,
+  KpiGrid,
   PageHeader,
   Panel,
   PrimaryCell,
@@ -16,12 +18,18 @@ import {
   Tr,
   type Tone,
 } from "../../components/payflow/lovable/payflow-ui";
+import { MobileRecordCard, MobileRecordCards } from "../../components/ui/MobileRecordCards";
+import { Pagination } from "../../components/ui/Pagination";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
+import { useIsMobile } from "../../hooks/useIsMobile";
+import { usePagePagination } from "../../hooks/useOffsetPagination";
 import type {
   PayflowClient,
   PayflowReview,
   PayflowReviewsSummary,
 } from "../../types";
+
+const PAGE_SIZE = 10;
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-US", {
@@ -62,7 +70,9 @@ function isAll(value: string, prefix: string) {
 export function PayFlowHumanReview() {
   const [searchParams] = useSearchParams();
   const { isOperationsAdmin } = usePayFlowAccess();
+  const isMobile = useIsMobile();
   const [reviews, setReviews] = useState<PayflowReview[]>([]);
+  const [total, setTotal] = useState(0);
   const [clients, setClients] = useState<PayflowClient[]>([]);
   const [summary, setSummary] = useState<PayflowReviewsSummary>({
     awaiting: 0,
@@ -88,6 +98,17 @@ export function PayFlowHumanReview() {
   const [rule, setRule] = useState("All Rules");
   const [action, setAction] = useState("All Actions");
   const [age, setAge] = useState("Any Age");
+
+  const filterKey = [
+    debouncedSearch,
+    client,
+    status,
+    priority,
+    reason,
+    action,
+    age,
+  ].join("|");
+  const { page, pageSize, goPrev, goNext } = usePagePagination(PAGE_SIZE, filterKey);
 
   useEffect(() => {
     const nextClient = searchParams.get("client");
@@ -128,8 +149,8 @@ export function PayFlowHumanReview() {
     setError("");
 
     const params: Parameters<typeof listPayflowReviews>[0] = {
-      page: 1,
-      page_size: 200,
+      page,
+      page_size: pageSize,
     };
     if (selectedClientId != null) params.client_id = selectedClientId;
     if (!isAll(status, "Statuses")) params.status = status;
@@ -143,6 +164,7 @@ export function PayFlowHumanReview() {
       .then((reviewRes) => {
         if (cancelled) return;
         setReviews(reviewRes.reviews || []);
+        setTotal(reviewRes.total ?? (reviewRes.reviews || []).length);
         setSummary(reviewRes.summary);
         setStatuses(reviewRes.statuses || []);
         setPriorities(reviewRes.priorities || []);
@@ -153,6 +175,8 @@ export function PayFlowHumanReview() {
       .catch((err) => {
         if (!cancelled) {
           setError(err instanceof ApiError ? err.detail : "Failed to load reviews");
+          setReviews([]);
+          setTotal(0);
         }
       })
       .finally(() => {
@@ -161,9 +185,18 @@ export function PayFlowHumanReview() {
     return () => {
       cancelled = true;
     };
-  }, [selectedClientId, status, priority, reason, action, age, debouncedSearch]);
+  }, [
+    selectedClientId,
+    status,
+    priority,
+    reason,
+    action,
+    age,
+    debouncedSearch,
+    page,
+    pageSize,
+  ]);
 
-  // Reset sub-client when client changes.
   useEffect(() => {
     setSubClient("All Sub-Clients");
   }, [client]);
@@ -191,7 +224,6 @@ export function PayFlowHumanReview() {
     return ["All Sub-Clients", ...[...names].sort()];
   }, [reviews, client]);
 
-  // Rule + sub-client (and client-name fallback) stay client-side.
   const rows = useMemo(() => {
     return reviews.filter((r) => {
       if (
@@ -202,12 +234,15 @@ export function PayFlowHumanReview() {
         return false;
       }
       if (!isAll(rule, "Rules") && r.rule_name !== rule) return false;
-      if (!isAll(subClient, "Sub-Clients") && (r.portfolio_name || "") !== subClient) return false;
+      if (!isAll(subClient, "Sub-Clients") && (r.portfolio_name || "") !== subClient) {
+        return false;
+      }
       return true;
     });
   }, [reviews, client, selectedClientId, rule, subClient]);
 
   const showSubClient = !isAll(client, "Clients") && subClientOptions.length > 1;
+  const localFilterActive = !isAll(rule, "Rules") || !isAll(subClient, "Sub-Clients");
 
   return (
     <>
@@ -216,18 +251,19 @@ export function PayFlowHumanReview() {
         description="Review collection decisions requiring human judgement."
       />
 
-      <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <KpiGrid>
         <KpiCard label="Awaiting Review" value={String(summary.awaiting)} tone="primary" />
         <KpiCard label="High Priority" value={String(summary.high_priority)} />
         <KpiCard label="Due Today" value={String(summary.due_today)} />
         <KpiCard label="On Hold" value={String(summary.on_hold)} />
-      </div>
+      </KpiGrid>
 
-      <div className="mb-4 flex flex-wrap gap-2">
+      <FilterBar>
         <SearchInput
           value={search}
           onChange={setSearch}
           placeholder="Search customer, reference or rule"
+          className="w-full md:col-span-2 xl:w-64"
         />
         <FilterSelect
           label="Client"
@@ -274,7 +310,7 @@ export function PayFlowHumanReview() {
           onChange={setAge}
           options={waitingBuckets.length ? waitingBuckets : ["Any Age"]}
         />
-      </div>
+      </FilterBar>
 
       {error ? <p className="mb-3 text-sm text-destructive">{error}</p> : null}
       {loading ? <p className="text-sm text-muted-foreground">Loading reviews…</p> : null}
@@ -286,6 +322,32 @@ export function PayFlowHumanReview() {
               title="No reviews match these filters"
               description="Human review is an exception queue — an empty queue means automation is operating within governance."
             />
+          ) : isMobile ? (
+            <MobileRecordCards>
+              {rows.map((r) => (
+                <MobileRecordCard
+                  key={r.id}
+                  to={`/payflow/review/${r.id}`}
+                  title={r.customer_name || "—"}
+                  subtitle={`${r.client_name}${r.account_reference ? ` · ${r.account_reference}` : ""}`}
+                  badges={
+                    <>
+                      <StatusPill tone={priorityTone(r.priority)}>{r.priority}</StatusPill>
+                      <StatusPill tone={reviewStatusTone(r.status)}>{r.status}</StatusPill>
+                    </>
+                  }
+                  meta={
+                    <div className="space-y-0.5">
+                      <p>{r.reason}</p>
+                      <p>
+                        {formatCurrency(r.outstanding_balance)} ·{" "}
+                        {r.waiting_label || `${r.waiting_minutes} min`}
+                      </p>
+                    </div>
+                  }
+                />
+              ))}
+            </MobileRecordCards>
           ) : (
             <DataTable
               minWidth={980}
@@ -349,6 +411,19 @@ export function PayFlowHumanReview() {
               ))}
             </DataTable>
           )}
+
+          {!localFilterActive ? (
+            <Pagination
+              mode="page"
+              total={total}
+              page={page}
+              pageSize={pageSize}
+              rowCount={rows.length}
+              onPrevious={goPrev}
+              onNext={goNext}
+              disabled={loading}
+            />
+          ) : null}
 
           <Panel className="mt-5">
             <p className="text-xs leading-relaxed text-muted-foreground">

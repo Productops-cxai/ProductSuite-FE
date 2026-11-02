@@ -16,16 +16,22 @@ import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { Icon } from "../../components/ui/Icon";
+import { MobileRecordCard, MobileRecordCards } from "../../components/ui/MobileRecordCards";
 import { Modal } from "../../components/ui/Modal";
+import { Pagination } from "../../components/ui/Pagination";
 import { useAuth } from "../../context/AuthContext";
+import { useClientPagedList } from "../../hooks/useOffsetPagination";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import { ui } from "../../lib/ui";
 import { orgDisplayName } from "../../lib/utils";
 import type { Organization, Person, Product } from "../../types";
 
 const NEW_ORG = "__new_org__";
+const PAGE_SIZE = 10;
 
 export function PeoplePage() {
   const { user, refreshMe } = useAuth();
+  const isMobile = useIsMobile();
   const [people, setPeople] = useState<Person[]>([]);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -106,6 +112,13 @@ export function PeoplePage() {
         p.organization_name.toLowerCase().includes(q),
     );
   }, [people, search]);
+
+  const resetKey = `${search}|${orgFilter}`;
+  const { pageItems, total, offset, pageSize, goPrev, goNext } = useClientPagedList(
+    visible,
+    PAGE_SIZE,
+    resetKey,
+  );
 
   useEffect(() => {
     if (!managingPerson) return;
@@ -419,6 +432,46 @@ export function PeoplePage() {
           <div className={ui.empty}>Loading people…</div>
         ) : visible.length === 0 ? (
           <div className={ui.empty}>No people found.</div>
+        ) : isMobile ? (
+          <MobileRecordCards>
+            {pageItems.map((person) => (
+              <MobileRecordCard
+                key={person.id}
+                title={person.full_name}
+                subtitle={person.email}
+                badges={
+                  <Badge tone={person.status === "active" ? "success" : "danger"}>
+                    {person.status}
+                  </Badge>
+                }
+                meta={
+                  <div className="space-y-1">
+                    <p>{person.organization_name}</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {person.assigned_products.length === 0 ? (
+                        <span className="text-slate-500">No products</span>
+                      ) : (
+                        person.assigned_products.map((ap) => (
+                          <Badge key={ap.id} tone="success">
+                            {ap.name}
+                          </Badge>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                }
+                footer={
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setManagingPerson(person)}
+                  >
+                    Manage
+                  </Button>
+                }
+              />
+            ))}
+          </MobileRecordCards>
         ) : (
           <table className={ui.table}>
             <thead>
@@ -431,7 +484,7 @@ export function PeoplePage() {
               </tr>
             </thead>
             <tbody>
-              {visible.map((person) => {
+              {pageItems.map((person) => {
                 return (
                   <tr key={person.id}>
                     <td className={ui.td}>
@@ -470,6 +523,16 @@ export function PeoplePage() {
             </tbody>
           </table>
         )}
+        {!loading && total > 0 ? (
+          <Pagination
+            total={total}
+            offset={offset}
+            pageSize={pageSize}
+            rowCount={pageItems.length}
+            onPrevious={goPrev}
+            onNext={goNext}
+          />
+        ) : null}
       </div>
 
       <Modal

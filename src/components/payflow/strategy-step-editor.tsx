@@ -416,7 +416,7 @@ export function StepConfigForm({
                 onChange={(v) => onChange({ reference_event: v })}
               />
             </Field>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               <Field label="Number">
                 <TextInput
                   value={String(cfg.amount ?? 0)}

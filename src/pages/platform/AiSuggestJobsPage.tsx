@@ -4,9 +4,15 @@ import { listAiSuggestJobs, requeueMissingAiSuggestJobs } from "../../api/platfo
 import { PageHeader } from "../../components/payflow-ui";
 import { Button } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
+import { MobileRecordCard, MobileRecordCards } from "../../components/ui/MobileRecordCards";
+import { Pagination } from "../../components/ui/Pagination";
 import { useAuth } from "../../context/AuthContext";
+import { useClientPagedList } from "../../hooks/useOffsetPagination";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import { ui } from "../../lib/ui";
 import type { AiSuggestJob } from "../../types";
+
+const PAGE_SIZE = 10;
 
 function formatDuration(ms: number | null | undefined): string {
   if (ms == null) return "—";
@@ -44,6 +50,7 @@ function resultSummary(row: AiSuggestJob): string {
 
 export function AiSuggestJobsPage() {
   const { loading: authLoading, isSuperAdmin } = useAuth();
+  const isMobile = useIsMobile();
   const [rows, setRows] = useState<AiSuggestJob[]>([]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -51,6 +58,12 @@ export function AiSuggestJobsPage() {
   const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(true);
   const [requeueBusy, setRequeueBusy] = useState(false);
+  const resetKey = `${search}|${statusFilter}`;
+  const { pageItems, total, offset, pageSize, goPrev, goNext } = useClientPagedList(
+    rows,
+    PAGE_SIZE,
+    resetKey,
+  );
 
   async function load() {
     setLoading(true);
@@ -60,7 +73,7 @@ export function AiSuggestJobsPage() {
         await listAiSuggestJobs({
           search: search.trim() || undefined,
           status: statusFilter || undefined,
-          limit: 200,
+          limit: 500,
         }),
       );
     } catch (err) {
@@ -132,7 +145,7 @@ export function AiSuggestJobsPage() {
         </div>
       ) : null}
 
-      <form className="mb-3.5 flex flex-wrap gap-3" onSubmit={onSearch}>
+      <form className="mb-3.5 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-3" onSubmit={onSearch}>
         <div className={ui.search}>
           <span className={ui.searchIcon}>
             <Icon name="search" />
@@ -166,6 +179,39 @@ export function AiSuggestJobsPage() {
             No jobs yet. Use Re-queue missing for already-active clients, or activate a
             client/portfolio / complete an account import.
           </div>
+        ) : isMobile ? (
+          <MobileRecordCards>
+            {pageItems.map((row) => (
+              <MobileRecordCard
+                key={row.id}
+                title={row.client_name || `#${row.client_id}`}
+                subtitle={row.portfolio_name || `#${row.portfolio_id}`}
+                badges={
+                  <span className={`text-[11px] font-semibold capitalize ${statusClass(row.status)}`}>
+                    {row.status}
+                  </span>
+                }
+                meta={
+                  <div className="space-y-0.5">
+                    <p>
+                      {row.created_at ? new Date(row.created_at).toLocaleString() : "—"} ·{" "}
+                      {triggerLabel(row.trigger)} · {formatDuration(row.duration_ms)}
+                    </p>
+                    <p>{resultSummary(row)}</p>
+                    {row.status === "done" && row.workflow_ids?.length ? (
+                      <p>#{row.workflow_ids.join(", #")}</p>
+                    ) : null}
+                    {(row.segments_count != null || row.batches_count != null) &&
+                    row.status === "done" ? (
+                      <p>
+                        {row.segments_count ?? "—"} segments · {row.batches_count ?? "—"} batches
+                      </p>
+                    ) : null}
+                  </div>
+                }
+              />
+            ))}
+          </MobileRecordCards>
         ) : (
           <table className={ui.table}>
             <thead>
@@ -180,7 +226,7 @@ export function AiSuggestJobsPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
+              {pageItems.map((row) => (
                 <tr key={row.id}>
                   <td className={`${ui.td} whitespace-nowrap text-slate-500`}>
                     {row.created_at ? new Date(row.created_at).toLocaleString() : "—"}
@@ -219,6 +265,16 @@ export function AiSuggestJobsPage() {
             </tbody>
           </table>
         )}
+        {!loading && total > 0 ? (
+          <Pagination
+            total={total}
+            offset={offset}
+            pageSize={pageSize}
+            rowCount={pageItems.length}
+            onPrevious={goPrev}
+            onNext={goNext}
+          />
+        ) : null}
       </div>
     </div>
   );

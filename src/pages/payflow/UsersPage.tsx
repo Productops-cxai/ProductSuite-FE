@@ -15,8 +15,10 @@ import {
   DataTable,
   EmptyState,
   Field,
+  FilterBar,
   FilterSelect,
   KpiCard,
+  KpiGrid,
   PageHeader,
   Panel,
   PrimaryCell,
@@ -27,13 +29,19 @@ import {
   TextInput,
   Tr,
 } from "../../components/payflow-ui";
+import { MobileRecordCard, MobileRecordCards } from "../../components/ui/MobileRecordCards";
+import { Pagination } from "../../components/ui/Pagination";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
+import { useClientPagedList } from "../../hooks/useOffsetPagination";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import { SHOW_PAYFLOW_DELETE } from "../../lib/payflow-features";
 import type {
   PayflowPermissionGroup,
   PayflowRoleListItem,
   PayflowUser,
 } from "../../types";
+
+const PAGE_SIZE = 10;
 
 function roleTone(scope: string) {
   return scope === "platform_wide" ? "info" : "neutral";
@@ -66,6 +74,7 @@ export function PayFlowUsersPage() {
   const canManageUsers = hasPermission("manage_users");
   const canAddUsers = isOperationsAdmin;
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const [users, setUsers] = useState<PayflowUser[]>([]);
   const [roles, setRoles] = useState<PayflowRoleListItem[]>([]);
   const [summary, setSummary] = useState({
@@ -81,6 +90,15 @@ export function PayFlowUsersPage() {
   const [adding, setAdding] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const userFilterKey = `${query}|${roleFilter}|${statusFilter}`;
+  const {
+    pageItems: userRows,
+    total: userTotal,
+    offset: userOffset,
+    pageSize: userPageSize,
+    goPrev: userGoPrev,
+    goNext: userGoNext,
+  } = useClientPagedList(users, PAGE_SIZE, userFilterKey);
 
   const load = () => {
     setLoading(true);
@@ -162,13 +180,13 @@ export function PayFlowUsersPage() {
         }
       />
 
-      <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <KpiGrid className="lg:grid-cols-5">
         <KpiCard label="Total Users" value={String(summary.total_users)} />
         <KpiCard label="Roles" value={String(summary.roles)} />
         <KpiCard label="Platform-wide Access" value={String(summary.platform_wide_access)} />
         <KpiCard label="Client-scoped Users" value={String(summary.client_scoped_users)} />
         <KpiCard label="Active Users" value={String(summary.active_users)} tone="primary" />
-      </div>
+      </KpiGrid>
 
       {canAddUsers && adding ? (
         <div className="mb-5">
@@ -183,12 +201,12 @@ export function PayFlowUsersPage() {
         </div>
       ) : null}
 
-      <div className="mb-3 flex flex-wrap items-center gap-2">
+      <FilterBar className="mb-3">
         <SearchInput
           value={query}
           onChange={setQuery}
           placeholder="Search users"
-          className="w-full sm:w-[240px]"
+          className="w-full md:col-span-2 xl:w-64"
         />
         <FilterSelect
           label="Role"
@@ -202,13 +220,40 @@ export function PayFlowUsersPage() {
           options={["All Statuses", "Invitation Pending", "Active", "Inactive"]}
           onChange={setStatusFilter}
         />
-      </div>
+      </FilterBar>
 
       {error ? <p className="mb-3 text-sm text-red-600">{error}</p> : null}
       {loading ? (
         <p className="text-sm text-slate-500">Loading users…</p>
       ) : users.length === 0 ? (
         <EmptyState title="No users match" description="Adjust the search or filters." />
+      ) : isMobile ? (
+        <MobileRecordCards>
+          {userRows.map((u) => (
+            <MobileRecordCard
+              key={u.id}
+              to={`/payflow/users/${u.id}`}
+              title={u.full_name}
+              subtitle={u.email}
+              badges={
+                <StatusPill tone={statusTone(u.status)}>{u.status_label}</StatusPill>
+              }
+              meta={
+                <div className="space-y-0.5">
+                  <p>
+                    <StatusPill tone={roleTone(u.role_scope)}>{u.role_name}</StatusPill>
+                  </p>
+                  <p>{u.assigned_clients.join(", ") || "No clients assigned"}</p>
+                  <p>{u.permission_profile}</p>
+                  <p>Last active: {u.last_active || "—"}</p>
+                </div>
+              }
+              footer={
+                <span className="text-[12.5px] font-semibold text-primary">View →</span>
+              }
+            />
+          ))}
+        </MobileRecordCards>
       ) : (
         <DataTable
           head={[
@@ -222,7 +267,7 @@ export function PayFlowUsersPage() {
           ]}
           minWidth={900}
         >
-          {users.map((u) => (
+          {userRows.map((u) => (
             <Tr key={u.id} onClick={() => navigate(`/payflow/users/${u.id}`)}>
               <Td>
                 <PrimaryCell title={u.full_name} subtitle={u.email} />
@@ -243,6 +288,17 @@ export function PayFlowUsersPage() {
           ))}
         </DataTable>
       )}
+
+      {!loading && users.length > 0 ? (
+        <Pagination
+          total={userTotal}
+          offset={userOffset}
+          pageSize={userPageSize}
+          rowCount={userRows.length}
+          onPrevious={userGoPrev}
+          onNext={userGoNext}
+        />
+      ) : null}
 
       <div className="mt-5">
         <RolesPanel
@@ -384,17 +440,77 @@ function RolesPanel({
   onRolesChanged: (roles: PayflowRoleListItem[]) => void;
   onChanged: () => void;
 }) {
+  const isMobile = useIsMobile();
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [groups, setGroups] = useState<PayflowPermissionGroup[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const {
+    pageItems: roleRows,
+    total: roleTotal,
+    offset: roleOffset,
+    pageSize: rolePageSize,
+    goPrev: roleGoPrev,
+    goNext: roleGoNext,
+  } = useClientPagedList(roles, PAGE_SIZE, roles.length);
 
   useEffect(() => {
     listPayflowPermissions()
       .then((res) => setGroups(res.groups))
       .catch(() => setGroups([]));
   }, []);
+
+  function deleteRole(r: PayflowRoleListItem) {
+    if (r.is_built_in || r.user_count > 0) return;
+    if (!window.confirm(`Delete role "${r.name}"?`)) return;
+    setBusy(true);
+    setError(null);
+    deletePayflowRole(r.id)
+      .then(() => listPayflowRoles())
+      .then((res) => {
+        onRolesChanged(res.roles);
+        if (editingId === r.id) setEditingId(null);
+        onChanged();
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : "Failed to delete role");
+      })
+      .finally(() => setBusy(false));
+  }
+
+  function roleActions(r: PayflowRoleListItem) {
+    return (
+      <div className="flex flex-wrap gap-1.5">
+        <Btn
+          variant="ghost"
+          onClick={() => setEditingId(editingId === r.id ? null : r.id)}
+        >
+          {editingId === r.id
+            ? "Hide"
+            : canManageRoles && r.scope !== "platform_wide"
+              ? "Edit access"
+              : "View access"}
+        </Btn>
+        {SHOW_PAYFLOW_DELETE && canManageRoles ? (
+          <Btn
+            variant="danger"
+            disabled={r.is_built_in || r.user_count > 0 || busy}
+            title={
+              r.is_built_in
+                ? "Built-in roles cannot be deleted"
+                : r.user_count > 0
+                  ? "Reassign users before deleting this role"
+                  : `Delete ${r.name}`
+            }
+            onClick={() => deleteRole(r)}
+          >
+            Delete
+          </Btn>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <Panel
@@ -439,70 +555,66 @@ function RolesPanel({
         </div>
       ) : null}
 
-      <DataTable head={["Role", "Scope", "Permissions", "Users", ""]} minWidth={720}>
-        {roles.map((r) => (
-          <Tr key={r.id}>
-            <Td>
-              <PrimaryCell title={r.name} subtitle={r.description || undefined} />
-            </Td>
-            <Td>
-              <StatusPill tone={roleTone(r.scope)}>{scopeLabel(r.scope)}</StatusPill>
-            </Td>
-            <Td className="text-slate-500">
-              {r.scope === "platform_wide"
-                ? "All permissions"
-                : `${r.permission_count} selected`}
-            </Td>
-            <Td className="text-slate-500">{r.user_count}</Td>
-            <Td>
-              <div className="flex justify-end gap-1.5">
-                <Btn
-                  variant="ghost"
-                  onClick={() => setEditingId(editingId === r.id ? null : r.id)}
-                >
-                  {editingId === r.id
-                    ? "Hide"
-                    : canManageRoles && r.scope !== "platform_wide"
-                      ? "Edit access"
-                      : "View access"}
-                </Btn>
-                {SHOW_PAYFLOW_DELETE && canManageRoles ? (
-                  <Btn
-                    variant="danger"
-                    disabled={r.is_built_in || r.user_count > 0 || busy}
-                    title={
-                      r.is_built_in
-                        ? "Built-in roles cannot be deleted"
-                        : r.user_count > 0
-                          ? "Reassign users before deleting this role"
-                          : `Delete ${r.name}`
-                    }
-                    onClick={() => {
-                      if (r.is_built_in || r.user_count > 0) return;
-                      if (!window.confirm(`Delete role "${r.name}"?`)) return;
-                      setBusy(true);
-                      setError(null);
-                      deletePayflowRole(r.id)
-                        .then(() => listPayflowRoles())
-                        .then((res) => {
-                          onRolesChanged(res.roles);
-                          if (editingId === r.id) setEditingId(null);
-                          onChanged();
-                        })
-                        .catch((err: unknown) => {
-                          setError(err instanceof Error ? err.message : "Failed to delete role");
-                        })
-                        .finally(() => setBusy(false));
-                    }}
-                  >
-                    Delete
-                  </Btn>
-                ) : null}
-              </div>
-            </Td>
-          </Tr>
-        ))}
-      </DataTable>
+      {roles.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No roles yet.</p>
+      ) : isMobile ? (
+        <MobileRecordCards>
+          {roleRows.map((r) => (
+            <MobileRecordCard
+              key={r.id}
+              title={r.name}
+              subtitle={r.description || undefined}
+              badges={
+                <StatusPill tone={roleTone(r.scope)}>{scopeLabel(r.scope)}</StatusPill>
+              }
+              meta={
+                <div className="space-y-0.5">
+                  <p>
+                    {r.scope === "platform_wide"
+                      ? "All permissions"
+                      : `${r.permission_count} selected`}
+                  </p>
+                  <p>{r.user_count} user{r.user_count === 1 ? "" : "s"}</p>
+                </div>
+              }
+              footer={roleActions(r)}
+            />
+          ))}
+        </MobileRecordCards>
+      ) : (
+        <DataTable head={["Role", "Scope", "Permissions", "Users", ""]} minWidth={720}>
+          {roleRows.map((r) => (
+            <Tr key={r.id}>
+              <Td>
+                <PrimaryCell title={r.name} subtitle={r.description || undefined} />
+              </Td>
+              <Td>
+                <StatusPill tone={roleTone(r.scope)}>{scopeLabel(r.scope)}</StatusPill>
+              </Td>
+              <Td className="text-slate-500">
+                {r.scope === "platform_wide"
+                  ? "All permissions"
+                  : `${r.permission_count} selected`}
+              </Td>
+              <Td className="text-slate-500">{r.user_count}</Td>
+              <Td>
+                <div className="flex justify-end gap-1.5">{roleActions(r)}</div>
+              </Td>
+            </Tr>
+          ))}
+        </DataTable>
+      )}
+
+      {roles.length > 0 ? (
+        <Pagination
+          total={roleTotal}
+          offset={roleOffset}
+          pageSize={rolePageSize}
+          rowCount={roleRows.length}
+          onPrevious={roleGoPrev}
+          onNext={roleGoNext}
+        />
+      ) : null}
 
       {editingId != null && (
         <RolePermissionsInline

@@ -5,9 +5,15 @@ import { listPayflowDeletionLogs } from "../../api/payflow";
 import { PageHeader } from "../../components/payflow-ui";
 import { Button } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
+import { MobileRecordCard, MobileRecordCards } from "../../components/ui/MobileRecordCards";
+import { Pagination } from "../../components/ui/Pagination";
 import { useOptionalPayFlowAccess } from "../../context/PayFlowAccessContext";
+import { useClientPagedList } from "../../hooks/useOffsetPagination";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import { ui } from "../../lib/ui";
 import type { DeletionLog } from "../../types";
+
+const PAGE_SIZE = 10;
 
 type Props = {
   workspace: "platform" | "payflow";
@@ -291,12 +297,19 @@ function DeletionDetail({ row }: { row: DeletionLog }) {
 
 export function DeletionLogsPage({ workspace }: Props) {
   const payflow = useOptionalPayFlowAccess();
+  const isMobile = useIsMobile();
   const [rows, setRows] = useState<DeletionLog[]>([]);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [openId, setOpenId] = useState<number | null>(null);
+  const resetKey = `${search}|${typeFilter}|${workspace}`;
+  const { pageItems, total, offset, pageSize, goPrev, goNext } = useClientPagedList(
+    rows,
+    PAGE_SIZE,
+    resetKey,
+  );
 
   async function load() {
     setLoading(true);
@@ -305,7 +318,7 @@ export function DeletionLogsPage({ workspace }: Props) {
       const params = {
         search: search.trim() || undefined,
         entity_type: typeFilter || undefined,
-        limit: 200,
+        limit: 500,
       };
       setRows(
         workspace === "payflow"
@@ -389,6 +402,53 @@ export function DeletionLogsPage({ workspace }: Props) {
           <div className={ui.empty}>Loading deletion logs…</div>
         ) : rows.length === 0 ? (
           <div className={ui.empty}>No deletions recorded yet.</div>
+        ) : isMobile ? (
+          <MobileRecordCards>
+            {pageItems.map((row) => {
+              const open = openId === row.id;
+              const relatedCount = row.related_deleted?.length || 0;
+              return (
+                <div key={row.id} className="space-y-2">
+                  <MobileRecordCard
+                    title={row.entity_label}
+                    subtitle={`${entityLabel(row.entity_type)} · ID ${row.entity_id}`}
+                    badges={
+                      <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium capitalize text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                        {row.activity}
+                      </span>
+                    }
+                    meta={
+                      <div className="space-y-0.5">
+                        <p>
+                          {row.created_at ? new Date(row.created_at).toLocaleString() : "—"}
+                        </p>
+                        <p>
+                          {row.actor_name}
+                          {row.actor_email ? ` · ${row.actor_email}` : ""}
+                          {row.actor_role ? ` · ${row.actor_role.replace(/_/g, " ")}` : ""}
+                        </p>
+                        <p>{sourceLabel(row.source)}</p>
+                      </div>
+                    }
+                    footer={
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setOpenId(open ? null : row.id)}
+                      >
+                        {open
+                          ? "Hide"
+                          : relatedCount > 0
+                            ? `View · ${relatedCount} related`
+                            : "View details"}
+                      </Button>
+                    }
+                  />
+                  {open ? <DeletionDetail row={row} /> : null}
+                </div>
+              );
+            })}
+          </MobileRecordCards>
         ) : (
           <table className={ui.table}>
             <thead>
@@ -402,7 +462,7 @@ export function DeletionLogsPage({ workspace }: Props) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => {
+              {pageItems.map((row) => {
                 const open = openId === row.id;
                 const relatedCount = row.related_deleted?.length || 0;
                 return (
@@ -465,6 +525,16 @@ export function DeletionLogsPage({ workspace }: Props) {
             </tbody>
           </table>
         )}
+        {!loading && total > 0 ? (
+          <Pagination
+            total={total}
+            offset={offset}
+            pageSize={pageSize}
+            rowCount={pageItems.length}
+            onPrevious={goPrev}
+            onNext={goNext}
+          />
+        ) : null}
       </div>
     </div>
   );

@@ -1,10 +1,14 @@
 import { NavLink } from "react-router-dom";
 import { Icon } from "../ui/Icon";
-import { normalizeMenuRoute } from "../../lib/utils";
+import { cn, normalizeMenuRoute } from "../../lib/utils";
 import type { MenuSection } from "../../types";
 
 type Props = {
   sections: MenuSection[];
+  /** Close mobile drawer after navigating. */
+  onNavigate?: () => void;
+  /** Override root aside classes (e.g. mobile drawer). */
+  className?: string;
 };
 
 function iconFor(key: string, icon?: string | null) {
@@ -17,9 +21,14 @@ function iconFor(key: string, icon?: string | null) {
   return "overview";
 }
 
-export function Sidebar({ sections }: Props) {
+export function Sidebar({ sections, onNavigate, className }: Props) {
   return (
-    <aside className="sticky top-0 hidden h-screen w-[248px] shrink-0 flex-col border-r border-white/10 bg-sidebar px-3 py-0 text-slate-400 lg:flex">
+    <aside
+      className={cn(
+        "flex h-screen w-[248px] shrink-0 flex-col border-r border-white/10 bg-sidebar px-3 py-0 text-slate-400",
+        className ?? "sticky top-0 hidden lg:flex",
+      )}
+    >
       <div className="flex h-[68px] shrink-0 items-center gap-2.5 px-4">
         <img src="/assets/payflow-mark.png" alt="" className="size-8 shrink-0 object-contain" />
         <div className="leading-tight">
@@ -59,6 +68,7 @@ export function Sidebar({ sections }: Props) {
                       <NavLink
                         to={route}
                         end={route === "/platform"}
+                        onClick={onNavigate}
                         className={({ isActive }) =>
                           `flex items-center gap-2.5 rounded-lg border px-2.5 py-2 text-[13px] font-medium transition-all duration-150 ${
                             isActive
@@ -85,6 +95,7 @@ export function Sidebar({ sections }: Props) {
       <div className="mt-auto shrink-0 border-t border-white/10 p-3">
         <NavLink
           to="/products"
+          onClick={onNavigate}
           className="flex items-center gap-2 rounded-lg px-2 py-2 text-[12px] font-medium text-[#b7c2d4] hover:bg-white/[0.06] hover:text-white"
         >
           <span aria-hidden>←</span>
