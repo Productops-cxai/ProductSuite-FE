@@ -306,6 +306,17 @@ export function CustomerPaymentPortalPage() {
   const [planQuoteError, setPlanQuoteError] = useState("");
   const [quoting, setQuoting] = useState(false);
 
+  // Path contains the payment-link token — do not leak it via Referer.
+  useEffect(() => {
+    const meta = document.createElement("meta");
+    meta.name = "referrer";
+    meta.content = "no-referrer";
+    document.head.appendChild(meta);
+    return () => {
+      meta.remove();
+    };
+  }, []);
+
   useEffect(() => {
     if (!token) {
       setError("Invalid payment link");
