@@ -40,13 +40,19 @@ function operatorsForField(fields: PayflowRuleFieldCatalogItem[], label: string)
   return NUMERIC_OPS;
 }
 
+function defaultValueForField(fields: PayflowRuleFieldCatalogItem[], label: string) {
+  const meta = fields.find((f) => f.label === label);
+  if (meta?.type === "enum" && meta.options?.length) return meta.options[0]!;
+  return "";
+}
+
 function newCondition(fields: PayflowRuleFieldCatalogItem[]): PayflowRuleCondition {
   const field = fields[0]?.label || "Outstanding Balance";
   return {
     id: `cond-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
     field,
     operator: operatorsForField(fields, field)[0] || "Equals",
-    value: "",
+    value: defaultValueForField(fields, field),
   };
 }
 
@@ -56,10 +62,8 @@ function valueHint(field?: PayflowRuleFieldCatalogItem) {
   return undefined;
 }
 
-function conditionHasValue(condition: PayflowRuleCondition, fields: PayflowRuleFieldCatalogItem[]) {
-  if (String(condition.value || "").trim()) return true;
-  const meta = fields.find((f) => f.label === condition.field);
-  return meta?.type === "enum" && !!meta.options?.length;
+function conditionHasValue(condition: PayflowRuleCondition, _fields: PayflowRuleFieldCatalogItem[]) {
+  return String(condition.value || "").trim().length > 0;
 }
 
 function SaveNotice({ children }: { children: string }) {
@@ -136,16 +140,25 @@ export function PayFlowRuleNewPage() {
               ? existing.status
               : "Draft",
           );
-          const loadedConditions = (existing.conditions || []).map((c, i) => ({
-            id: c.id || `cond-${existing.id}-${i}`,
-            field: c.field,
-            operator: c.operator,
-            value: c.value ?? "",
-          }));
+          const catalog = ruleRes.fields || [];
+          const allowed = new Set(catalog.map((f) => f.label));
+          const loadedConditions = (existing.conditions || [])
+            .filter((c) => allowed.has(c.field))
+            .map((c, i) => {
+              const meta = catalog.find((f) => f.label === c.field);
+              let value = c.value ?? "";
+              if (meta?.type === "enum" && meta.options?.length) {
+                if (!meta.options.includes(String(value))) value = meta.options[0]!;
+              }
+              return {
+                id: c.id || `cond-${existing.id}-${i}`,
+                field: c.field,
+                operator: c.operator,
+                value,
+              };
+            });
           setConditions(
-            loadedConditions.length
-              ? loadedConditions
-              : [newCondition(ruleRes.fields || [])],
+            loadedConditions.length ? loadedConditions : [newCondition(catalog)],
           );
         } else {
           setCanEdit(false);
@@ -177,7 +190,9 @@ export function PayFlowRuleNewPage() {
         if (i !== index) return c;
         const next = { ...c, ...patch };
         if (patch.field) {
-          next.operator = operatorsForField(fields, patch.field)[0] || next.operator;
+          // Field change always resets operator + value for the new field type.
+          next.operator = operatorsForField(fields, patch.field)[0] || "Equals";
+          next.value = defaultValueForField(fields, patch.field);
         }
         return next;
       }),
@@ -434,7 +449,11 @@ export function PayFlowRuleNewPage() {
                       <Field label="Value" hint={valueHint(fieldMeta)}>
                         {fieldMeta?.type === "enum" && fieldMeta.options?.length ? (
                           <SelectInput
-                            value={c.value || fieldMeta.options[0]}
+                            value={
+                              fieldMeta.options.includes(c.value)
+                                ? c.value
+                                : fieldMeta.options[0]!
+                            }
                             onChange={(v) => updateCondition(index, { value: v })}
                             options={fieldMeta.options}
                           />
