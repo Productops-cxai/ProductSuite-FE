@@ -284,14 +284,22 @@ export function mapApiImportRun(row: {
   }>;
 }): ImportRun {
   const errors: ImportError[] = (row.errors || []).map((e) => {
-    const status = mapImportErrorStatus(e.status);
+    let status = mapImportErrorStatus(e.status);
     const parsed = parseImportSetupIssues(e.error);
     const setupIssues =
       e.setup_issues && e.setup_issues.length > 0
         ? e.setup_issues
-        : status === "Draft"
+        : status === "Draft" || (e.field || "").toLowerCase() === "setup"
           ? parsed.issues
           : undefined;
+    if (
+      status === "Rejected" &&
+      (e.field || "").toLowerCase() === "setup" &&
+      setupIssues &&
+      setupIssues.length > 0
+    ) {
+      status = "Draft";
+    }
     return {
       recordId: e.record_id,
       client: e.client,
