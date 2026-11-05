@@ -134,6 +134,7 @@ export function RequirePayflowPermission({
 export const PAYFLOW_ROUTE_PERMISSIONS: Array<{ prefix: string; anyOf: string[] }> = [
   { prefix: "/payflow/users", anyOf: ["manage_users"] },
   { prefix: "/payflow/integrations", anyOf: ["manage_integrations"] },
+  { prefix: "/payflow/system-mapping", anyOf: ["manage_integrations"] },
   // More specific import routes before parent /clients and /cases prefixes.
   { prefix: "/payflow/clients/import", anyOf: ["import_clients"] },
   { prefix: "/payflow/cases/import", anyOf: ["import_accounts"] },
@@ -142,10 +143,13 @@ export const PAYFLOW_ROUTE_PERMISSIONS: Array<{ prefix: string; anyOf: string[] 
     prefix: "/payflow/cases",
     anyOf: ["view_customer_accounts", "view_collection_cases"],
   },
+  // Align with BE PayflowViewImports (import capability, not account/case view).
   {
     prefix: "/payflow/imports",
-    anyOf: ["view_customer_accounts", "view_collection_cases", "import_clients", "import_accounts"],
+    anyOf: ["import_clients", "import_accounts"],
   },
+  // Create before parent view prefix so /workflows/new is not open to view-only.
+  { prefix: "/payflow/workflows/new", anyOf: ["create_edit_workflows"] },
   { prefix: "/payflow/workflows", anyOf: ["view_workflows"] },
   { prefix: "/payflow/review", anyOf: ["view_human_reviews"] },
   { prefix: "/payflow/rules", anyOf: ["view_rules"] },
@@ -154,6 +158,10 @@ export const PAYFLOW_ROUTE_PERMISSIONS: Array<{ prefix: string; anyOf: string[] 
   {
     prefix: "/payflow/reports/payment-reconciliation",
     anyOf: ["view_analytics", "view_collection_cases"],
+  },
+  {
+    prefix: "/payflow/reports/ai-eval",
+    anyOf: ["view_workflows", "view_analytics"],
   },
 ];
 

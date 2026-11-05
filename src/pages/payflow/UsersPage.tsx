@@ -57,12 +57,16 @@ function scopeLabel(scope: string) {
   return scope === "platform_wide" ? "Platform-wide" : "Client-scoped";
 }
 
+/** Keep in sync with BE `_SUPERVISOR_PERMISSION_CODES` in seeder.py */
 const SUPERVISOR_DEFAULT_CODES = [
   "view_client",
   "view_customer_accounts",
   "view_collection_cases",
   "view_workflows",
   "view_communications",
+  "send_communications",
+  "view_operational_exceptions",
+  "manage_operational_exceptions",
   "view_human_reviews",
   "approve_human_reviews",
   "view_rules",

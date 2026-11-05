@@ -100,6 +100,10 @@ export interface SectionProps {
   payflowFields?: string[];
   governanceRules?: string[];
   readOnly?: boolean;
+  /** AI mode only — falls back to readOnly when unset. */
+  aiReadOnly?: boolean;
+  /** Governance rules only — falls back to readOnly when unset. */
+  governanceReadOnly?: boolean;
   clientId?: number | null;
   onClientUpdated?: (detail: {
     logo_url?: string | null;
@@ -1440,10 +1444,14 @@ export function AiGovernanceSection({
   patchConfig,
   governanceRules = [],
   readOnly,
+  aiReadOnly,
+  governanceReadOnly,
 }: SectionProps) {
   const rules = draft.config.governanceRules;
   // Active system rules from Rules + any already-selected names (so edits stay visible).
   const library = Array.from(new Set([...governanceRules, ...rules]));
+  const aiLocked = aiReadOnly ?? readOnly;
+  const govLocked = governanceReadOnly ?? readOnly;
 
   const toggleRule = (rule: string) =>
     patchConfig({
@@ -1463,15 +1471,15 @@ export function AiGovernanceSection({
           title="Autopilot"
           description="PayFlow performs routine collection decisions and actions autonomously within configured operating boundaries. Routine human approval is not required; security and compliance controls still apply."
           selected={draft.aiMode === "Autopilot"}
-          onSelect={readOnly ? undefined : () => patch({ aiMode: "Autopilot" })}
-          disabled={readOnly}
+          onSelect={aiLocked ? undefined : () => patch({ aiMode: "Autopilot" })}
+          disabled={aiLocked}
         />
         <ChoiceCard
           title="Supervised AI"
           description="PayFlow performs the operational work, while configured governance rules determine when supervisor review is required."
           selected={draft.aiMode === "Supervised AI"}
-          onSelect={readOnly ? undefined : () => patch({ aiMode: "Supervised AI" })}
-          disabled={readOnly}
+          onSelect={aiLocked ? undefined : () => patch({ aiMode: "Supervised AI" })}
+          disabled={aiLocked}
         />
       </div>
 
@@ -1479,7 +1487,7 @@ export function AiGovernanceSection({
         <div className="rounded-lg border border-border bg-surface p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-[13px] font-semibold text-foreground">Governance Rules</p>
-            {!readOnly ? (
+            {!govLocked ? (
               <Link to="/payflow/rules/new" target="_blank" rel="noreferrer">
                 <Btn variant="ghost" className="text-primary hover:text-primary-hover">
                   + Create Rule
@@ -1505,8 +1513,8 @@ export function AiGovernanceSection({
                   <input
                     type="checkbox"
                     checked={rules.includes(rule)}
-                    onChange={() => !readOnly && toggleRule(rule)}
-                    disabled={readOnly}
+                    onChange={() => !govLocked && toggleRule(rule)}
+                    disabled={govLocked}
                     className="size-3.5 rounded border-border-strong accent-[var(--color-primary)] dark:border-slate-500"
                   />
                   <span className="text-[13px] text-foreground">{rule}</span>
