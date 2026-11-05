@@ -333,6 +333,7 @@ export function PayFlowWorkflowDetailPage() {
     setWritingMessages(true);
     setBusy(true);
     setError("");
+    setNotice("");
     try {
       const updated = ensureStepLinks(
         await writePayflowWorkflowMessages(strategy.id, {
@@ -356,6 +357,7 @@ export function PayFlowWorkflowDetailPage() {
           : "Message text written by AI for all email / SMS steps.",
       );
     } catch (err) {
+      setNotice("");
       setError(err instanceof ApiError ? err.detail : "Failed to write messages");
     } finally {
       setWritingMessages(false);
