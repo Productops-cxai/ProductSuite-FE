@@ -286,25 +286,25 @@ export function mapApiImportRun(row: {
   const errors: ImportError[] = (row.errors || []).map((e) => {
     let status = mapImportErrorStatus(e.status);
     const parsed = parseImportSetupIssues(e.error);
+    const fieldLower = (e.field || "").toLowerCase();
+    const looksLikeSetupWarning =
+      fieldLower === "setup" ||
+      parsed.clientId != null ||
+      (Array.isArray(e.setup_issues) && e.setup_issues.length > 0);
     const setupIssues =
       e.setup_issues && e.setup_issues.length > 0
         ? e.setup_issues
-        : status === "Draft" || (e.field || "").toLowerCase() === "setup"
+        : status === "Draft" || looksLikeSetupWarning
           ? parsed.issues
           : undefined;
-    if (
-      status === "Rejected" &&
-      (e.field || "").toLowerCase() === "setup" &&
-      setupIssues &&
-      setupIssues.length > 0
-    ) {
+    if (status === "Rejected" && looksLikeSetupWarning && setupIssues && setupIssues.length > 0) {
       status = "Draft";
     }
     return {
       recordId: e.record_id,
       client: e.client,
       subClient: e.sub_client,
-      field: e.field,
+      field: status === "Draft" && setupIssues && setupIssues.length > 0 ? "setup" : e.field,
       error: e.error,
       status,
       clientId: e.client_id ?? parsed.clientId,
