@@ -634,21 +634,32 @@ export interface PayflowBulkUploadCreatedRow {
 }
 
 export interface PayflowBulkUploadErrorRow {
-  row: number;
+  row?: number;
   code?: string | null;
-  message: string;
+  message?: string;
+  /** Hierarchy client import (preferred). */
+  record_id?: string;
+  client?: string;
+  sub_client?: string;
+  field?: string;
+  error?: string;
+  status?: string;
+  client_id?: number | null;
+  setup_issues?: string[];
 }
 
 export interface PayflowBulkUploadResult {
-  created_count: number;
-  error_count: number;
-  created: PayflowBulkUploadCreatedRow[];
+  created_count?: number;
+  error_count?: number;
+  created?: PayflowBulkUploadCreatedRow[];
   errors: PayflowBulkUploadErrorRow[];
   import_id?: number | null;
   status?: string;
   message?: string | null;
   summary?: PayflowImportPreviewSummary;
   preview?: PayflowImportPreviewRecord[];
+  ok?: boolean;
+  file_name?: string;
 }
 
 export interface PayflowImportPreviewRecord {
@@ -695,6 +706,8 @@ export interface PayflowImportPreviewResponse {
     field: string;
     error: string;
     status: string;
+    client_id?: number | null;
+    setup_issues?: string[];
   }>;
 }
 
