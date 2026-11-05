@@ -692,7 +692,8 @@ export type PayflowWorkflowStepPayload = PayflowStrategyStep;
 export async function createPayflowWorkflow(payload: {
   name: string;
   client_id: number;
-  portfolio_id: number;
+  /** Null / omit = parent-level workflow (no sub-client). */
+  portfolio_id?: number | null;
   summary?: string;
   coverage?: string;
   cases_covered?: number;
@@ -772,11 +773,12 @@ export async function activatePayflowWorkflow(
 
 export async function suggestPayflowWorkflows(payload: {
   client_id: number;
-  portfolio_id: number;
+  /** Null / omit = parent-level suggest (no sub-client). */
+  portfolio_id?: number | null;
 }) {
   return apiRequest<{
     client_id: number;
-    portfolio_id: number;
+    portfolio_id: number | null;
     portfolio_name: string;
     workflows: PayflowStrategy[];
   }>("/payflow/workflows/suggest", { method: "POST", body: payload });
