@@ -838,7 +838,7 @@ export function DataSourceSection({ readOnly }: SectionProps) {
       <div className="grid gap-3 sm:grid-cols-2 max-w-3xl">
         <ChoiceCard
           title="Daily file"
-          description="Upload daily account files with client_code. sub_client_code is optional — leave blank for parent-level accounts."
+          description="Upload daily account files linked by client_code (Canaccede Client Number usually carries that code). sub_client_code is optional — leave blank for parent-level accounts."
           selected
           disabled={readOnly}
         />
