@@ -297,7 +297,7 @@ export function PayFlowIntegrationsPage() {
         <>
           <Panel
             title="Client file → PayFlow"
-            description="Columns from the CRM clients / hierarchy upload (masters and sub-clients). Used when onboarding or refreshing the Client → Sub-Client tree."
+            description="Columns from the CRM clients / hierarchy upload (masters and optional sub-clients). Used when onboarding or refreshing the Client tree."
             action={
               <FilterSelect
                 label="Group"

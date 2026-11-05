@@ -127,9 +127,9 @@ export function PortfolioSection({
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="max-w-2xl text-[13px] text-muted-foreground">
-          A sub-client / portfolio is a distinct collection portfolio belonging to {clientName}. Each
-          portfolio can hold a different account population and run different strategies. Portfolios
-          are not customer accounts.
+          Sub-clients / portfolios are optional for {clientName}. Use them when you need separate
+          account populations or strategies; otherwise accounts can sit directly on the parent
+          client. Portfolios are not customer accounts.
         </p>
         {canEdit ? (
           <Btn variant="primary" onClick={() => setAdding((v) => !v)}>
@@ -177,8 +177,8 @@ export function PortfolioSection({
 
       {portfolios.length === 0 ? (
         <EmptyState
-          title="No portfolios yet"
-          description={`Add the first collection portfolio for ${clientName}.`}
+          title="No portfolios yet (optional)"
+          description={`Sub-clients are optional for ${clientName}. Accounts can sit on the parent client; add a portfolio only if you need a separate book.`}
           action={
             canEdit && !adding ? (
               <Btn variant="primary" onClick={() => setAdding(true)}>

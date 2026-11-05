@@ -312,10 +312,19 @@ export function PayFlowClientDetailPage() {
         : s,
     );
   }, [detail, draft]);
-  const checksDone = activationChecks.filter((c) => c.done).length;
-  const checksPct = activationChecks.length
-    ? Math.round((checksDone / activationChecks.length) * 100)
-    : 0;
+  // Align with list/banner: required onboarding only (portfolios are optional).
+  const requiredStepsDone = detail?.onboarding?.completed_required;
+  const requiredStepsTotal = detail?.onboarding?.total_required;
+  const requiredActivationChecks = activationChecks.filter((c) => c.required);
+  const checksDone =
+    typeof requiredStepsDone === "number"
+      ? requiredStepsDone
+      : requiredActivationChecks.filter((c) => c.done).length;
+  const checksTotal =
+    typeof requiredStepsTotal === "number" && requiredStepsTotal > 0
+      ? requiredStepsTotal
+      : requiredActivationChecks.length;
+  const checksPct = checksTotal ? Math.round((checksDone / checksTotal) * 100) : 0;
   const requiredBlockers = activationChecks.filter((c) => c.required && !c.done);
   const canActivate =
     Boolean(detail) &&
@@ -467,7 +476,8 @@ export function PayFlowClientDetailPage() {
             const issueMessages = remainingSetupIssueMessages(detail, draft);
             if (missing.length === 0 && issueMessages.length === 0) return null;
             const drafting = isClientSettingUp(statusLabel);
-            const issueCount = Math.max(missing.length, issueMessages.length);
+            // Same remaining count as clients list / required onboarding (chips), not optional portfolios.
+            const issueCount = missing.length > 0 ? missing.length : issueMessages.length;
             return (
               <div className="mb-4 rounded-lg border border-warning/40 bg-warning/8 px-4 py-3">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -481,8 +491,8 @@ export function PayFlowClientDetailPage() {
                     </p>
                     <p className="mt-0.5 text-[12px] text-muted-foreground">
                       {drafting
-                        ? "Complete the remaining configuration to activate this Client. It stays in Draft until an Operations Admin activates it."
-                        : "Some onboarding steps are still open — for example Sub-Clients / Portfolios."}
+                        ? "Complete the remaining required configuration to activate this Client. Sub-clients / portfolios are optional. It stays in Draft until an Operations Admin activates it."
+                        : "Some required onboarding steps are still open. Sub-clients / portfolios remain optional."}
                     </p>
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {missing.map((m) => (
@@ -516,12 +526,7 @@ export function PayFlowClientDetailPage() {
                     <Btn
                       variant="primary"
                       className="shrink-0"
-                      onClick={() =>
-                        missing.some((m) => /portfolio|sub-client/i.test(m)) ||
-                        issueMessages.some((m) => /portfolio|sub-client/i.test(m))
-                          ? goSetupTarget("portfolios")
-                          : changeTab("Configuration")
-                      }
+                      onClick={() => changeTab("Configuration")}
                     >
                       Complete Setup
                     </Btn>
@@ -629,18 +634,26 @@ export function PayFlowClientDetailPage() {
               />
               <OverviewCard
                 title="Sub-Clients / Portfolios"
-                tone={(detail.portfolio_count || 0) > 0 ? "success" : "warning"}
+                tone={(detail.portfolio_count || 0) > 0 ? "success" : "neutral"}
                 status={
                   (detail.portfolio_count || 0) > 0
                     ? `${detail.portfolio_count} total`
-                    : "Pending"
+                    : "Optional"
                 }
                 lines={[
-                  `${(detail.portfolios || []).filter((p) => (p.status || "").toLowerCase() === "active").length} active`,
-                  `${(detail.portfolios || []).filter((p) => (p.status || "").toLowerCase() !== "active").length} onboarding / other`,
+                  (detail.portfolio_count || 0) > 0
+                    ? `${(detail.portfolios || []).filter((p) => (p.status || "").toLowerCase() === "active").length} active`
+                    : "Not required — accounts can sit on the parent client",
+                  (detail.portfolio_count || 0) > 0
+                    ? `${(detail.portfolios || []).filter((p) => (p.status || "").toLowerCase() !== "active").length} onboarding / other`
+                    : "Add only if you need separate portfolios",
                 ]}
                 onClick={() => goSetupTarget("portfolios")}
-                cta="Manage portfolios"
+                cta={
+                  (detail.portfolio_count || 0) > 0
+                    ? "Manage portfolios"
+                    : "Add portfolio (optional)"
+                }
               />
               <OverviewCard
                 title="Data Source"
@@ -707,7 +720,7 @@ export function PayFlowClientDetailPage() {
                   />
                 </div>
                 <p className="mt-2 text-[12px] text-muted-foreground">
-                  {checksDone} of {activationChecks.length} steps complete
+                  {checksDone} of {checksTotal} required steps complete
                 </p>
               </div>
             </div>
@@ -856,7 +869,7 @@ function ActivationCheckRow({ check }: { check: SetupCheck }) {
         />
         {check.label}
         {!check.required ? (
-          <span className="text-[11px] text-muted-foreground">(informational)</span>
+          <span className="text-[11px] text-muted-foreground">(optional)</span>
         ) : null}
       </span>
       <span className="text-muted-foreground">{check.detail}</span>
@@ -876,9 +889,22 @@ function OnboardingStepper({
       <SectionHeading title="Onboarding progress" />
       <ol className="mt-2 grid gap-2 sm:grid-cols-3 xl:grid-cols-6">
         {stages.map((st, i) => {
-          const state = st.done ? "Completed" : st.blocked ? "Blocked" : "Pending";
-          const tone: Tone = st.done ? "success" : st.blocked ? "danger" : "warning";
-          const clickable = !st.done && !!st.target;
+          const optional = Boolean(st.informational);
+          const state = st.done
+            ? "Completed"
+            : st.blocked
+              ? "Blocked"
+              : optional
+                ? "Optional"
+                : "Pending";
+          const tone: Tone = st.done
+            ? "success"
+            : st.blocked
+              ? "danger"
+              : optional
+                ? "neutral"
+                : "warning";
+          const clickable = (!st.done || optional) && !!st.target;
           return (
             <li key={st.key}>
               <button
@@ -916,7 +942,9 @@ function OnboardingStepper({
                   {state}
                 </StatusPill>
                 {clickable ? (
-                  <span className="text-[11px] font-semibold text-primary">Complete step →</span>
+                  <span className="text-[11px] font-semibold text-primary">
+                    {optional && !st.done ? "Add if needed →" : "Complete step →"}
+                  </span>
                 ) : null}
               </button>
             </li>

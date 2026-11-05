@@ -223,10 +223,13 @@ export function PayFlowClientsPage() {
             const statusLabel = phase1StatusLabel(c.status, c.status_label);
             const settingUp = isClientSettingUp(c.status_label || c.status);
             const remainingSteps = incompleteSetupSections(c.onboarding, c.setup_incomplete);
-            const remaining = Math.max(
-              typeof c.setup_steps_remaining === "number" ? c.setup_steps_remaining : 0,
-              remainingSteps.length,
-            );
+            // Prefer filtered FE labels; BE setup_steps_remaining excludes optional portfolios.
+            const remaining =
+              remainingSteps.length > 0
+                ? remainingSteps.length
+                : typeof c.setup_steps_remaining === "number"
+                  ? c.setup_steps_remaining
+                  : 0;
             const showSetupHint = settingUp || remaining > 0;
             return (
               <MobileRecordCard
@@ -292,10 +295,13 @@ export function PayFlowClientsPage() {
             const statusLabel = phase1StatusLabel(c.status, c.status_label);
             const settingUp = isClientSettingUp(c.status_label || c.status);
             const remainingSteps = incompleteSetupSections(c.onboarding, c.setup_incomplete);
-            const remaining = Math.max(
-              typeof c.setup_steps_remaining === "number" ? c.setup_steps_remaining : 0,
-              remainingSteps.length,
-            );
+            // Prefer filtered FE labels; BE setup_steps_remaining excludes optional portfolios.
+            const remaining =
+              remainingSteps.length > 0
+                ? remainingSteps.length
+                : typeof c.setup_steps_remaining === "number"
+                  ? c.setup_steps_remaining
+                  : 0;
             const showSetupHint = settingUp || remaining > 0;
             const addedLabel = c.added_through_label || "Created";
 
@@ -314,11 +320,7 @@ export function PayFlowClientsPage() {
                       ) : null}
                       {canEdit ? (
                         <Link
-                          to={
-                            remainingSteps.some((s) => /portfolio/i.test(s))
-                              ? `/payflow/clients/${c.id}?tab=${encodeURIComponent("Sub-Clients / Portfolios")}`
-                              : `/payflow/clients/${c.id}?tab=Configuration`
-                          }
+                          to={`/payflow/clients/${c.id}?tab=Configuration`}
                           className="text-[12.5px] font-semibold text-primary hover:underline"
                         >
                           {remaining > 0
