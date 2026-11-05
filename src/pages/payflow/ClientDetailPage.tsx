@@ -73,6 +73,17 @@ const MAIN_TABS = [
 
 type MainTab = (typeof MAIN_TABS)[number];
 
+/** null = covered by page view_client gate; otherwise any-of required to show the tab. */
+const TAB_ANY_OF: Record<MainTab, string[] | null> = {
+  Overview: null,
+  "Sub-Clients / Portfolios": null,
+  Configuration: null,
+  Accounts: ["view_customer_accounts", "view_collection_cases"],
+  Communications: ["view_communications"],
+  Workflows: ["view_workflows"],
+  Rules: ["view_rules"],
+};
+
 const CONFIG_SECTIONS = [
   "General",
   "Data Source",
@@ -83,6 +94,48 @@ const CONFIG_SECTIONS = [
 ] as const;
 
 type ConfigSection = (typeof CONFIG_SECTIONS)[number];
+
+const CONFIG_FIELD_KEYS: Record<
+  Exclude<ConfigSection, "AI & Governance" | "Assigned Users">,
+  string[]
+> = {
+  General: [
+    "name",
+    "code",
+    "client_type",
+    "business_domain",
+    "industry",
+    "contact_name",
+    "contact_title",
+    "contact_email",
+    "contact_phone",
+    "address_line1",
+    "address_line2",
+    "city",
+    "province_state",
+    "country",
+    "postal_code",
+    "correspondence_language",
+    "currency_code",
+  ],
+  "Data Source": [
+    "data_source_type",
+    "connection_status",
+    "crm_client_number",
+    "integration_ref",
+    "environment",
+    "sync_frequency",
+    "mappings",
+  ],
+  "Branding & Channels": [
+    "brand_name",
+    "sender_name",
+    "email_from",
+    "sms_sender_id",
+    "channels",
+  ],
+  "Payment Options": ["payment_settings"],
+};
 
 function statusTone(status: string): Tone {
   const s = status.toLowerCase();
@@ -98,12 +151,28 @@ export function PayFlowClientDetailPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { hasPermission } = usePayFlowAccess();
   const canEdit = hasPermission("edit_client");
+  const canModifyConfig =
+    canEdit || hasPermission("modify_client_configuration");
+  const canModifyAi = canEdit || hasPermission("modify_ai_mode");
+  const canModifyGov = canEdit || hasPermission("modify_governance");
   const canDelete = SHOW_PAYFLOW_DELETE && hasPermission("delete_client");
   const id = Number(clientId);
 
+  const visibleTabs = useMemo(
+    () =>
+      MAIN_TABS.filter((t) => {
+        const needed = TAB_ANY_OF[t];
+        return !needed || hasPermission(needed);
+      }),
+    [hasPermission],
+  );
+
   const initialTab = (searchParams.get("tab") as MainTab) || "Overview";
   const [tab, setTab] = useState<MainTab>(
-    MAIN_TABS.includes(initialTab) ? initialTab : "Overview",
+    MAIN_TABS.includes(initialTab) &&
+      (!TAB_ANY_OF[initialTab] || hasPermission(TAB_ANY_OF[initialTab]!))
+      ? initialTab
+      : "Overview",
   );
   const [configSection, setConfigSection] = useState<ConfigSection>("General");
   const [detail, setDetail] = useState<PayflowClientDetail | null>(null);
@@ -125,10 +194,11 @@ export function PayFlowClientDetailPage() {
     setLoading(true);
     setError("");
     try {
+      // Users list needs manage_users — soft-fail so view_client can still open the record.
       const [client, users, catalog] = await Promise.all([
         getPayflowClient(id),
-        listPayflowUsers(),
-        getPayflowClientMappingCatalog(),
+        listPayflowUsers().catch(() => ({ users: [] as PayflowUser[] })),
+        getPayflowClientMappingCatalog().catch(() => ({ governance_rules: [] as string[] })),
       ]);
       setDetail(client);
       setDraft(draftFromDetail(client));
@@ -146,6 +216,14 @@ export function PayFlowClientDetailPage() {
   useEffect(() => {
     void load();
   }, [id]);
+
+  // Drop onto Overview if deep-linked tab is not permitted.
+  useEffect(() => {
+    if (!visibleTabs.includes(tab)) {
+      setTab("Overview");
+      setSearchParams({});
+    }
+  }, [visibleTabs, tab, setSearchParams]);
 
   // Refresh governance list when returning from Rule Builder (new tab).
   useEffect(() => {
@@ -165,16 +243,24 @@ export function PayFlowClientDetailPage() {
     setDraft((d) => ({ ...d, config: { ...d.config, ...p } }));
 
   const readOnly = !canEdit;
-  const brandingReadOnly = readOnly || detail?.status !== "draft";
+  const brandingReadOnly = !canModifyConfig || detail?.status !== "draft";
+  const sectionCanSave =
+    configSection === "Assigned Users"
+      ? canEdit
+      : configSection === "AI & Governance"
+        ? canModifyAi || canModifyGov
+        : configSection === "Branding & Channels"
+          ? canModifyConfig && detail?.status === "draft"
+          : canModifyConfig;
 
   async function saveConfig() {
-    if (!detail || readOnly) return;
+    if (!detail || !sectionCanSave) return;
     if (configSection === "Branding & Channels" && detail.status !== "draft") {
       setError("Branding & channels can only be updated while the client is in Draft status");
       return;
     }
     const postalError = postalCodeConfigIssues(draft)[0];
-    if (postalError) {
+    if (postalError && (canEdit || configSection === "General")) {
       setError(postalError);
       return;
     }
@@ -195,6 +281,20 @@ export function PayFlowClientDetailPage() {
           ...rest
         } = full;
         payload = rest;
+      }
+      // Fine-grained modify_* without edit_client: send only fields for this section.
+      if (!canEdit) {
+        const scoped: Record<string, unknown> = {};
+        if (configSection === "AI & Governance") {
+          if (canModifyAi) scoped.ai_mode = full.ai_mode;
+          if (canModifyGov) scoped.governance_rules = full.governance_rules;
+        } else if (configSection !== "Assigned Users") {
+          const src = payload as Record<string, unknown>;
+          for (const key of CONFIG_FIELD_KEYS[configSection]) {
+            if (key in src) scoped[key] = src[key];
+          }
+        }
+        payload = scoped as UpdatePayflowClientPayload;
       }
       const updated = await updatePayflowClient(detail.id, payload);
       setDetail(updated);
@@ -354,7 +454,9 @@ export function PayFlowClientDetailPage() {
     patchConfig,
     supervisorUsers: supervisors,
     governanceRules,
-    readOnly,
+    readOnly: !canModifyConfig,
+    aiReadOnly: !canModifyAi,
+    governanceReadOnly: !canModifyGov,
     clientId: detail.id,
     onClientUpdated: (updated: { logo_url?: string | null }) => {
       setDetail((prev) => (prev ? { ...prev, logo_url: updated.logo_url ?? null } : prev));
@@ -536,7 +638,7 @@ export function PayFlowClientDetailPage() {
             );
           })()}
 
-      <TabBar tabs={MAIN_TABS} active={tab} onChange={changeTab} />
+      <TabBar tabs={visibleTabs} active={tab} onChange={changeTab} />
 
       {tab === "Overview" && (
         <div className="space-y-4">
@@ -775,12 +877,12 @@ export function PayFlowClientDetailPage() {
                   ? brandingReadOnly
                     ? "Branding is read-only after activation (Draft only)."
                     : "Changes save when you click Save."
-                  : canEdit
+                  : sectionCanSave
                     ? "Changes save when you click Save."
                     : "Read-only"
               }
               action={
-                canEdit && !(configSection === "Branding & Channels" && brandingReadOnly) ? (
+                sectionCanSave ? (
                   <Btn variant="primary" disabled={busy} onClick={() => void saveConfig()}>
                     {busy ? "Saving…" : "Save"}
                   </Btn>
@@ -796,7 +898,9 @@ export function PayFlowClientDetailPage() {
                 <PaymentSettingsSection {...sectionProps} />
               )}
               {configSection === "AI & Governance" && <AiGovernanceSection {...sectionProps} />}
-              {configSection === "Assigned Users" && <SupervisorSection {...sectionProps} />}
+              {configSection === "Assigned Users" && (
+                <SupervisorSection {...sectionProps} readOnly={!canEdit} />
+              )}
             </Panel>
           </div>
         </div>
