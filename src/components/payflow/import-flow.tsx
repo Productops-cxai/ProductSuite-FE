@@ -235,25 +235,38 @@ function importErrorTone(status: ImportError["status"]) {
   return "warning" as const;
 }
 
-function ImportSetupNeedsCell({ e }: { e: ImportError }) {
+function ImportSetupNeedsCell({
+  e,
+  phase = "result",
+}: {
+  e: ImportError;
+  /** Preview = before process; Result = after import. */
+  phase?: "preview" | "result";
+}) {
   const parsed = parseImportSetupIssues(e.error);
   const issues =
     e.setupIssues && e.setupIssues.length > 0 ? e.setupIssues : parsed.issues;
   const clientId = e.clientId ?? parsed.clientId;
-  const isDraft = e.status === "Draft" || e.status === "Attention";
+  // Setup-issue rows are Draft warnings even if status was mis-mapped as Rejected.
+  const isDraft =
+    e.status === "Draft" ||
+    e.status === "Attention" ||
+    (e.field === "setup" && issues.length > 0);
 
   if (isDraft && issues.length > 0) {
     return (
       <div className="min-w-[280px] space-y-2 whitespace-normal">
         <p className="text-[12.5px] font-medium text-foreground">
-          Client imported as Draft — remaining setup:
+          {phase === "preview"
+            ? "Will import as Draft — remaining setup:"
+            : "Client imported as Draft — remaining setup:"}
         </p>
         <ul className="list-disc space-y-0.5 pl-5 text-[12.5px] text-foreground">
           {issues.map((msg) => (
             <li key={msg}>{msg}</li>
           ))}
         </ul>
-        {clientId != null ? (
+        {phase === "result" && clientId != null ? (
           <Link
             to={`/payflow/clients/${clientId}?tab=Configuration`}
             className="inline-flex text-[12.5px] font-semibold text-primary hover:underline"
@@ -268,31 +281,51 @@ function ImportSetupNeedsCell({ e }: { e: ImportError }) {
   return <span className="min-w-[280px] whitespace-normal">{e.error}</span>;
 }
 
-export function ImportErrorTable({ errors }: { errors: ImportError[] }) {
+function importErrorDisplayStatus(e: ImportError): ImportError["status"] {
+  if (e.status === "Attention") return "Draft";
+  if (
+    e.status === "Rejected" &&
+    e.field === "setup" &&
+    ((e.setupIssues && e.setupIssues.length > 0) ||
+      parseImportSetupIssues(e.error).issues.length > 0)
+  ) {
+    return "Draft";
+  }
+  return e.status;
+}
+
+export function ImportErrorTable({
+  errors,
+  phase = "result",
+}: {
+  errors: ImportError[];
+  phase?: "preview" | "result";
+}) {
   const isMobile = useIsMobile();
   if (errors.length === 0)
     return <p className="text-[13px] text-muted-foreground">No errors were found in this import.</p>;
   if (isMobile) {
     return (
       <MobileRecordCards>
-        {errors.map((e, i) => (
-          <MobileRecordCard
-            key={i}
-            title={e.recordId}
-            subtitle={`${e.client}${e.subClient ? ` · ${e.subClient}` : ""}`}
-            badges={
-              <StatusPill tone={importErrorTone(e.status)}>
-                {e.status === "Attention" ? "Draft" : e.status}
-              </StatusPill>
-            }
-            meta={
-              <div className="space-y-0.5">
-                <p className="font-medium text-foreground">{e.field}</p>
-                <ImportSetupNeedsCell e={e} />
-              </div>
-            }
-          />
-        ))}
+        {errors.map((e, i) => {
+          const status = importErrorDisplayStatus(e);
+          return (
+            <MobileRecordCard
+              key={i}
+              title={e.recordId}
+              subtitle={`${e.client}${e.subClient ? ` · ${e.subClient}` : ""}`}
+              badges={
+                <StatusPill tone={importErrorTone(status)}>{status}</StatusPill>
+              }
+              meta={
+                <div className="space-y-0.5">
+                  <p className="font-medium text-foreground">{e.field}</p>
+                  <ImportSetupNeedsCell e={e} phase={phase} />
+                </div>
+              }
+            />
+          );
+        })}
       </MobileRecordCards>
     );
   }
@@ -301,22 +334,23 @@ export function ImportErrorTable({ errors }: { errors: ImportError[] }) {
       minWidth={920}
       head={["Record", "Client", "Sub-Client", "Field", "What needs fixing", "Status"]}
     >
-      {errors.map((e, i) => (
-        <Tr key={i}>
-          <Td className="tabular font-medium">{e.recordId}</Td>
-          <Td>{e.client}</Td>
-          <Td className="text-muted-foreground">{e.subClient}</Td>
-          <Td>{e.field}</Td>
-          <Td>
-            <ImportSetupNeedsCell e={e} />
-          </Td>
-          <Td>
-            <StatusPill tone={importErrorTone(e.status)}>
-              {e.status === "Attention" ? "Draft" : e.status}
-            </StatusPill>
-          </Td>
-        </Tr>
-      ))}
+      {errors.map((e, i) => {
+        const status = importErrorDisplayStatus(e);
+        return (
+          <Tr key={i}>
+            <Td className="tabular font-medium">{e.recordId}</Td>
+            <Td>{e.client}</Td>
+            <Td className="text-muted-foreground">{e.subClient}</Td>
+            <Td>{e.field}</Td>
+            <Td>
+              <ImportSetupNeedsCell e={e} phase={phase} />
+            </Td>
+            <Td>
+              <StatusPill tone={importErrorTone(status)}>{status}</StatusPill>
+            </Td>
+          </Tr>
+        );
+      })}
     </DataTable>
   );
 }
@@ -484,14 +518,7 @@ function ClientPreviewTable({ records }: { records: ImportRecord[] }) {
               {g.master?.action === "Error" ? (
                 <span className="text-destructive">{g.master.note}</span>
               ) : g.master?.setupIssues && g.master.setupIssues.length > 0 ? (
-                <div className="space-y-1">
-                  <span className="font-medium text-warning">Setup incomplete</span>
-                  <ul className="list-disc pl-4 text-[11.5px] text-foreground">
-                    {g.master.setupIssues.map((issue) => (
-                      <li key={issue}>{issue}</li>
-                    ))}
-                  </ul>
-                </div>
+                <span className="font-medium text-warning">Setup incomplete</span>
               ) : g.master ? (
                 "Valid"
               ) : null}
@@ -724,14 +751,23 @@ function mapClientImportApiError(
       client_id?: number | null;
       setup_issues?: string[];
     };
-    const status = mapImportErrorStatus(row.status);
+    let status = mapImportErrorStatus(row.status);
     const parsed = parseImportSetupIssues(row.error || "");
     const setupIssues =
       row.setup_issues && row.setup_issues.length > 0
         ? row.setup_issues
-        : status === "Draft"
+        : status === "Draft" || (row.field || "").toLowerCase() === "setup"
           ? parsed.issues
           : undefined;
+    // Remaining-setup warnings must never show as Rejected (row still imports as Draft).
+    if (
+      status === "Rejected" &&
+      (row.field || "").toLowerCase() === "setup" &&
+      setupIssues &&
+      setupIssues.length > 0
+    ) {
+      status = "Draft";
+    }
     return {
       recordId: row.record_id || "—",
       client: row.client || "—",
@@ -1002,9 +1038,9 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
           {previewErrors.length > 0 && (
             <Panel
               title="Validation & setup issues"
-              description={`${formatNumber(previewErrors.length)} item${previewErrors.length === 1 ? "" : "s"} — Rejected rows are skipped; Draft means the client still imports with remaining setup (use Complete Setup).`}
+              description={`${formatNumber(previewErrors.length)} item${previewErrors.length === 1 ? "" : "s"} — Rejected rows are skipped; Draft means the client still imports with remaining setup (finish via Complete Setup after import).`}
             >
-              <ImportErrorTable errors={previewErrors} />
+              <ImportErrorTable errors={previewErrors} phase="preview" />
             </Panel>
           )}
           {isClient ? (
