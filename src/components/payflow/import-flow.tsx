@@ -702,10 +702,11 @@ const formatInfo: Record<ImportKind, { required: string[]; note: string }> = {
       "outstanding_balance",
       "email (or email_address / customer_email) — account customer, for alerts",
       "phone_mobile (or phone_number / dn_debtorcasephonenumber_phone_number) — for SMS",
-      "client_code (required) — or CRM client_number",
+      "client_code (required) — Account↔Client link",
+      "or Client Number / client_number (resolves via client_code first, then CRM number)",
       "sub_client_code (optional) — blank = parent-level account",
     ],
-    note: "Daily CRM account file (CSV or XLSX), including Debtor Summary dumps. outstanding_balance is the live balance shown everywhere as Outstanding Balance. principle_amount maps to Original Balance. Address columns (dn_debtorcaseaddress_*) map to Contact. Account email/phone are debtor channels for Email/SMS — not the client's ops contact_email. Clients must already exist in PayFlow; sub-clients/portfolios are optional. Defaults: country CA, currency CAD, product P4 when missing.",
+    note: "Daily CRM account file (CSV or XLSX), including Debtor Summary dumps. Accounts link to Clients by client_code (e.g. PAYP3P). Canaccede 'Client Number' usually holds that same code — not the formal CRM client_number (e.g. 2022-0001-001). outstanding_balance is the live balance shown everywhere as Outstanding Balance. principle_amount maps to Original Balance. Address columns (dn_debtorcaseaddress_*) map to Contact. Account email/phone are debtor channels for Email/SMS — not the client's ops contact_email. Clients must already exist in PayFlow; sub-clients/portfolios are optional. Defaults: country CA, currency CAD, product P4 when missing.",
   },
 };
 
