@@ -283,13 +283,13 @@ function ImportSetupNeedsCell({
 
 function importErrorDisplayStatus(e: ImportError): ImportError["status"] {
   if (e.status === "Attention") return "Draft";
-  if (
-    e.status === "Rejected" &&
-    e.field === "setup" &&
-    ((e.setupIssues && e.setupIssues.length > 0) ||
-      parseImportSetupIssues(e.error).issues.length > 0)
-  ) {
-    return "Draft";
+  if (e.status === "Rejected") {
+    const parsed = parseImportSetupIssues(e.error);
+    const hasSetup =
+      (e.setupIssues && e.setupIssues.length > 0) ||
+      parsed.clientId != null ||
+      (e.field === "setup" && parsed.issues.length > 0);
+    if (hasSetup) return "Draft";
   }
   return e.status;
 }
@@ -745,47 +745,75 @@ function mapClientImportApiError(
       },
 ): ImportError {
   // Hierarchy import shape (preferred) vs legacy bulk row/code/message.
-  const hasHierarchy = "record_id" in e || "error" in e;
-  if (hasHierarchy && ("record_id" in e || typeof (e as { error?: string }).error === "string")) {
+  const hierarchyError =
+    typeof (e as { error?: string }).error === "string"
+      ? (e as { error: string }).error
+      : undefined;
+  const hasHierarchy =
+    "record_id" in e ||
+    hierarchyError != null ||
+    typeof (e as { status?: string }).status === "string" ||
+    Array.isArray((e as { setup_issues?: string[] }).setup_issues);
+
+  if (hasHierarchy) {
     const row = e as PayflowImportPreviewResponse["errors"][number] & {
       client_id?: number | null;
       setup_issues?: string[];
+      row?: string | number;
+      code?: string | null;
+      message?: string;
     };
+    const errorText = row.error || row.message || "";
     let status = mapImportErrorStatus(row.status);
-    const parsed = parseImportSetupIssues(row.error || "");
+    const parsed = parseImportSetupIssues(errorText);
+    const fieldLower = (row.field || "").toLowerCase();
+    const looksLikeSetupWarning =
+      fieldLower === "setup" ||
+      parsed.clientId != null ||
+      (Array.isArray(row.setup_issues) && row.setup_issues.length > 0);
     const setupIssues =
       row.setup_issues && row.setup_issues.length > 0
         ? row.setup_issues
-        : status === "Draft" || (row.field || "").toLowerCase() === "setup"
+        : status === "Draft" || looksLikeSetupWarning
           ? parsed.issues
           : undefined;
     // Remaining-setup warnings must never show as Rejected (row still imports as Draft).
-    if (
-      status === "Rejected" &&
-      (row.field || "").toLowerCase() === "setup" &&
-      setupIssues &&
-      setupIssues.length > 0
-    ) {
+    if (status === "Rejected" && looksLikeSetupWarning && setupIssues && setupIssues.length > 0) {
       status = "Draft";
     }
     return {
-      recordId: row.record_id || "—",
-      client: row.client || "—",
+      recordId: row.record_id || (row.row != null ? String(row.row) : "—"),
+      client: row.client || row.code || "—",
       subClient: row.sub_client || "—",
-      field: row.field || "—",
-      error: row.error || "",
+      field: status === "Draft" && setupIssues && setupIssues.length > 0 ? "setup" : row.field || "—",
+      error: errorText,
       status,
       clientId: row.client_id ?? parsed.clientId,
       setupIssues,
     };
   }
-  const legacy = e as { row?: number; code?: string | null; message?: string };
+  const legacy = e as { row?: number | string; code?: string | null; message?: string };
+  const message = legacy.message || "Error";
+  const parsed = parseImportSetupIssues(message);
+  // Older bulk-upload responses flattened Draft setup warnings into {row,code,message}.
+  if (parsed.issues.length > 0 && (parsed.clientId != null || parsed.issues.length >= 2)) {
+    return {
+      recordId: String(legacy.row ?? "—"),
+      client: legacy.code || "—",
+      subClient: "—",
+      field: "setup",
+      error: message,
+      status: "Draft",
+      clientId: parsed.clientId,
+      setupIssues: parsed.issues,
+    };
+  }
   return {
     recordId: String(legacy.row ?? "—"),
     client: legacy.code || "—",
     subClient: "—",
     field: "client_code",
-    error: legacy.message || "Error",
+    error: message,
     status: "Rejected",
   };
 }
