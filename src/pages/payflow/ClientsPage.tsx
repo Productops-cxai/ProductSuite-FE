@@ -5,6 +5,7 @@ import { deletePayflowClient, listPayflowClients } from "../../api/payflow";
 import {
   Btn,
   DataTable,
+  FilterBar,
   FilterSelect,
   PageHeader,
   PrimaryCell,
@@ -15,11 +16,17 @@ import {
   type Tone,
 } from "../../components/payflow/lovable/payflow-ui";
 import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
+import { MobileRecordCard, MobileRecordCards } from "../../components/ui/MobileRecordCards";
+import { Pagination } from "../../components/ui/Pagination";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
+import { useIsMobile } from "../../hooks/useIsMobile";
+import { useOffsetPagination } from "../../hooks/useOffsetPagination";
 import { incompleteSetupSections, isClientSettingUp } from "../../lib/client-setup";
 import { invalidateCache } from "../../lib/dedupeAsync";
 import { SHOW_PAYFLOW_DELETE } from "../../lib/payflow-features";
 import type { PayflowClient } from "../../types";
+
+const PAGE_SIZE = 10;
 
 function clientStatusTone(status: string): Tone {
   const s = (status || "").toLowerCase();
@@ -72,6 +79,7 @@ export function PayFlowClientsPage() {
   const canEdit = hasPermission("edit_client");
   const canDelete = SHOW_PAYFLOW_DELETE && hasPermission("delete_client");
   const canImport = hasPermission("import_clients");
+  const isMobile = useIsMobile();
   const [searchParams] = useSearchParams();
   const [clients, setClients] = useState<PayflowClient[]>([]);
   const [loading, setLoading] = useState(true);
@@ -87,6 +95,8 @@ export function PayFlowClientsPage() {
   const [addedThrough, setAddedThrough] = useState("All Sources");
   const [pendingDelete, setPendingDelete] = useState<PayflowClient | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const filterKey = `${search}|${status}|${addedThrough}`;
+  const { offset, pageSize, goPrev, goNext } = useOffsetPagination(PAGE_SIZE, filterKey);
 
   const load = async () => {
     setLoading(true);
@@ -106,7 +116,7 @@ export function PayFlowClientsPage() {
     void load();
   }, []);
 
-  const rows = useMemo(() => {
+  const filtered = useMemo(() => {
     return clients.filter((c) => {
       const q = search.trim().toLowerCase();
       if (
@@ -127,6 +137,11 @@ export function PayFlowClientsPage() {
       return true;
     });
   }, [clients, search, status, addedThrough]);
+
+  const rows = useMemo(
+    () => filtered.slice(offset, offset + pageSize),
+    [filtered, offset, pageSize],
+  );
 
   async function onDelete() {
     if (!pendingDelete) return;
@@ -177,12 +192,12 @@ export function PayFlowClientsPage() {
         </p>
       )}
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <FilterBar>
         <SearchInput
           value={search}
           onChange={setSearch}
           placeholder="Search clients"
-          className="w-56"
+          className="w-full md:col-span-2 xl:w-56"
         />
         <FilterSelect
           label="Status"
@@ -196,35 +211,97 @@ export function PayFlowClientsPage() {
           onChange={setAddedThrough}
           options={["All Sources", "Add Client", "File Upload"]}
         />
-      </div>
+      </FilterBar>
 
-      <DataTable
-        minWidth={1180}
-        head={[
-          "Client Name",
-          "Client Code / Reference",
-          "Client Type",
-          "Business Use Case",
-          "Status",
-          "Created Date",
-          "Last Updated Date",
-          "Added through",
-          "",
-        ]}
-      >
-        {loading ? (
-          <tr>
-            <Td className="text-muted-foreground">Loading clients…</Td>
-          </tr>
-        ) : (
-          rows.map((c) => {
+      {loading ? (
+        <p className="text-sm text-muted-foreground">Loading clients…</p>
+      ) : filtered.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No clients match these filters.</p>
+      ) : isMobile ? (
+        <MobileRecordCards>
+          {rows.map((c) => {
             const statusLabel = phase1StatusLabel(c.status, c.status_label);
             const settingUp = isClientSettingUp(c.status_label || c.status);
             const remainingSteps = incompleteSetupSections(c.onboarding, c.setup_incomplete);
-            const remaining = Math.max(
-              typeof c.setup_steps_remaining === "number" ? c.setup_steps_remaining : 0,
-              remainingSteps.length,
+            // Prefer filtered FE labels; BE setup_steps_remaining excludes optional portfolios.
+            const remaining =
+              remainingSteps.length > 0
+                ? remainingSteps.length
+                : typeof c.setup_steps_remaining === "number"
+                  ? c.setup_steps_remaining
+                  : 0;
+            const showSetupHint = settingUp || remaining > 0;
+            return (
+              <MobileRecordCard
+                key={c.id}
+                to={`/payflow/clients/${c.id}`}
+                title={c.name}
+                subtitle={c.code || c.industry || c.category || undefined}
+                badges={
+                  <StatusPill tone={clientStatusTone(statusLabel)}>{statusLabel}</StatusPill>
+                }
+                meta={
+                  <div className="space-y-0.5">
+                    <p>
+                      {c.client_type_label || c.client_type || "—"} ·{" "}
+                      {c.business_domain_label || c.business_domain || "Collections"}
+                    </p>
+                    {showSetupHint && remaining > 0 ? (
+                      <p className="text-amber-700 dark:text-amber-400">
+                        ⚠ {remaining} step{remaining > 1 ? "s" : ""} left
+                      </p>
+                    ) : null}
+                  </div>
+                }
+                footer={
+                  canDelete ? (
+                    <button
+                      type="button"
+                      className="text-[12.5px] font-semibold text-destructive hover:underline"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setPendingDelete(c);
+                      }}
+                    >
+                      Delete
+                    </button>
+                  ) : canEdit && showSetupHint ? (
+                    <span className="text-[12.5px] font-semibold text-primary">
+                      Complete setup →
+                    </span>
+                  ) : undefined
+                }
+              />
             );
+          })}
+        </MobileRecordCards>
+      ) : (
+        <DataTable
+          minWidth={1180}
+          head={[
+            "Client Name",
+            "Client Code / Reference",
+            "Client Type",
+            "Business Use Case",
+            "Status",
+            "Created Date",
+            "Last Updated Date",
+            "Added through",
+            "",
+          ]}
+        >
+          {rows.map((c) => {
+            const statusLabel = phase1StatusLabel(c.status, c.status_label);
+            const settingUp = isClientSettingUp(c.status_label || c.status);
+            const remainingSteps = incompleteSetupSections(c.onboarding, c.setup_incomplete);
+            // Prefer filtered FE labels; BE setup_steps_remaining excludes optional portfolios.
+            const remaining =
+              remainingSteps.length > 0
+                ? remainingSteps.length
+                : typeof c.setup_steps_remaining === "number"
+                  ? c.setup_steps_remaining
+                  : 0;
             const showSetupHint = settingUp || remaining > 0;
             const addedLabel = c.added_through_label || "Created";
 
@@ -235,38 +312,15 @@ export function PayFlowClientsPage() {
                     <PrimaryCell title={c.name} subtitle={c.industry || c.category || undefined} />
                   </Link>
                   {showSetupHint ? (
-                    <div className="mt-2 flex flex-col items-start gap-1.5">
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1">
                       {remaining > 0 ? (
                         <StatusPill tone="warning">
                           ⚠ {remaining} step{remaining > 1 ? "s" : ""} left
-                          {remainingSteps.length === 1 ? ` · ${remainingSteps[0]}` : ""}
                         </StatusPill>
-                      ) : null}
-                      {(c.setup_issues || []).length > 0 ? (
-                        <ul className="max-w-[320px] list-disc space-y-0.5 pl-4 text-[11.5px] text-muted-foreground">
-                          {(c.setup_issues || []).slice(0, 4).map((issue) => (
-                            <li key={issue}>{issue}</li>
-                          ))}
-                          {(c.setup_issues || []).length > 4 ? (
-                            <li>+{(c.setup_issues || []).length - 4} more…</li>
-                          ) : null}
-                        </ul>
-                      ) : remainingSteps.length > 1 ? (
-                        <div className="flex max-w-[320px] flex-wrap gap-1">
-                          {remainingSteps.slice(0, 4).map((step) => (
-                            <StatusPill key={step} tone="warning">
-                              {step}
-                            </StatusPill>
-                          ))}
-                        </div>
                       ) : null}
                       {canEdit ? (
                         <Link
-                          to={
-                            remainingSteps.some((s) => /portfolio/i.test(s))
-                              ? `/payflow/clients/${c.id}?tab=${encodeURIComponent("Sub-Clients / Portfolios")}`
-                              : `/payflow/clients/${c.id}?tab=Configuration`
-                          }
+                          to={`/payflow/clients/${c.id}?tab=Configuration`}
                           className="text-[12.5px] font-semibold text-primary hover:underline"
                         >
                           {remaining > 0
@@ -321,14 +375,20 @@ export function PayFlowClientsPage() {
                 </Td>
               </Tr>
             );
-          })
-        )}
-        {!loading && rows.length === 0 && (
-          <tr>
-            <Td className="text-muted-foreground">No clients match these filters.</Td>
-          </tr>
-        )}
-      </DataTable>
+          })}
+        </DataTable>
+      )}
+
+      {!loading && filtered.length > 0 ? (
+        <Pagination
+          total={filtered.length}
+          offset={offset}
+          pageSize={pageSize}
+          rowCount={rows.length}
+          onPrevious={goPrev}
+          onNext={goNext}
+        />
+      ) : null}
 
       <ConfirmDelete
         open={Boolean(pendingDelete)}

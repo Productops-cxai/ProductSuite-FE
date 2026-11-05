@@ -1,26 +1,43 @@
 const API_BASE =
   import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") || "/api";
 
-const ACCESS_KEY = "ps_access_token";
-const REFRESH_KEY = "ps_refresh_token";
 const SESSION_ENDED_KEY = "ps_session_ended_msg";
+/** Legacy keys — cleared on boot so JWTs never linger in localStorage. */
+const LEGACY_ACCESS_KEY = "ps_access_token";
+const LEGACY_REFRESH_KEY = "ps_refresh_token";
+const IMPORT_RUNS_KEY = "payflow-import-runs";
 
+/** Wipe legacy token / PII keys from browser storage (idempotent). */
+export function scrubSensitiveBrowserStorage(): void {
+  try {
+    localStorage.removeItem(LEGACY_ACCESS_KEY);
+    localStorage.removeItem(LEGACY_REFRESH_KEY);
+    localStorage.removeItem(IMPORT_RUNS_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+scrubSensitiveBrowserStorage();
+
+/** @deprecated Tokens are HttpOnly cookies — always null from JS. */
 export function getAccessToken(): string | null {
-  return localStorage.getItem(ACCESS_KEY);
+  return null;
 }
 
+/** @deprecated Tokens are HttpOnly cookies — always null from JS. */
 export function getRefreshToken(): string | null {
-  return localStorage.getItem(REFRESH_KEY);
+  return null;
 }
 
-export function setTokens(access: string, refresh: string): void {
-  localStorage.setItem(ACCESS_KEY, access);
-  localStorage.setItem(REFRESH_KEY, refresh);
+/** No-op: session is carried by HttpOnly cookies set by the API. */
+export function setTokens(_access: string, _refresh: string): void {
+  scrubSensitiveBrowserStorage();
 }
 
+/** Clears any leftover client-side secrets (cookies cleared by /auth/logout). */
 export function clearTokens(): void {
-  localStorage.removeItem(ACCESS_KEY);
-  localStorage.removeItem(REFRESH_KEY);
+  scrubSensitiveBrowserStorage();
 }
 
 /** Read-and-clear message set when another login killed this session. */
@@ -84,7 +101,6 @@ async function parseError(res: Response): Promise<ApiError> {
           const field = loc.length ? String(loc[loc.length - 1]) : "";
           const fieldLabel = friendlyFieldLabel(field);
           if (fieldLabel && msg) {
-            // Prefer custom validator messages; otherwise pair field + msg.
             if (/required/i.test(msg) || msg.toLowerCase().includes(fieldLabel.toLowerCase())) {
               return msg.endsWith(".") ? msg.slice(0, -1) : msg;
             }
@@ -134,37 +150,39 @@ function friendlyFieldLabel(field: string): string {
   return map[field] || field.replace(/_/g, " ");
 }
 
-export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = "GET", body, auth = true, headers = {} } = options;
+function buildHeaders(
+  headers: Record<string, string>,
+  body: unknown | undefined,
+): Record<string, string> {
   const reqHeaders: Record<string, string> = {
     Accept: "application/json",
     ...headers,
   };
-
   if (body !== undefined) {
     reqHeaders["Content-Type"] = "application/json";
   }
+  return reqHeaders;
+}
 
-  if (auth) {
-    const token = getAccessToken();
-    if (token) reqHeaders.Authorization = `Bearer ${token}`;
-  }
+export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const { method = "GET", body, auth = true, headers = {} } = options;
+  const reqHeaders = buildHeaders(headers, body);
 
   let res = await fetch(`${API_BASE}${path}`, {
     method,
     headers: reqHeaders,
     body: body !== undefined ? JSON.stringify(body) : undefined,
+    credentials: "include",
   });
 
   if (res.status === 401 && auth) {
     const refreshed = await tryRefresh();
     if (refreshed) {
-      const token = getAccessToken();
-      if (token) reqHeaders.Authorization = `Bearer ${token}`;
       res = await fetch(`${API_BASE}${path}`, {
         method,
         headers: reqHeaders,
         body: body !== undefined ? JSON.stringify(body) : undefined,
+        credentials: "include",
       });
     }
   }
@@ -178,19 +196,21 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 export async function apiRequestBlob(path: string, options: RequestOptions = {}): Promise<Blob> {
   const { method = "GET", auth = true, headers = {} } = options;
   const reqHeaders: Record<string, string> = { ...headers };
-  if (auth) {
-    const token = getAccessToken();
-    if (token) reqHeaders.Authorization = `Bearer ${token}`;
-  }
 
-  let res = await fetch(`${API_BASE}${path}`, { method, headers: reqHeaders });
+  let res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers: reqHeaders,
+    credentials: "include",
+  });
 
   if (res.status === 401 && auth) {
     const refreshed = await tryRefresh();
     if (refreshed) {
-      const token = getAccessToken();
-      if (token) reqHeaders.Authorization = `Bearer ${token}`;
-      res = await fetch(`${API_BASE}${path}`, { method, headers: reqHeaders });
+      res = await fetch(`${API_BASE}${path}`, {
+        method,
+        headers: reqHeaders,
+        credentials: "include",
+      });
     }
   }
 
@@ -206,19 +226,23 @@ export async function apiRequestMultipart<T>(
 ): Promise<T> {
   const { method = "POST", auth = true } = options;
   const reqHeaders: Record<string, string> = { Accept: "application/json" };
-  if (auth) {
-    const token = getAccessToken();
-    if (token) reqHeaders.Authorization = `Bearer ${token}`;
-  }
 
-  let res = await fetch(`${API_BASE}${path}`, { method, headers: reqHeaders, body: formData });
+  let res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers: reqHeaders,
+    body: formData,
+    credentials: "include",
+  });
 
   if (res.status === 401 && auth) {
     const refreshed = await tryRefresh();
     if (refreshed) {
-      const token = getAccessToken();
-      if (token) reqHeaders.Authorization = `Bearer ${token}`;
-      res = await fetch(`${API_BASE}${path}`, { method, headers: reqHeaders, body: formData });
+      res = await fetch(`${API_BASE}${path}`, {
+        method,
+        headers: reqHeaders,
+        body: formData,
+        credentials: "include",
+      });
     }
   }
 
@@ -234,29 +258,23 @@ async function tryRefresh(): Promise<boolean> {
   if (refreshInFlight) return refreshInFlight;
 
   refreshInFlight = (async () => {
-    const refresh = getRefreshToken();
-    if (!refresh) return false;
     try {
       const res = await fetch(`${API_BASE}/auth/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ refresh_token: refresh }),
+        body: JSON.stringify({}),
+        credentials: "include",
       });
       if (!res.ok) {
         const err = await parseError(res);
-        // Concurrent callers already rotated this refresh — do not wipe a good new session.
-        if (err.code === "refresh_reused" && getAccessToken() && getRefreshToken() !== refresh) {
-          return true;
-        }
-        // Only hard-logout on real session replacement / ended; other 401s still clear.
+        // Concurrent callers already rotated this refresh — cookie may already be new.
         if (err.code === "refresh_reused") {
           return false;
         }
         clearTokens();
         return false;
       }
-      const data = (await res.json()) as { access_token: string; refresh_token: string };
-      setTokens(data.access_token, data.refresh_token);
+      // Cookies updated by Set-Cookie; ignore any JSON token fields.
       return true;
     } catch {
       clearTokens();

@@ -19,7 +19,55 @@ export interface ImportError {
   subClient: string;
   field: string;
   error: string;
-  status: "Rejected" | "Skipped" | "Attention";
+  /** Rejected = row skipped; Skipped = duplicate; Draft/Attention = imported, setup remaining. */
+  status: "Rejected" | "Skipped" | "Attention" | "Draft";
+  /** PayFlow client id when status is Draft (for Complete Setup). */
+  clientId?: number | null;
+  /** Parsed remaining-setup bullets when present. */
+  setupIssues?: string[];
+}
+
+const CLIENT_ID_MARKER = /(?:^|\n)__client_id__=(\d+)\s*$/;
+
+/** Sub-clients / portfolios are optional — never show as import setup blockers. */
+export function isOptionalPortfolioSetupIssue(message: string): boolean {
+  const l = (message || "").trim().toLowerCase();
+  return l.includes("sub-clients / portfolios") || l.includes("add at least one sub-client");
+}
+
+/** Split setup warning text into bullets; strip hidden client_id marker. */
+export function parseImportSetupIssues(error: string): {
+  issues: string[];
+  clientId: number | null;
+  headline: string | null;
+} {
+  const raw = (error || "").trim();
+  const idMatch = raw.match(CLIENT_ID_MARKER);
+  const clientId = idMatch ? Number(idMatch[1]) : null;
+  let text = raw.replace(CLIENT_ID_MARKER, "").trim();
+  const draftPrefix =
+    /^Client will import as Draft with remaining setup:\s*/i;
+  let headline: string | null = null;
+  if (draftPrefix.test(text)) {
+    headline = "Client imported as Draft — remaining setup:";
+    text = text.replace(draftPrefix, "").trim();
+  }
+  const issues = text
+    ? text
+        .split(/\n|; /)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .filter((s) => !isOptionalPortfolioSetupIssue(s))
+    : [];
+  return { issues, clientId, headline };
+}
+
+export function mapImportErrorStatus(status: string | undefined): ImportError["status"] {
+  const s = (status || "").toLowerCase();
+  if (s === "skipped") return "Skipped";
+  if (s === "draft") return "Draft";
+  if (s === "attention") return "Draft"; // legacy → Draft
+  return "Rejected";
 }
 
 export interface ImportRecord {
@@ -158,29 +206,20 @@ const seedRuns: ImportRun[] = [
   { id: "imp-1038", kind: "client", fileName: "CRM_CLIENTS_Q3.csv", dateTime: "28 Sep 2026, 14:40", uploadedBy: "Daniya", status: "Completed", counts: { total: 940, created: 96, updated: 820, unchanged: 24, failed: 0 }, errors: [] },
 ];
 
-function loadRuns(): ImportRun[] {
-  if (typeof window === "undefined") return [...seedRuns];
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [...seedRuns];
-    const parsed = JSON.parse(raw) as ImportRun[];
-    if (!Array.isArray(parsed) || parsed.length === 0) return [...seedRuns];
-    return parsed;
-  } catch {
-    return [...seedRuns];
-  }
-}
-
-function persistRuns(next: ImportRun[]) {
+/** Drop any legacy localStorage import history (could contain PII in error rows). */
+function purgeLegacyImportStorage() {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    window.localStorage.removeItem(STORAGE_KEY);
   } catch {
-    /* ignore quota */
+    /* ignore */
   }
 }
 
-let runs: ImportRun[] = loadRuns();
+purgeLegacyImportStorage();
+
+// In-memory only — never write import error payloads to browser storage.
+let runs: ImportRun[] = [...seedRuns];
 
 export function listImports(kind?: ImportKind) {
   return kind ? runs.filter((r) => r.kind === kind) : runs;
@@ -190,7 +229,10 @@ export function getImport(id: string) {
 }
 export function addImport(run: ImportRun) {
   runs = [run, ...runs];
-  persistRuns(runs);
+}
+export function clearImportRuns() {
+  runs = [...seedRuns];
+  purgeLegacyImportStorage();
 }
 export function lastImport(kind: ImportKind) {
   return runs.find((r) => r.kind === kind);
@@ -239,6 +281,7 @@ export function mapApiImportRun(row: {
   uploaded_by: string;
   status: string;
   counts: ImportCounts;
+  message?: string | null;
   errors?: Array<{
     record_id: string;
     client: string;
@@ -246,16 +289,48 @@ export function mapApiImportRun(row: {
     field: string;
     error: string;
     status: string;
+    client_id?: number | null;
+    setup_issues?: string[];
   }>;
 }): ImportRun {
-  const errors: ImportError[] = (row.errors || []).map((e) => ({
-    recordId: e.record_id,
-    client: e.client,
-    subClient: e.sub_client,
-    field: e.field,
-    error: e.error,
-    status: e.status === "Skipped" ? "Skipped" : "Rejected",
-  }));
+  const errors: ImportError[] = (row.errors || [])
+    .map((e): ImportError | null => {
+      let status = mapImportErrorStatus(e.status);
+      const parsed = parseImportSetupIssues(e.error);
+      const fieldLower = (e.field || "").toLowerCase();
+      const looksLikeSetupWarning =
+        fieldLower === "setup" ||
+        parsed.clientId != null ||
+        (Array.isArray(e.setup_issues) && e.setup_issues.length > 0);
+      const setupIssues = (
+        e.setup_issues && e.setup_issues.length > 0
+          ? e.setup_issues
+          : status === "Draft" || looksLikeSetupWarning
+            ? parsed.issues
+            : []
+      ).filter((m) => !isOptionalPortfolioSetupIssue(m));
+      if (status === "Rejected" && looksLikeSetupWarning && setupIssues.length > 0) {
+        status = "Draft";
+      }
+      if (
+        (status === "Draft" || status === "Attention") &&
+        setupIssues.length === 0 &&
+        looksLikeSetupWarning
+      ) {
+        return null;
+      }
+      return {
+        recordId: e.record_id,
+        client: e.client,
+        subClient: e.sub_client,
+        field: status === "Draft" && setupIssues.length > 0 ? "setup" : e.field,
+        error: setupIssues.length > 0 ? setupIssues.join("\n") : e.error,
+        status,
+        clientId: e.client_id ?? parsed.clientId,
+        setupIssues: setupIssues.length > 0 ? setupIssues : undefined,
+      };
+    })
+    .filter((e): e is ImportError => e != null);
   return {
     id: String(row.id),
     kind: row.kind === "client" ? "client" : "account",
@@ -265,6 +340,7 @@ export function mapApiImportRun(row: {
     status: row.status as ImportStatus,
     counts: normalizeImportCounts(row.counts || { total: 0, created: 0, updated: 0, unchanged: 0, failed: 0 }, errors),
     errors,
+    message: row.message ?? null,
   };
 }
 

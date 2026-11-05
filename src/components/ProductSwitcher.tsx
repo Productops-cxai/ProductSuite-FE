@@ -184,7 +184,7 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
               <rect width="7" height="7" x="14" y="14" rx="1" />
               <rect width="7" height="7" x="3" y="14" rx="1" />
             </svg>
-            <span>{currentLabel}</span>
+            <span className="max-w-[88px] truncate sm:max-w-[140px]">{currentLabel}</span>
             {/* ChevronsUpDown — matches Lovable product chip */}
             <svg
               viewBox="0 0 24 24"

@@ -6,7 +6,8 @@ import {
   Btn,
   DataTable,
   EmptyState,
-  Field,
+  FilterBar,
+  FilterSelect,
   KpiCard,
   PageHeader,
   Panel,
@@ -15,7 +16,13 @@ import {
   Tr,
   type Tone,
 } from "../../components/payflow/lovable/payflow-ui";
+import { MobileRecordCard, MobileRecordCards } from "../../components/ui/MobileRecordCards";
+import { Pagination } from "../../components/ui/Pagination";
+import { useIsMobile } from "../../hooks/useIsMobile";
+import { useClientPagedList } from "../../hooks/useOffsetPagination";
 import type { PayflowClient } from "../../types";
+
+const PAGE_SIZE = 10;
 
 type EvalRow = Record<string, unknown>;
 
@@ -34,9 +41,6 @@ type Performance = {
   modify_rate_pct?: number | null;
   avg_confidence?: number | null;
 };
-
-const inputClass =
-  "h-9 w-full rounded-md border border-border bg-card px-3 text-[13px] text-foreground outline-none focus:border-primary";
 
 function asText(value: unknown) {
   if (value == null || value === "") return "—";
@@ -351,6 +355,7 @@ function DetailField({ label, value }: { label: string; value: unknown }) {
 }
 
 export function PayFlowAiEvalExportPage() {
+  const isMobile = useIsMobile();
   const [clients, setClients] = useState<PayflowClient[]>([]);
   const [clientKey, setClientKey] = useState("All clients");
   const [preview, setPreview] = useState<{
@@ -437,6 +442,15 @@ export function PayFlowAiEvalExportPage() {
     () => buildEvalGroups((preview?.rows || []) as EvalRow[]),
     [preview?.rows],
   );
+  const filterKey = `${clientKey}|${preview?.export_reference || ""}`;
+  const {
+    pageItems: pagedGroups,
+    total: groupsTotal,
+    offset: groupsOffset,
+    pageSize: groupsPageSize,
+    goPrev: groupsGoPrev,
+    goNext: groupsGoNext,
+  } = useClientPagedList(groups, PAGE_SIZE, filterKey);
   const performance = preview?.performance;
   const selected =
     selectedKey == null ? null : groups.find((g) => g.key === selectedKey) || null;
@@ -470,22 +484,15 @@ export function PayFlowAiEvalExportPage() {
         }
       />
 
-      <Panel title="Filters" className="mb-5">
-        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-          <Field label="Client">
-            <select
-              className={inputClass}
-              value={clientKey}
-              onChange={(e) => setClientKey(e.target.value)}
-            >
-              <option>All clients</option>
-              {[...clientOptions.keys()].map((k) => (
-                <option key={k}>{k}</option>
-              ))}
-            </select>
-          </Field>
-        </div>
-      </Panel>
+      <FilterBar className="mb-5">
+        <FilterSelect
+          label="Client"
+          value={clientKey}
+          onChange={setClientKey}
+          options={["All clients", ...clientOptions.keys()]}
+          className="md:col-span-2 xl:max-w-md"
+        />
+      </FilterBar>
 
       {error ? (
         <p className="mb-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-[13px] text-destructive">
@@ -502,7 +509,7 @@ export function PayFlowAiEvalExportPage() {
 
       {preview ? (
         <>
-          <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="mb-4 grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
             <KpiCard
               label="Workflows"
               value={String(groups.length)}
@@ -544,31 +551,76 @@ export function PayFlowAiEvalExportPage() {
                   description="No workflow versions in this scope yet."
                 />
               ) : (
-                <DataTable
-                  minWidth={720}
-                  head={["Client", "Workflow", "Latest status", "Versions"]}
-                >
-                  {groups.map((g) => {
-                    const active = g.key === selectedKey;
-                    const decision = asText(g.latest.status);
-                    return (
-                      <Tr
-                        key={g.key}
-                        className={active ? "bg-primary/5" : undefined}
-                        onClick={() => selectRow(g.key)}
-                      >
-                        <Td>{asText(g.client_code || g.client_name)}</Td>
-                        <Td className="max-w-[280px] truncate">{g.item_name}</Td>
-                        <Td>
-                          <StatusPill tone={decisionTone(decision)}>{decision}</StatusPill>
-                        </Td>
-                        <Td className="text-[12px] text-muted-foreground">
-                          {g.versions.length} version{g.versions.length === 1 ? "" : "s"}
-                        </Td>
-                      </Tr>
-                    );
-                  })}
-                </DataTable>
+                <>
+                  {isMobile ? (
+                    <MobileRecordCards>
+                      {pagedGroups.map((g) => {
+                        const decision = asText(g.latest.status);
+                        const active = g.key === selectedKey;
+                        return (
+                          <MobileRecordCard
+                            key={g.key}
+                            className={active ? "border-primary/40 bg-primary/5" : undefined}
+                            title={g.item_name}
+                            subtitle={asText(g.client_code || g.client_name)}
+                            badges={
+                              <StatusPill tone={decisionTone(decision)}>{decision}</StatusPill>
+                            }
+                            meta={
+                              <p>
+                                {g.versions.length} version
+                                {g.versions.length === 1 ? "" : "s"}
+                              </p>
+                            }
+                            footer={
+                              <button
+                                type="button"
+                                className="text-[12.5px] font-semibold text-primary hover:underline"
+                                onClick={() => selectRow(g.key)}
+                              >
+                                {active ? "Selected" : "View details"}
+                              </button>
+                            }
+                          />
+                        );
+                      })}
+                    </MobileRecordCards>
+                  ) : (
+                    <DataTable
+                      minWidth={720}
+                      head={["Client", "Workflow", "Latest status", "Versions"]}
+                    >
+                      {pagedGroups.map((g) => {
+                        const active = g.key === selectedKey;
+                        const decision = asText(g.latest.status);
+                        return (
+                          <Tr
+                            key={g.key}
+                            className={active ? "bg-primary/5" : undefined}
+                            onClick={() => selectRow(g.key)}
+                          >
+                            <Td>{asText(g.client_code || g.client_name)}</Td>
+                            <Td className="max-w-[280px] truncate">{g.item_name}</Td>
+                            <Td>
+                              <StatusPill tone={decisionTone(decision)}>{decision}</StatusPill>
+                            </Td>
+                            <Td className="text-[12px] text-muted-foreground">
+                              {g.versions.length} version{g.versions.length === 1 ? "" : "s"}
+                            </Td>
+                          </Tr>
+                        );
+                      })}
+                    </DataTable>
+                  )}
+                  <Pagination
+                    total={groupsTotal}
+                    offset={groupsOffset}
+                    pageSize={groupsPageSize}
+                    rowCount={pagedGroups.length}
+                    onPrevious={groupsGoPrev}
+                    onNext={groupsGoNext}
+                  />
+                </>
               )}
             </Panel>
 

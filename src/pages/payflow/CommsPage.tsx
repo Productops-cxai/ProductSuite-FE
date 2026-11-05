@@ -3,11 +3,12 @@ import { Link, useSearchParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import { listPayflowClients, listPayflowComms } from "../../api/payflow";
 import {
-  Btn,
   DataTable,
   EmptyState,
+  FilterBar,
   FilterSelect,
   KpiCard,
+  KpiGrid,
   PageHeader,
   Panel,
   PrimaryCell,
@@ -17,6 +18,10 @@ import {
   Tr,
   type Tone,
 } from "../../components/payflow/lovable/payflow-ui";
+import { MobileRecordCard, MobileRecordCards } from "../../components/ui/MobileRecordCards";
+import { Pagination } from "../../components/ui/Pagination";
+import { useIsMobile } from "../../hooks/useIsMobile";
+import { useOffsetPagination } from "../../hooks/useOffsetPagination";
 import type {
   PayflowClient,
   PayflowCommunication,
@@ -24,7 +29,7 @@ import type {
 } from "../../types";
 
 const DATE_RANGES = ["Today", "Yesterday", "Last 7 Days", "This Month"];
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 10;
 
 const EMPTY_SUMMARY: PayflowCommunicationsSummary = {
   sent_today: 0,
@@ -99,6 +104,7 @@ function engagementLabel(c: PayflowCommunication) {
 
 export function PayFlowCommsPage() {
   const [searchParams] = useSearchParams();
+  const isMobile = useIsMobile();
   const [rows, setRows] = useState<PayflowCommunication[]>([]);
   const [clients, setClients] = useState<PayflowClient[]>([]);
   const [summary, setSummary] = useState<PayflowCommunicationsSummary>(EMPTY_SUMMARY);
@@ -122,7 +128,8 @@ export function PayFlowCommsPage() {
     searchParams.get("journey") || searchParams.get("workflow") || "All Workflows",
   );
   const [purpose, setPurpose] = useState("All Purposes");
-  const [offset, setOffset] = useState(0);
+  const filterKey = [debouncedQuery, date, client, channel, status, workflow, purpose].join("|");
+  const { offset, pageSize, goPrev, goNext } = useOffsetPagination(PAGE_SIZE, filterKey);
 
   useEffect(() => {
     const nextStatus = searchParams.get("status");
@@ -139,10 +146,6 @@ export function PayFlowCommsPage() {
     const t = window.setTimeout(() => setDebouncedQuery(query), 300);
     return () => window.clearTimeout(t);
   }, [query]);
-
-  useEffect(() => {
-    setOffset(0);
-  }, [debouncedQuery, date, client, channel, status, workflow, purpose]);
 
   useEffect(() => {
     let cancelled = false;
@@ -178,7 +181,7 @@ export function PayFlowCommsPage() {
       search: debouncedQuery.trim() || undefined,
       date_from: range.date_from,
       date_to: range.date_to,
-      limit: PAGE_SIZE,
+      limit: pageSize,
       offset,
     })
       .then((commRes) => {
@@ -216,6 +219,7 @@ export function PayFlowCommsPage() {
     debouncedQuery,
     date,
     offset,
+    pageSize,
   ]);
 
   const segments =
@@ -227,11 +231,6 @@ export function PayFlowCommsPage() {
           "Clicked but Did Not Initiate Payment",
         ];
 
-  const pageStart = total === 0 ? 0 : offset + 1;
-  const pageEnd = Math.min(offset + rows.length, total);
-  const canPrev = offset > 0;
-  const canNext = offset + PAGE_SIZE < total;
-
   return (
     <>
       <PageHeader
@@ -239,13 +238,13 @@ export function PayFlowCommsPage() {
         description="Monitor customer collection communications across Clients and channels."
       />
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-3 xl:grid-cols-5">
+      <KpiGrid className="mb-4 lg:grid-cols-5">
         <KpiCard label="Sent Today" value={String(summary.sent_today)} />
         <KpiCard label="Delivered" value={String(summary.delivered)} />
         <KpiCard label="Engaged" value={String(summary.engaged)} />
         <KpiCard label="Payment Link Clicks" value={String(summary.clicks)} tone="primary" />
         <KpiCard label="Failed" value={String(summary.failed)} />
-      </div>
+      </KpiGrid>
 
       <div className="mb-5 flex flex-wrap items-center gap-2">
         <span className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
@@ -262,12 +261,12 @@ export function PayFlowCommsPage() {
         title="Communication Log"
         description="Every communication belongs to a client, customer account, collection case and workflow. KPIs above reflect the current filters."
       >
-        <div className="mb-3 flex flex-wrap items-center gap-2">
+        <FilterBar className="mb-3">
           <SearchInput
             value={query}
             onChange={setQuery}
             placeholder="Customer, account reference or ID"
-            className="w-64"
+            className="w-full md:col-span-2 xl:w-64"
           />
           <FilterSelect
             label="Date"
@@ -288,11 +287,11 @@ export function PayFlowCommsPage() {
             options={["All Channels", ...(channels.length ? channels : ["Email", "SMS"])]}
           />
           <span
-            className="flex h-8 cursor-not-allowed items-center gap-2 rounded-md border border-border bg-surface px-2.5 opacity-60"
+            className="flex h-9 w-full min-w-0 cursor-not-allowed items-center gap-2 rounded-md border border-border bg-surface px-2.5 opacity-60 xl:w-auto"
             title="WhatsApp is coming later"
           >
-            <span className="text-[11px] font-medium text-muted-foreground">Channel</span>
-            <span className="text-[13px] font-medium text-muted-foreground">
+            <span className="shrink-0 text-[11px] font-medium text-muted-foreground">Channel</span>
+            <span className="truncate text-[13px] font-medium text-muted-foreground">
               WhatsApp · coming later
             </span>
           </span>
@@ -314,7 +313,7 @@ export function PayFlowCommsPage() {
             onChange={setPurpose}
             options={["All Purposes", ...purposes]}
           />
-        </div>
+        </FilterBar>
 
         {error ? <p className="mb-3 text-sm text-destructive">{error}</p> : null}
         {loading ? <p className="text-sm text-muted-foreground">Loading communications…</p> : null}
@@ -328,88 +327,103 @@ export function PayFlowCommsPage() {
 
         {!loading && !error && rows.length > 0 ? (
           <>
-            <DataTable
-              minWidth={1100}
-              head={[
-                "Time",
-                "Client",
-                "Customer",
-                "Account",
-                "Channel",
-                "Purpose",
-                "Workflow",
-                "Status",
-                "Engagement",
-              ]}
-            >
-              {rows.map((c) => {
-                const preview = (c.body_lines || []).filter(Boolean).join(" ").slice(0, 80);
-                const subtitleParts = [
-                  c.date_label || c.code,
-                  c.recipient || null,
-                  c.channel === "Email" && c.subject ? c.subject : null,
-                  preview || null,
-                ].filter(Boolean);
-                return (
-                  <Tr key={c.id}>
-                    <Td>
-                      <Link to={`/payflow/comms/${c.id}`}>
-                        <PrimaryCell
-                          title={
-                            <span className="tabular text-primary hover:underline">
-                              {c.time_label || "—"}
-                            </span>
-                          }
-                          subtitle={subtitleParts.join(" · ")}
-                        />
-                      </Link>
-                    </Td>
-                    <Td>{c.client_name || "—"}</Td>
-                    <Td className="font-medium">{c.customer_name || "—"}</Td>
-                    <Td className="tabular">
-                      <Link
-                        to={`/payflow/cases/${c.account_id}`}
-                        className="text-primary hover:underline"
-                      >
-                        {c.account_reference || c.case_reference || "—"}
-                      </Link>
-                    </Td>
-                    <Td>
-                      <StatusPill tone={c.channel === "SMS" ? "info" : "neutral"}>
-                        {c.channel}
-                      </StatusPill>
-                    </Td>
-                    <Td>{c.purpose}</Td>
-                    <Td className="text-muted-foreground">{c.workflow_name || "—"}</Td>
-                    <Td>
-                      <StatusPill tone={commStatusTone(c.status)}>{c.status}</StatusPill>
-                    </Td>
-                    <Td className="text-muted-foreground">{engagementLabel(c)}</Td>
-                  </Tr>
-                );
-              })}
-            </DataTable>
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
-              <p className="text-[12px] text-muted-foreground">
-                Showing {pageStart}–{pageEnd} of {total}
-              </p>
-              <div className="flex items-center gap-2">
-                <Btn
-                  variant="secondary"
-                  disabled={!canPrev}
-                  onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}
-                >
-                  Previous
-                </Btn>
-                <Btn
-                  variant="secondary"
-                  disabled={!canNext}
-                  onClick={() => setOffset((o) => o + PAGE_SIZE)}
-                >
-                  Next
-                </Btn>
-              </div>
-            </div>
+            {isMobile ? (
+              <MobileRecordCards>
+                {rows.map((c) => (
+                  <MobileRecordCard
+                    key={c.id}
+                    to={`/payflow/comms/${c.id}`}
+                    title={c.customer_name || c.time_label || "—"}
+                    subtitle={`${c.client_name || "—"} · ${c.time_label || c.date_label || "—"}`}
+                    badges={
+                      <>
+                        <StatusPill tone={c.channel === "SMS" ? "info" : "neutral"}>
+                          {c.channel}
+                        </StatusPill>
+                        <StatusPill tone={commStatusTone(c.status)}>{c.status}</StatusPill>
+                      </>
+                    }
+                    meta={
+                      <div className="space-y-0.5">
+                        <p>{c.purpose}</p>
+                        <p>{engagementLabel(c)}</p>
+                      </div>
+                    }
+                  />
+                ))}
+              </MobileRecordCards>
+            ) : (
+              <DataTable
+                minWidth={1100}
+                head={[
+                  "Time",
+                  "Client",
+                  "Customer",
+                  "Account",
+                  "Channel",
+                  "Purpose",
+                  "Workflow",
+                  "Status",
+                  "Engagement",
+                ]}
+              >
+                {rows.map((c) => {
+                  const preview = (c.body_lines || []).filter(Boolean).join(" ").slice(0, 80);
+                  const subtitleParts = [
+                    c.date_label || c.code,
+                    c.recipient || null,
+                    c.channel === "Email" && c.subject ? c.subject : null,
+                    preview || null,
+                  ].filter(Boolean);
+                  return (
+                    <Tr key={c.id}>
+                      <Td>
+                        <Link to={`/payflow/comms/${c.id}`}>
+                          <PrimaryCell
+                            title={
+                              <span className="tabular text-primary hover:underline">
+                                {c.time_label || "—"}
+                              </span>
+                            }
+                            subtitle={subtitleParts.join(" · ")}
+                          />
+                        </Link>
+                      </Td>
+                      <Td>{c.client_name || "—"}</Td>
+                      <Td className="font-medium">{c.customer_name || "—"}</Td>
+                      <Td className="tabular">
+                        <Link
+                          to={`/payflow/cases/${c.account_id}`}
+                          className="text-primary hover:underline"
+                        >
+                          {c.account_reference || c.case_reference || "—"}
+                        </Link>
+                      </Td>
+                      <Td>
+                        <StatusPill tone={c.channel === "SMS" ? "info" : "neutral"}>
+                          {c.channel}
+                        </StatusPill>
+                      </Td>
+                      <Td>{c.purpose}</Td>
+                      <Td className="text-muted-foreground">{c.workflow_name || "—"}</Td>
+                      <Td>
+                        <StatusPill tone={commStatusTone(c.status)}>{c.status}</StatusPill>
+                      </Td>
+                      <Td className="text-muted-foreground">{engagementLabel(c)}</Td>
+                    </Tr>
+                  );
+                })}
+              </DataTable>
+            )}
+            <Pagination
+              total={total}
+              offset={offset}
+              pageSize={pageSize}
+              rowCount={rows.length}
+              onPrevious={goPrev}
+              onNext={goNext}
+              disabled={loading}
+            />
           </>
         ) : null}
       </Panel>

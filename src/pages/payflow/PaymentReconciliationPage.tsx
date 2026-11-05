@@ -6,7 +6,8 @@ import {
   Btn,
   DataTable,
   EmptyState,
-  Field,
+  FilterBar,
+  FilterSelect,
   KpiCard,
   PageHeader,
   Panel,
@@ -15,7 +16,13 @@ import {
   Tr,
   type Tone,
 } from "../../components/payflow/lovable/payflow-ui";
+import { MobileRecordCard, MobileRecordCards } from "../../components/ui/MobileRecordCards";
+import { Pagination } from "../../components/ui/Pagination";
+import { useIsMobile } from "../../hooks/useIsMobile";
+import { useClientPagedList } from "../../hooks/useOffsetPagination";
 import type { PayflowClient } from "../../types";
+
+const PAGE_SIZE = 10;
 
 type ReconRow = Record<string, string | number | null | undefined>;
 
@@ -42,8 +49,10 @@ type ReconGroup = {
   refund_total: number;
 };
 
-const inputClass =
-  "h-9 w-full rounded-md border border-border bg-card px-3 text-[13px] text-foreground outline-none focus:border-primary";
+const filterControlClass =
+  "relative flex h-9 min-w-0 w-full items-center gap-2 rounded-md border border-border bg-card py-0 pl-3 pr-2.5 shadow-subtle";
+const filterInputClass =
+  "min-w-0 flex-1 appearance-none truncate bg-transparent text-[13px] font-medium text-foreground outline-none";
 
 function money(n?: number | null, currency = "USD") {
   return new Intl.NumberFormat("en-US", {
@@ -244,6 +253,7 @@ function TransactionCard({
 }
 
 export function PayFlowPaymentReconciliationPage() {
+  const isMobile = useIsMobile();
   const [clients, setClients] = useState<PayflowClient[]>([]);
   const [clientKey, setClientKey] = useState("All clients");
   const [portfolioId, setPortfolioId] = useState("");
@@ -334,6 +344,15 @@ export function PayFlowPaymentReconciliationPage() {
 
   const rows = preview?.rows || [];
   const groups = useMemo(() => buildReconGroups(rows), [preview?.rows]);
+  const filterKey = `${clientKey}|${portfolioId}|${dateFrom}|${dateTo}|${status}|${preview?.export_reference || ""}`;
+  const {
+    pageItems: pagedGroups,
+    total: groupsTotal,
+    offset: groupsOffset,
+    pageSize: groupsPageSize,
+    goPrev: groupsGoPrev,
+    goNext: groupsGoNext,
+  } = useClientPagedList(groups, PAGE_SIZE, filterKey);
   const totals = preview?.totals;
   const selected =
     selectedKey == null ? null : groups.find((g) => g.key === selectedKey) || null;
@@ -366,57 +385,47 @@ export function PayFlowPaymentReconciliationPage() {
         </p>
       ) : null}
 
-      <Panel title="Filters" className="mb-5">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <Field label="Client">
-            <select
-              className={inputClass}
-              value={clientKey}
-              onChange={(e) => setClientKey(e.target.value)}
-            >
-              <option>All clients</option>
-              {[...clientOptions.keys()].map((k) => (
-                <option key={k}>{k}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Portfolio ID">
-            <input
-              className={inputClass}
-              value={portfolioId}
-              onChange={(e) => setPortfolioId(e.target.value)}
-              placeholder="Optional"
-            />
-          </Field>
-          <Field label="From date">
-            <input
-              type="date"
-              className={inputClass}
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-            />
-          </Field>
-          <Field label="To date">
-            <input
-              type="date"
-              className={inputClass}
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-            />
-          </Field>
-          <Field label="Status">
-            <select
-              className={inputClass}
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-            >
-              {["All", "Succeeded", "Failed", "Pending", "Refunded"].map((s) => (
-                <option key={s}>{s}</option>
-              ))}
-            </select>
-          </Field>
-        </div>
-      </Panel>
+      <FilterBar className="mb-5">
+        <FilterSelect
+          label="Client"
+          value={clientKey}
+          onChange={setClientKey}
+          options={["All clients", ...clientOptions.keys()]}
+        />
+        <label className={filterControlClass}>
+          <span className="shrink-0 text-[11px] font-medium text-muted-foreground">Portfolio</span>
+          <input
+            className={filterInputClass}
+            value={portfolioId}
+            onChange={(e) => setPortfolioId(e.target.value)}
+            placeholder="Optional"
+          />
+        </label>
+        <label className={filterControlClass}>
+          <span className="shrink-0 text-[11px] font-medium text-muted-foreground">From</span>
+          <input
+            type="date"
+            className={filterInputClass}
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+          />
+        </label>
+        <label className={filterControlClass}>
+          <span className="shrink-0 text-[11px] font-medium text-muted-foreground">To</span>
+          <input
+            type="date"
+            className={filterInputClass}
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+          />
+        </label>
+        <FilterSelect
+          label="Status"
+          value={status}
+          onChange={setStatus}
+          options={["All", "Succeeded", "Failed", "Pending", "Refunded"]}
+        />
+      </FilterBar>
 
       {!preview && !loading ? (
         <EmptyState
@@ -427,7 +436,7 @@ export function PayFlowPaymentReconciliationPage() {
 
       {preview ? (
         <>
-          <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="mb-4 grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
             <KpiCard label="Transactions" value={String(totals?.transaction_count ?? 0)} />
             <KpiCard label="Payments total" value={money(totals?.payment_amount_total)} />
             <KpiCard label="Refunds / adjustments" value={money(totals?.refund_amount_total)} />
@@ -453,43 +462,95 @@ export function PayFlowPaymentReconciliationPage() {
                   description="Adjust filters or confirm payments exist for this scope."
                 />
               ) : (
-                <DataTable
-                  minWidth={720}
-                  head={[
-                    "Client",
-                    "Account",
-                    "Latest status",
-                    "Payments",
-                    "Transactions",
-                  ]}
-                >
-                  {groups.map((g) => {
-                    const active = g.key === selectedKey;
-                    const latestStatus = asText(g.latest.payment_status);
-                    return (
-                      <Tr
-                        key={g.key}
-                        className={active ? "bg-primary/5" : undefined}
-                        onClick={() => selectRow(g.key)}
-                      >
-                        <Td>{asText(g.client_code)}</Td>
-                        <Td className="max-w-[220px] truncate font-medium">
-                          {asText(g.account_reference || (g.case_id ? `#${g.case_id}` : null))}
-                        </Td>
-                        <Td>
-                          <StatusPill tone={statusTone(latestStatus)}>
-                            {latestStatus}
-                          </StatusPill>
-                        </Td>
-                        <Td>{money(g.payment_total)}</Td>
-                        <Td className="text-[12px] text-muted-foreground">
-                          {g.transactions.length} txn
-                          {g.transactions.length === 1 ? "" : "s"}
-                        </Td>
-                      </Tr>
-                    );
-                  })}
-                </DataTable>
+                <>
+                  {isMobile ? (
+                    <MobileRecordCards>
+                      {pagedGroups.map((g) => {
+                        const latestStatus = asText(g.latest.payment_status);
+                        const active = g.key === selectedKey;
+                        return (
+                          <MobileRecordCard
+                            key={g.key}
+                            className={active ? "border-primary/40 bg-primary/5" : undefined}
+                            title={asText(
+                              g.account_reference || (g.case_id ? `#${g.case_id}` : null),
+                            )}
+                            subtitle={asText(g.client_code)}
+                            badges={
+                              <StatusPill tone={statusTone(latestStatus)}>
+                                {latestStatus}
+                              </StatusPill>
+                            }
+                            meta={
+                              <div className="space-y-0.5">
+                                <p>Payments {money(g.payment_total)}</p>
+                                <p>
+                                  {g.transactions.length} txn
+                                  {g.transactions.length === 1 ? "" : "s"}
+                                </p>
+                              </div>
+                            }
+                            footer={
+                              <button
+                                type="button"
+                                className="text-[12.5px] font-semibold text-primary hover:underline"
+                                onClick={() => selectRow(g.key)}
+                              >
+                                {active ? "Selected" : "View details"}
+                              </button>
+                            }
+                          />
+                        );
+                      })}
+                    </MobileRecordCards>
+                  ) : (
+                    <DataTable
+                      minWidth={720}
+                      head={[
+                        "Client",
+                        "Account",
+                        "Latest status",
+                        "Payments",
+                        "Transactions",
+                      ]}
+                    >
+                      {pagedGroups.map((g) => {
+                        const active = g.key === selectedKey;
+                        const latestStatus = asText(g.latest.payment_status);
+                        return (
+                          <Tr
+                            key={g.key}
+                            className={active ? "bg-primary/5" : undefined}
+                            onClick={() => selectRow(g.key)}
+                          >
+                            <Td>{asText(g.client_code)}</Td>
+                            <Td className="max-w-[220px] truncate font-medium">
+                              {asText(g.account_reference || (g.case_id ? `#${g.case_id}` : null))}
+                            </Td>
+                            <Td>
+                              <StatusPill tone={statusTone(latestStatus)}>
+                                {latestStatus}
+                              </StatusPill>
+                            </Td>
+                            <Td>{money(g.payment_total)}</Td>
+                            <Td className="text-[12px] text-muted-foreground">
+                              {g.transactions.length} txn
+                              {g.transactions.length === 1 ? "" : "s"}
+                            </Td>
+                          </Tr>
+                        );
+                      })}
+                    </DataTable>
+                  )}
+                  <Pagination
+                    total={groupsTotal}
+                    offset={groupsOffset}
+                    pageSize={groupsPageSize}
+                    rowCount={pagedGroups.length}
+                    onPrevious={groupsGoPrev}
+                    onNext={groupsGoNext}
+                  />
+                </>
               )}
             </Panel>
 

@@ -413,6 +413,8 @@ export function listPayflowAccounts(params?: {
   workflow?: string;
   human_review?: string;
   search?: string;
+  limit?: number;
+  offset?: number;
 }) {
   const q = new URLSearchParams();
   if (params?.client_id != null) q.set("client_id", String(params.client_id));
@@ -421,6 +423,8 @@ export function listPayflowAccounts(params?: {
   if (params?.workflow) q.set("workflow", params.workflow);
   if (params?.human_review) q.set("human_review", params.human_review);
   if (params?.search) q.set("search", params.search);
+  if (params?.limit != null) q.set("limit", String(params.limit));
+  if (params?.offset != null) q.set("offset", String(params.offset));
   const qs = q.toString();
   return apiRequest<PayflowAccountsListResponse>(`/payflow/accounts${qs ? `?${qs}` : ""}`);
 }
@@ -688,7 +692,8 @@ export type PayflowWorkflowStepPayload = PayflowStrategyStep;
 export async function createPayflowWorkflow(payload: {
   name: string;
   client_id: number;
-  portfolio_id: number;
+  /** Null / omit = parent-level workflow (no sub-client). */
+  portfolio_id?: number | null;
   summary?: string;
   coverage?: string;
   cases_covered?: number;
@@ -768,11 +773,12 @@ export async function activatePayflowWorkflow(
 
 export async function suggestPayflowWorkflows(payload: {
   client_id: number;
-  portfolio_id: number;
+  /** Null / omit = parent-level suggest (no sub-client). */
+  portfolio_id?: number | null;
 }) {
   return apiRequest<{
     client_id: number;
-    portfolio_id: number;
+    portfolio_id: number | null;
     portfolio_name: string;
     workflows: PayflowStrategy[];
   }>("/payflow/workflows/suggest", { method: "POST", body: payload });

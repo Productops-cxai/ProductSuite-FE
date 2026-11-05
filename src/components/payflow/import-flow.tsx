@@ -10,8 +10,10 @@ import {
   Td,
   Tr,
 } from "./lovable/payflow-ui";
+import { MobileRecordCard, MobileRecordCards } from "../ui/MobileRecordCards";
 import { cn } from "../../lib/utils";
 import { useAuth } from "../../context/AuthContext";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import { ApiError } from "../../api/client";
 import {
   downloadPayflowAccountImportTemplate,
@@ -33,8 +35,11 @@ import {
   importStatusTone,
   lastImport,
   lastSuccessfulImport,
+  isOptionalPortfolioSetupIssue,
   mapApiImportRun,
+  mapImportErrorStatus,
   normalizeImportCounts,
+  parseImportSetupIssues,
   type ImportAction,
   type ImportError,
   type ImportKind,
@@ -42,6 +47,23 @@ import {
   type ImportRun,
   type ImportStatus,
 } from "../../lib/import-data";
+
+function filterRequiredSetupIssues(issues: string[] | undefined | null): string[] {
+  return (issues || []).filter((m) => !isOptionalPortfolioSetupIssue(m));
+}
+
+/** Drop Draft rows that only had optional portfolio warnings (nothing left to fix). */
+function keepMeaningfulImportErrors(errors: ImportError[]): ImportError[] {
+  return errors.filter((e) => {
+    if (e.status !== "Draft" && e.status !== "Attention") return true;
+    const issues = filterRequiredSetupIssues(
+      e.setupIssues && e.setupIssues.length > 0
+        ? e.setupIssues
+        : parseImportSetupIssues(e.error).issues,
+    );
+    return issues.length > 0;
+  });
+}
 
 type Stage = "upload" | "uploading" | "validating" | "preview" | "processing" | "done";
 
@@ -225,27 +247,129 @@ function StageBar({ stage }: { stage: Stage }) {
   );
 }
 
-export function ImportErrorTable({ errors }: { errors: ImportError[] }) {
+function importErrorTone(status: ImportError["status"]) {
+  if (status === "Rejected") return "danger" as const;
+  if (status === "Draft" || status === "Attention") return "warning" as const;
+  return "warning" as const;
+}
+
+function ImportSetupNeedsCell({
+  e,
+  phase = "result",
+}: {
+  e: ImportError;
+  /** Preview = before process; Result = after import. */
+  phase?: "preview" | "result";
+}) {
+  const parsed = parseImportSetupIssues(e.error);
+  const issues = filterRequiredSetupIssues(
+    e.setupIssues && e.setupIssues.length > 0 ? e.setupIssues : parsed.issues,
+  );
+  const clientId = e.clientId ?? parsed.clientId;
+  // Setup-issue rows are Draft warnings even if status was mis-mapped as Rejected.
+  const isDraft =
+    e.status === "Draft" ||
+    e.status === "Attention" ||
+    (e.field === "setup" && issues.length > 0);
+
+  if (isDraft && issues.length > 0) {
+    return (
+      <div className="min-w-[280px] space-y-2 whitespace-normal">
+        <p className="text-[12.5px] font-medium text-foreground">
+          {phase === "preview"
+            ? "Will import as Draft — remaining setup:"
+            : "Client imported as Draft — remaining setup:"}
+        </p>
+        <ul className="list-disc space-y-0.5 pl-5 text-[12.5px] text-foreground">
+          {issues.map((msg) => (
+            <li key={msg}>{msg}</li>
+          ))}
+        </ul>
+        {phase === "result" && clientId != null ? (
+          <Link
+            to={`/payflow/clients/${clientId}?tab=Configuration`}
+            className="inline-flex text-[12.5px] font-semibold text-primary hover:underline"
+          >
+            Complete Setup
+          </Link>
+        ) : null}
+      </div>
+    );
+  }
+
+  return <span className="min-w-[280px] whitespace-normal">{e.error}</span>;
+}
+
+function importErrorDisplayStatus(e: ImportError): ImportError["status"] {
+  if (e.status === "Attention") return "Draft";
+  if (e.status === "Rejected") {
+    const parsed = parseImportSetupIssues(e.error);
+    const hasSetup =
+      (e.setupIssues && e.setupIssues.length > 0) ||
+      parsed.clientId != null ||
+      (e.field === "setup" && parsed.issues.length > 0);
+    if (hasSetup) return "Draft";
+  }
+  return e.status;
+}
+
+export function ImportErrorTable({
+  errors,
+  phase = "result",
+}: {
+  errors: ImportError[];
+  phase?: "preview" | "result";
+}) {
+  const isMobile = useIsMobile();
   if (errors.length === 0)
     return <p className="text-[13px] text-muted-foreground">No errors were found in this import.</p>;
+  if (isMobile) {
+    return (
+      <MobileRecordCards>
+        {errors.map((e, i) => {
+          const status = importErrorDisplayStatus(e);
+          return (
+            <MobileRecordCard
+              key={i}
+              title={e.recordId}
+              subtitle={`${e.client}${e.subClient ? ` · ${e.subClient}` : ""}`}
+              badges={
+                <StatusPill tone={importErrorTone(status)}>{status}</StatusPill>
+              }
+              meta={
+                <div className="space-y-0.5">
+                  <p className="font-medium text-foreground">{e.field}</p>
+                  <ImportSetupNeedsCell e={e} phase={phase} />
+                </div>
+              }
+            />
+          );
+        })}
+      </MobileRecordCards>
+    );
+  }
   return (
-    <DataTable minWidth={860} head={["Record", "Client", "Sub-Client", "Field", "What needs fixing", "Status"]}>
-      {errors.map((e, i) => (
-        <Tr key={i}>
-          <Td className="tabular font-medium">{e.recordId}</Td>
-          <Td>{e.client}</Td>
-          <Td className="text-muted-foreground">{e.subClient}</Td>
-          <Td>{e.field}</Td>
-          <Td className="min-w-[280px] whitespace-normal">{e.error}</Td>
-          <Td>
-            <StatusPill
-              tone={e.status === "Rejected" ? "danger" : e.status === "Attention" ? "warning" : "warning"}
-            >
-              {e.status}
-            </StatusPill>
-          </Td>
-        </Tr>
-      ))}
+    <DataTable
+      minWidth={920}
+      head={["Record", "Client", "Sub-Client", "Field", "What needs fixing", "Status"]}
+    >
+      {errors.map((e, i) => {
+        const status = importErrorDisplayStatus(e);
+        return (
+          <Tr key={i}>
+            <Td className="tabular font-medium">{e.recordId}</Td>
+            <Td>{e.client}</Td>
+            <Td className="text-muted-foreground">{e.subClient}</Td>
+            <Td>{e.field}</Td>
+            <Td>
+              <ImportSetupNeedsCell e={e} phase={phase} />
+            </Td>
+            <Td>
+              <StatusPill tone={importErrorTone(status)}>{status}</StatusPill>
+            </Td>
+          </Tr>
+        );
+      })}
     </DataTable>
   );
 }
@@ -296,7 +420,7 @@ export function ImportResult({
         </div>
       </Panel>
       {run.status !== "Failed" && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+        <div className="grid grid-cols-2 gap-2 sm:gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
           {(() => {
             const c = normalizeImportCounts(run.counts, run.errors);
             return (
@@ -328,7 +452,9 @@ export function ImportResult({
 }
 
 function ClientPreviewTable({ records }: { records: ImportRecord[] }) {
+  const isMobile = useIsMobile();
   type Group = {
+    key: string;
     name: string;
     clientId: string;
     master?: ImportRecord;
@@ -339,11 +465,19 @@ function ClientPreviewTable({ records }: { records: ImportRecord[] }) {
     const isSub =
       r.isSub === true ||
       (r.isSub !== false && Boolean(r.subClientId) && r.subClientId !== "—");
-    const key = r.clientName || r.clientId || r.id;
-    const g = (acc[key] ??= { name: r.clientName || key, clientId: r.clientId, subs: [] });
+    // Group by client code (unique), never by display name — same name + different codes
+    // must stay separate rows (e.g. multiple "PayPal Inc." masters).
+    const key = (r.clientId || "").trim() || r.id;
+    const g = (acc[key] ??= {
+      key,
+      name: r.clientName || key,
+      clientId: r.clientId,
+      subs: [],
+    });
     if (isSub) {
       g.subs.push(r);
-      if (r.clientId && (!g.clientId || g.clientId === g.name)) g.clientId = r.clientId;
+      if (r.clientId) g.clientId = r.clientId;
+      if (r.clientName) g.name = r.clientName;
     } else {
       g.master = r;
       g.clientId = r.clientId || g.clientId;
@@ -352,10 +486,48 @@ function ClientPreviewTable({ records }: { records: ImportRecord[] }) {
     return acc;
   }, {});
 
+  const groupList = Object.values(groups);
+
+  if (isMobile) {
+    return (
+      <MobileRecordCards>
+        {groupList.map((g) => (
+          <MobileRecordCard
+            key={g.key}
+            title={g.name}
+            subtitle={`${g.clientId || "—"} · ${g.subs.length} sub-client${g.subs.length === 1 ? "" : "s"}`}
+            badges={
+              g.master ? (
+                <StatusPill tone={actionTone(g.master.action)}>{g.master.action}</StatusPill>
+              ) : undefined
+            }
+            meta={
+              <div className="space-y-1">
+                {g.master?.action === "Error" ? (
+                  <p className="text-destructive">{g.master.note}</p>
+                ) : g.master?.setupIssues && g.master.setupIssues.length > 0 ? (
+                  <p className="text-warning">Setup incomplete</p>
+                ) : g.master ? (
+                  <p>Valid</p>
+                ) : null}
+                {g.subs.slice(0, 3).map((r) => (
+                  <p key={r.id}>
+                    {r.subClientName || "—"} · {r.action}
+                  </p>
+                ))}
+                {g.subs.length > 3 ? <p>+{g.subs.length - 3} more…</p> : null}
+              </div>
+            }
+          />
+        ))}
+      </MobileRecordCards>
+    );
+  }
+
   return (
     <DataTable minWidth={760} head={["Client / Sub-Client", "Client ID", "Sub-Client ID", "Action", "Status"]}>
-      {Object.values(groups).map((g) => (
-        <Fragment key={g.name}>
+      {groupList.map((g) => (
+        <Fragment key={g.key}>
           <tr className="bg-muted/40">
             <Td>
               <span className="font-semibold text-foreground">{g.name}</span>
@@ -374,14 +546,7 @@ function ClientPreviewTable({ records }: { records: ImportRecord[] }) {
               {g.master?.action === "Error" ? (
                 <span className="text-destructive">{g.master.note}</span>
               ) : g.master?.setupIssues && g.master.setupIssues.length > 0 ? (
-                <div className="space-y-1">
-                  <span className="font-medium text-warning">Setup incomplete</span>
-                  <ul className="list-disc pl-4 text-[11.5px] text-foreground">
-                    {g.master.setupIssues.map((issue) => (
-                      <li key={issue}>{issue}</li>
-                    ))}
-                  </ul>
-                </div>
+                <span className="font-medium text-warning">Setup incomplete</span>
               ) : g.master ? (
                 "Valid"
               ) : null}
@@ -409,7 +574,61 @@ function ClientPreviewTable({ records }: { records: ImportRecord[] }) {
   );
 }
 
+function accountHasSubClient(r: ImportRecord): boolean {
+  return Boolean(
+    (r.subClientId && r.subClientId !== "—") ||
+      (r.subClientName && r.subClientName !== "—"),
+  );
+}
+
+function accountScopeLabel(r: ImportRecord): { client: string; scope: string } {
+  const client = r.clientName || r.clientId || "—";
+  if (accountHasSubClient(r)) {
+    const subName = r.subClientName && r.subClientName !== "—" ? r.subClientName : "Sub-client";
+    const subCode = r.subClientId && r.subClientId !== "—" ? ` (${r.subClientId})` : "";
+    return { client, scope: `${subName}${subCode}` };
+  }
+  return { client, scope: "Parent client (no sub-client)" };
+}
+
 function AccountPreviewTable({ records }: { records: ImportRecord[] }) {
+  const isMobile = useIsMobile();
+  if (isMobile) {
+    return (
+      <MobileRecordCards>
+        {records.map((r) => {
+          const scope = accountScopeLabel(r);
+          return (
+            <MobileRecordCard
+              key={r.id}
+              title={r.note || "Account"}
+              subtitle={`${scope.client} → ${scope.scope}`}
+              badges={<StatusPill tone={actionTone(r.action)}>{r.action}</StatusPill>}
+              meta={
+                <div className="flex flex-wrap gap-x-3 gap-y-1">
+                  <span>
+                    Incoming {formatCurrency(r.incomingBalance ?? 0)}
+                    {r.currentBalance != null && r.incomingBalance !== r.currentBalance
+                      ? (r.incomingBalance ?? 0) < r.currentBalance
+                        ? " (↓)"
+                        : " (↑)"
+                      : ""}
+                  </span>
+                  <span>
+                    In PayFlow{" "}
+                    {r.currentBalance == null ? "—" : formatCurrency(r.currentBalance)}
+                  </span>
+                  <span className={r.action === "Error" ? "text-destructive" : undefined}>
+                    {r.action === "Error" ? "Needs correction" : "Valid"}
+                  </span>
+                </div>
+              }
+            />
+          );
+        })}
+      </MobileRecordCards>
+    );
+  }
   return (
     <DataTable
       minWidth={880}
@@ -422,42 +641,38 @@ function AccountPreviewTable({ records }: { records: ImportRecord[] }) {
         "Status",
       ]}
     >
-      {records.map((r) => (
-        <Tr key={r.id}>
-          <Td className="tabular font-medium">{r.note}</Td>
-          <Td>
-            <PrimaryCell
-              title={
-                r.subClientId && r.subClientId !== "—"
-                  ? `${r.subClientName} (${r.subClientId})`
-                  : r.subClientName
-              }
-              subtitle={r.clientName}
-            />
-          </Td>
-          <Td className="tabular text-muted-foreground">
-            {r.currentBalance == null ? "—" : formatCurrency(r.currentBalance)}
-          </Td>
-          <Td className="tabular font-medium">
-            {formatCurrency(r.incomingBalance ?? 0)}
-            {r.currentBalance != null && r.incomingBalance !== r.currentBalance && (
-              <span className="ml-1.5 text-[11px] text-muted-foreground">
-                {(r.incomingBalance ?? 0) < r.currentBalance ? "(↓)" : "(↑)"}
-              </span>
-            )}
-          </Td>
-          <Td>
-            <StatusPill tone={actionTone(r.action)}>{r.action}</StatusPill>
-          </Td>
-          <Td className="text-[12.5px]">
-            {r.action === "Error" ? (
-              <span className="text-destructive">Needs correction</span>
-            ) : (
-              <span className="text-muted-foreground">Valid</span>
-            )}
-          </Td>
-        </Tr>
-      ))}
+      {records.map((r) => {
+        const scope = accountScopeLabel(r);
+        return (
+          <Tr key={r.id}>
+            <Td className="tabular font-medium">{r.note}</Td>
+            <Td>
+              <PrimaryCell title={scope.client} subtitle={scope.scope} />
+            </Td>
+            <Td className="tabular text-muted-foreground">
+              {r.currentBalance == null ? "—" : formatCurrency(r.currentBalance)}
+            </Td>
+            <Td className="tabular font-medium">
+              {formatCurrency(r.incomingBalance ?? 0)}
+              {r.currentBalance != null && r.incomingBalance !== r.currentBalance && (
+                <span className="ml-1.5 text-[11px] text-muted-foreground">
+                  {(r.incomingBalance ?? 0) < r.currentBalance ? "(↓)" : "(↑)"}
+                </span>
+              )}
+            </Td>
+            <Td>
+              <StatusPill tone={actionTone(r.action)}>{r.action}</StatusPill>
+            </Td>
+            <Td className="text-[12.5px]">
+              {r.action === "Error" ? (
+                <span className="text-destructive">Needs correction</span>
+              ) : (
+                <span className="text-muted-foreground">Valid</span>
+              )}
+            </Td>
+          </Tr>
+        );
+      })}
     </DataTable>
   );
 }
@@ -487,9 +702,11 @@ const formatInfo: Record<ImportKind, { required: string[]; note: string }> = {
       "outstanding_balance",
       "email (or email_address / customer_email) — account customer, for alerts",
       "phone_mobile (or phone_number / dn_debtorcasephonenumber_phone_number) — for SMS",
-      "client_code + sub_client_code — or CRM client_number",
+      "client_code (required) — Account↔Client link",
+      "or Client Number / client_number (resolves via client_code first, then CRM number)",
+      "sub_client_code (optional) — blank = parent-level account",
     ],
-    note: "Daily CRM account file (CSV or XLSX), including Debtor Summary dumps. outstanding_balance is the live balance shown everywhere as Outstanding Balance. principle_amount maps to Original Balance. Address columns (dn_debtorcaseaddress_*) map to Contact. Account email/phone are debtor channels for Email/SMS — not the client's ops contact_email. Clients must already exist in PayFlow. Defaults: country CA, currency CAD, product P4 when missing.",
+    note: "Daily CRM account file (CSV or XLSX), including Debtor Summary dumps. Accounts link to Clients by client_code (e.g. PAYP3P). Canaccede 'Client Number' usually holds that same code — not the formal CRM client_number (e.g. 2022-0001-001). outstanding_balance is the live balance shown everywhere as Outstanding Balance. principle_amount maps to Original Balance. Address columns (dn_debtorcaseaddress_*) map to Contact. Account email/phone are debtor channels for Email/SMS — not the client's ops contact_email. Clients must already exist in PayFlow; sub-clients/portfolios are optional. Defaults: country CA, currency CAD, product P4 when missing.",
   },
 };
 
@@ -503,13 +720,6 @@ function mapPreviewAction(action: string): ImportAction {
   if (action === "Update") return "Update";
   if (action === "No Change") return "No Change";
   return "Error";
-}
-
-function mapImportErrorStatus(status: string | undefined): ImportError["status"] {
-  const s = (status || "").toLowerCase();
-  if (s === "skipped") return "Skipped";
-  if (s === "attention") return "Attention";
-  return "Rejected";
 }
 
 function mapPreviewRecords(rows: PayflowImportPreviewResponse["preview"]): ImportRecord[] {
@@ -528,7 +738,7 @@ function mapPreviewRecords(rows: PayflowImportPreviewResponse["preview"]): Impor
       currentBalance: r.current_balance,
       incomingBalance: r.incoming_balance ?? undefined,
       note: r.note ?? r.record_id,
-      setupIssues: r.setup_issues || [],
+      setupIssues: filterRequiredSetupIssues(r.setup_issues),
     };
   });
 }
@@ -554,37 +764,129 @@ function failedRunFromPreview(
       rejected: preview.summary?.rejected ?? preview.errors.length,
       successful: 0,
     },
-    errors: preview.errors.map((e) => ({
-      recordId: e.record_id,
-      client: e.client,
-      subClient: e.sub_client,
-      field: e.field,
-      error: e.error,
-      status: mapImportErrorStatus(e.status),
-    })),
+    errors: keepMeaningfulImportErrors(preview.errors.map((e) => mapClientImportApiError(e))),
+  };
+}
+
+function mapClientImportApiError(
+  e:
+    | PayflowImportPreviewResponse["errors"][number]
+    | PayflowBulkUploadResult["errors"][number]
+    | {
+        record_id?: string;
+        client?: string;
+        sub_client?: string;
+        field?: string;
+        error?: string;
+        status?: string;
+        client_id?: number | null;
+        setup_issues?: string[];
+        row?: number;
+        code?: string | null;
+        message?: string;
+      },
+): ImportError {
+  // Hierarchy import shape (preferred) vs legacy bulk row/code/message.
+  const hierarchyError =
+    typeof (e as { error?: string }).error === "string"
+      ? (e as { error: string }).error
+      : undefined;
+  const hasHierarchy =
+    "record_id" in e ||
+    hierarchyError != null ||
+    typeof (e as { status?: string }).status === "string" ||
+    Array.isArray((e as { setup_issues?: string[] }).setup_issues);
+
+  if (hasHierarchy) {
+    const row = e as PayflowImportPreviewResponse["errors"][number] & {
+      client_id?: number | null;
+      setup_issues?: string[];
+      row?: string | number;
+      code?: string | null;
+      message?: string;
+    };
+    const errorText = row.error || row.message || "";
+    let status = mapImportErrorStatus(row.status);
+    const parsed = parseImportSetupIssues(errorText);
+    const fieldLower = (row.field || "").toLowerCase();
+    const looksLikeSetupWarning =
+      fieldLower === "setup" ||
+      parsed.clientId != null ||
+      (Array.isArray(row.setup_issues) && row.setup_issues.length > 0);
+    const setupIssues = filterRequiredSetupIssues(
+      row.setup_issues && row.setup_issues.length > 0
+        ? row.setup_issues
+        : status === "Draft" || looksLikeSetupWarning
+          ? parsed.issues
+          : undefined,
+    );
+    // Remaining-setup warnings must never show as Rejected (row still imports as Draft).
+    if (status === "Rejected" && looksLikeSetupWarning && setupIssues.length > 0) {
+      status = "Draft";
+    }
+    // Optional-only portfolio warnings → not an error row.
+    if (
+      (status === "Draft" || status === "Attention") &&
+      setupIssues.length === 0 &&
+      (fieldLower === "setup" || looksLikeSetupWarning)
+    ) {
+      status = "Draft";
+    }
+    return {
+      recordId: row.record_id || (row.row != null ? String(row.row) : "—"),
+      client: row.client || row.code || "—",
+      subClient: row.sub_client || "—",
+      field: status === "Draft" && setupIssues.length > 0 ? "setup" : row.field || "—",
+      error: setupIssues.length > 0 ? setupIssues.join("\n") : errorText,
+      status,
+      clientId: row.client_id ?? parsed.clientId,
+      setupIssues: setupIssues.length > 0 ? setupIssues : undefined,
+    };
+  }
+  const legacy = e as { row?: number | string; code?: string | null; message?: string };
+  const message = legacy.message || "Error";
+  const parsed = parseImportSetupIssues(message);
+  // Older bulk-upload responses flattened Draft setup warnings into {row,code,message}.
+  if (parsed.issues.length > 0 && (parsed.clientId != null || parsed.issues.length >= 2)) {
+    return {
+      recordId: String(legacy.row ?? "—"),
+      client: legacy.code || "—",
+      subClient: "—",
+      field: "setup",
+      error: parsed.issues.join("\n"),
+      status: "Draft",
+      clientId: parsed.clientId,
+      setupIssues: parsed.issues,
+    };
+  }
+  return {
+    recordId: String(legacy.row ?? "—"),
+    client: legacy.code || "—",
+    subClient: "—",
+    field: "client_code",
+    error: message,
+    status: "Rejected",
   };
 }
 
 function bulkUploadToRun(file: File, result: PayflowBulkUploadResult, uploadedBy: string): ImportRun {
   const summary = result.summary;
-  const created = summary?.created ?? result.created_count;
+  const created = summary?.created ?? result.created_count ?? 0;
   const updated = summary?.updated ?? 0;
   const unchanged = summary?.unchanged ?? 0;
-  const failed = summary?.failed ?? result.error_count;
+  const failed = summary?.failed ?? result.error_count ?? 0;
   const total = summary?.total ?? created + updated + unchanged + failed;
   let status: ImportStatus = (result.status as ImportStatus) || "Completed";
   if (!result.status) {
     if (failed && (created || updated || unchanged)) status = "Completed with Errors";
     else if (failed && !created && !updated && !unchanged) status = "Failed";
   }
-  const errors: ImportError[] = (result.errors || []).map((e) => ({
-    recordId: String(e.row ?? "—"),
-    client: e.code || "—",
-    subClient: "—",
-    field: "client_code",
-    error: e.message,
-    status: "Rejected" as const,
-  }));
+  const rawErrors = (result.errors || []) as Array<
+    PayflowImportPreviewResponse["errors"][number] | PayflowBulkUploadResult["errors"][number]
+  >;
+  const errors: ImportError[] = keepMeaningfulImportErrors(
+    rawErrors.map((e) => mapClientImportApiError(e)),
+  );
   return {
     id: result.import_id != null ? String(result.import_id) : `bulk-${Date.now()}`,
     kind: "client",
@@ -661,14 +963,7 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
       setPreviewSummary(preview.summary);
       setPreviewRecords(mapPreviewRecords(preview.preview));
       setPreviewErrors(
-        (preview.errors || []).map((e) => ({
-          recordId: e.record_id,
-          client: e.client,
-          subClient: e.sub_client,
-          field: e.field,
-          error: e.error,
-          status: mapImportErrorStatus(e.status),
-        })),
+        keepMeaningfulImportErrors((preview.errors || []).map((e) => mapClientImportApiError(e))),
       );
       setPreviewMessage(preview.message?.trim() || null);
       setStage("preview");
@@ -785,7 +1080,7 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
 
       {stage === "preview" && (
         <div className="space-y-5">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+          <div className="grid grid-cols-2 gap-2 sm:gap-3 sm:grid-cols-3 xl:grid-cols-6">
             {isClient ? (
               <>
                 <KpiCard label="Total Records" value={formatNumber(previewTotal)} tone="primary" />
@@ -826,9 +1121,9 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
           {previewErrors.length > 0 && (
             <Panel
               title="Validation & setup issues"
-              description={`${formatNumber(previewErrors.length)} item${previewErrors.length === 1 ? "" : "s"} — Rejected rows are skipped; Attention means the client still imports as Draft with remaining setup.`}
+              description={`${formatNumber(previewErrors.length)} item${previewErrors.length === 1 ? "" : "s"} — Rejected rows are skipped; Draft means the client still imports with remaining setup (finish via Complete Setup after import).`}
             >
-              <ImportErrorTable errors={previewErrors} />
+              <ImportErrorTable errors={previewErrors} phase="preview" />
             </Panel>
           )}
           {isClient ? (

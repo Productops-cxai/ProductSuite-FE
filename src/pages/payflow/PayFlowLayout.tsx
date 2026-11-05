@@ -715,8 +715,8 @@ function PayFlowShell() {
             </div>
           </div>
         </header>
-        <main className="relative flex-1">
-          <div className="mx-auto w-full max-w-[1280px] px-5 py-7 lg:px-10 lg:py-9">
+        <main className="relative min-w-0 flex-1 overflow-x-hidden">
+          <div className="mx-auto w-full max-w-[1280px] px-4 py-6 sm:px-5 sm:py-7 lg:px-10 lg:py-9">
             {routePerms ? (
               <RequirePayflowPermission anyOf={routePerms}>
                 <Outlet />

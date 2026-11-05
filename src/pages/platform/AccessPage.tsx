@@ -13,12 +13,19 @@ import { PageHeader } from "../../components/payflow-ui";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
+import { MobileRecordCard, MobileRecordCards } from "../../components/ui/MobileRecordCards";
 import { Modal } from "../../components/ui/Modal";
+import { Pagination } from "../../components/ui/Pagination";
+import { useClientPagedList } from "../../hooks/useOffsetPagination";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import { ui } from "../../lib/ui";
 import type { Organization, Product, ProductAccessItem } from "../../types";
 
+const PAGE_SIZE = 10;
+
 export function AccessPage() {
   const [searchParams] = useSearchParams();
+  const isMobile = useIsMobile();
   const initialProduct = searchParams.get("product_id") || "";
   const [rows, setRows] = useState<ProductAccessItem[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -114,6 +121,13 @@ export function AccessPage() {
         r.product_code.toLowerCase().includes(q),
     );
   }, [rows, search]);
+
+  const resetKey = `${search}|${productFilter}|${statusFilter}`;
+  const { pageItems, total, offset, pageSize, goPrev, goNext } = useClientPagedList(
+    filteredHint,
+    PAGE_SIZE,
+    resetKey,
+  );
 
   async function toggleAccess(row: ProductAccessItem) {
     const key = `${row.organization_id}-${row.product_id}`;
@@ -223,6 +237,46 @@ export function AccessPage() {
           <div className={ui.empty}>Loading access…</div>
         ) : filteredHint.length === 0 ? (
           <div className={ui.empty}>No entitlement rows found.</div>
+        ) : isMobile ? (
+          <MobileRecordCards>
+            {pageItems.map((row) => {
+              const key = `${row.organization_id}-${row.product_id}`;
+              const granted = row.access_status === "granted";
+              return (
+                <MobileRecordCard
+                  key={key}
+                  title={row.organization_name}
+                  subtitle={`${row.product_name} · ${row.product_code}`}
+                  badges={
+                    <Badge tone={granted ? "success" : "danger"}>
+                      {granted ? "Access granted" : "Access revoked"}
+                    </Badge>
+                  }
+                  footer={
+                    granted ? (
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        disabled={busyKey === key}
+                        onClick={() => void toggleAccess(row)}
+                      >
+                        Revoke access
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        disabled={busyKey === key}
+                        onClick={() => void toggleAccess(row)}
+                      >
+                        Grant access
+                      </Button>
+                    )
+                  }
+                />
+              );
+            })}
+          </MobileRecordCards>
         ) : (
           <table className={ui.table}>
             <thead>
@@ -234,7 +288,7 @@ export function AccessPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredHint.map((row) => {
+              {pageItems.map((row) => {
                 const key = `${row.organization_id}-${row.product_id}`;
                 const granted = row.access_status === "granted";
                 return (
@@ -277,6 +331,16 @@ export function AccessPage() {
             </tbody>
           </table>
         )}
+        {!loading && total > 0 ? (
+          <Pagination
+            total={total}
+            offset={offset}
+            pageSize={pageSize}
+            rowCount={pageItems.length}
+            onPrevious={goPrev}
+            onNext={goNext}
+          />
+        ) : null}
 
         <p className="border-t border-slate-100 px-4 py-3 text-[11.5px] leading-snug text-slate-500 dark:border-slate-800 dark:text-slate-400">
           Revoking access disables the organization&apos;s entry into the product. Operational data

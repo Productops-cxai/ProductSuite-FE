@@ -45,41 +45,43 @@ export function PageHeader({
   breadcrumb,
 }: {
   title: string;
-  description?: string | undefined;
+  description?: ReactNode;
   actions?: ReactNode;
   breadcrumb?: { label: string; to?: string }[];
 }) {
   return (
     <div className="mb-8">
       {breadcrumb && (
-        <nav className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+        <nav className="mb-2 flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
           {breadcrumb.map((crumb, i) => (
-            <span key={crumb.label} className="flex items-center gap-1.5">
+            <span key={`${crumb.label}-${i}`} className="flex min-w-0 items-center gap-1.5">
               {i > 0 && <span className="opacity-40">/</span>}
               {crumb.to ? (
-                <Link to={crumb.to} className="transition-colors hover:text-foreground">
+                <Link to={crumb.to} className="truncate transition-colors hover:text-foreground">
                   {crumb.label}
                 </Link>
               ) : (
-                <span className="text-foreground">{crumb.label}</span>
+                <span className="truncate text-foreground">{crumb.label}</span>
               )}
             </span>
           ))}
         </nav>
       )}
-      <div className="grid grid-cols-1 items-end gap-3 pb-2 md:grid-cols-[minmax(0,1fr)_auto] md:gap-5">
-        <div className="min-w-0">
-          <h1 className="font-display text-[28px] leading-tight font-semibold text-foreground">
+      <div className="flex flex-col gap-3 pb-2 lg:flex-row lg:items-start lg:justify-between lg:gap-5">
+        <div className="min-w-0 flex-1">
+          <h1 className="font-display text-[24px] leading-tight font-semibold break-words text-foreground sm:text-[28px]">
             {title}
           </h1>
-          {description && (
-            <p className="mt-1.5 max-w-2xl text-[13.5px] leading-relaxed text-muted-foreground">
+          {description ? (
+            <div className="mt-1.5 max-w-2xl text-[13.5px] leading-relaxed text-muted-foreground">
               {description}
-            </p>
-          )}
+            </div>
+          ) : null}
         </div>
         {actions ? (
-          <div className="flex flex-wrap items-center gap-2 md:justify-end">{actions}</div>
+          <div className="flex max-w-full flex-wrap items-center gap-2 lg:max-w-[min(100%,28rem)] lg:justify-end">
+            {actions}
+          </div>
         ) : null}
       </div>
     </div>
@@ -141,6 +143,21 @@ export function Panel({
   );
 }
 
+/** Responsive KPI strip — 2-up on phones, expands on larger breakpoints via className. */
+export function KpiGrid({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string | undefined;
+}) {
+  return (
+    <div className={cn("mb-5 grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4", className)}>
+      {children}
+    </div>
+  );
+}
+
 export function KpiCard({
   label,
   value,
@@ -163,8 +180,9 @@ export function KpiCard({
   return (
     <div
       className={cn(
-         "group relative min-h-[112px] overflow-hidden rounded-lg border border-border/55 bg-card px-5 py-4.5 shadow-subtle transition-all duration-200 hover:border-primary/25 hover:shadow-panel",
-        tone === "primary" && "border-primary/40 bg-gradient-to-br from-primary/[0.08] to-transparent shadow-brand",
+        "group relative overflow-hidden rounded-lg border border-border/55 bg-card px-3.5 py-3 shadow-subtle transition-all duration-200 hover:border-primary/25 hover:shadow-panel sm:min-h-[96px] sm:px-5 sm:py-4",
+        tone === "primary" &&
+          "border-primary/40 bg-gradient-to-br from-primary/[0.08] to-transparent shadow-brand",
       )}
     >
       <span
@@ -173,21 +191,23 @@ export function KpiCard({
           tone === "primary" ? "bg-primary" : "bg-transparent",
         )}
       />
-      <p className="text-eyebrow">{label}</p>
+      <p className="text-eyebrow leading-snug">{label}</p>
       <p
         className={cn(
-           "tabular mt-2.5 text-[25px] leading-none font-bold",
+          "tabular mt-1.5 text-[20px] leading-none font-bold sm:mt-2 sm:text-[25px]",
           tone === "primary" ? "text-primary" : "text-foreground",
         )}
       >
         {value}
       </p>
       {trend && (
-        <p className={cn("mt-2 text-[11px] font-medium", trendColor)}>
+        <p className={cn("mt-1.5 text-[11px] font-medium sm:mt-2", trendColor)}>
           {trend.direction === "up" ? "↑" : trend.direction === "down" ? "↓" : "→"} {trend.text}
         </p>
       )}
-      {hint && !trend && <p className="mt-2 text-[11px] text-muted-foreground">{hint}</p>}
+      {hint && !trend && (
+        <p className="mt-1.5 text-[11px] text-muted-foreground sm:mt-2">{hint}</p>
+      )}
     </div>
   );
 }
@@ -365,8 +385,8 @@ export function EmptyState({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center rounded-lg border border-dashed border-border-strong/60 bg-muted/30 px-6 py-12 text-center">
-      <span className="mb-2.5 flex size-8 items-center justify-center rounded-full bg-card text-muted-foreground ring-1 ring-border">
+    <div className="flex flex-col items-center rounded-lg border border-dashed border-border-strong/60 bg-muted/30 px-4 py-8 text-center sm:px-6 sm:py-12">
+      <span className="mb-2 flex size-8 items-center justify-center rounded-full bg-card text-muted-foreground ring-1 ring-border sm:mb-2.5">
         <InboxIcon className="size-4" />
       </span>
       <p className="text-[13px] font-semibold text-foreground">{title}</p>
@@ -392,7 +412,7 @@ export function SearchInput({
   return (
     <div
       className={cn(
-         "flex h-9 items-center gap-2 rounded-md border border-border bg-card px-3 shadow-subtle transition-all focus-within:border-primary focus-within:ring-2 focus-within:ring-ring/10",
+        "flex h-9 w-full min-w-0 items-center gap-2 rounded-md border border-border bg-card px-3 shadow-subtle transition-all focus-within:border-primary focus-within:ring-2 focus-within:ring-ring/10",
         className,
       )}
     >
@@ -407,52 +427,126 @@ export function SearchInput({
   );
 }
 
+/** Responsive filter row — full-width stack on phones, 2-col tablet, wrap on desktop. */
+export function FilterBar({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string | undefined;
+}) {
+  return (
+    <div
+      className={cn(
+        "mb-4 grid grid-cols-1 gap-2 [&>*]:min-w-0 md:grid-cols-2 xl:flex xl:flex-wrap xl:items-center xl:[&>*]:w-auto",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
 export function FilterSelect({
   label,
   value,
   options,
   onChange,
+  className,
 }: {
   label: string;
   value: string;
-  options: string[];
+  options: string[] | { value: string; label: string }[];
   onChange: (value: string) => void;
+  className?: string | undefined;
 }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const normalized = options.map((o) =>
+    typeof o === "string" ? { value: o, label: o } : o,
+  );
+  const first = normalized[0]?.value ?? "";
   // A filter left on its first / "All …" option reads as unset and stays quiet;
   // an applied filter picks up a subtle PayFlow Blue emphasis.
-  const applied = value !== options[0] && !value.startsWith("All ");
+  const applied = value !== first && !value.startsWith("All ");
+  const display = normalized.find((o) => o.value === value)?.label ?? value;
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
   return (
-    <label
-      className={cn(
-         "flex h-9 items-center gap-2 rounded-md border px-3 shadow-subtle transition-all",
-        applied
-          ? "border-primary/40 bg-primary/[0.06]"
-          : "border-border bg-card hover:border-border-strong",
-      )}
-    >
-      <span
+    <div ref={ref} className={cn("relative min-w-0 w-full xl:w-auto", className)}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title={display}
+        aria-haspopup="listbox"
+        aria-expanded={open}
         className={cn(
-          "text-[11px] font-medium",
-          applied ? "text-primary" : "text-muted-foreground",
+          "flex h-9 w-full min-w-0 items-center gap-2 rounded-md border py-0 pl-3 pr-2.5 shadow-subtle transition-all xl:max-w-[min(100%,22rem)]",
+          applied
+            ? "border-primary/40 bg-primary/[0.06]"
+            : "border-border bg-card hover:border-border-strong",
         )}
       >
-        {label}
-      </span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className={cn(
-          "bg-transparent text-[13px] font-medium outline-none",
-          applied ? "text-primary" : "text-foreground",
-        )}
-      >
-        {options.map((option) => (
-          <option key={option} value={option} className="text-foreground">
-            {option}
-          </option>
-        ))}
-      </select>
-    </label>
+        <span
+          className={cn(
+            "shrink-0 text-[11px] font-medium",
+            applied ? "text-primary" : "text-muted-foreground",
+          )}
+        >
+          {label}
+        </span>
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate text-left text-[13px] font-medium",
+            applied ? "text-primary" : "text-foreground",
+          )}
+        >
+          {display}
+        </span>
+        <ChevronDownIcon
+          className={cn("size-3.5 shrink-0", applied ? "text-primary" : "text-muted-foreground")}
+        />
+      </button>
+
+      {open ? (
+        <div
+          role="listbox"
+          aria-label={label}
+          className="absolute inset-x-0 z-40 mt-1.5 max-h-[min(280px,50vh)] overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-lg xl:inset-x-auto xl:left-0 xl:min-w-[min(100%,22rem)] xl:max-w-[min(100vw-2rem,28rem)]"
+        >
+          {normalized.map((option) => {
+            const on = option.value === value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="option"
+                aria-selected={on}
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+                className={cn(
+                  "flex w-full items-start justify-between gap-2 rounded px-2.5 py-2 text-left text-[12.5px] leading-snug whitespace-normal hover:bg-accent",
+                  on ? "bg-accent font-medium text-foreground" : "text-foreground",
+                )}
+              >
+                <span className="min-w-0 flex-1">{option.label}</span>
+                {on ? <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-primary" /> : null}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -500,12 +594,12 @@ export function FilterMultiSelect({
   };
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative min-w-0 w-full xl:w-auto">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "flex h-9 items-center gap-2 rounded-md border px-3 shadow-subtle transition-all",
+          "flex h-9 w-full min-w-0 items-center gap-2 rounded-md border px-3 shadow-subtle transition-all xl:max-w-[min(100%,22rem)]",
           applied
             ? "border-primary/40 bg-primary/[0.06]"
             : "border-border bg-card hover:border-border-strong",
@@ -513,7 +607,7 @@ export function FilterMultiSelect({
       >
         <span
           className={cn(
-            "text-[11px] font-medium",
+            "shrink-0 text-[11px] font-medium",
             applied ? "text-primary" : "text-muted-foreground",
           )}
         >
@@ -521,7 +615,7 @@ export function FilterMultiSelect({
         </span>
         <span
           className={cn(
-            "max-w-[180px] truncate text-[13px] font-medium",
+            "min-w-0 flex-1 truncate text-left text-[13px] font-medium",
             applied ? "text-primary" : "text-foreground",
           )}
         >
@@ -531,7 +625,7 @@ export function FilterMultiSelect({
       </button>
 
       {open && (
-        <div className="absolute z-30 mt-1.5 min-w-[220px] rounded-md border border-border bg-popover p-1 shadow-lg">
+        <div className="absolute inset-x-0 z-30 mt-1.5 max-h-[min(280px,50vh)] overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-lg sm:inset-x-auto sm:right-0 sm:left-0 sm:min-w-[220px] sm:max-w-[min(100vw-2rem,22rem)]">
           <button
             type="button"
             onClick={() => onChange([])}
@@ -550,7 +644,7 @@ export function FilterMultiSelect({
                 onClick={() => toggle(option)}
                 className="flex w-full items-center justify-between gap-3 rounded px-2.5 py-1.5 text-left text-[12.5px] text-foreground hover:bg-accent"
               >
-                <span className="truncate">{option}</span>
+                <span className="min-w-0 flex-1 break-words whitespace-normal">{option}</span>
                 {on && <CheckIcon className="size-3.5 shrink-0 text-primary" />}
               </button>
             );
@@ -579,13 +673,19 @@ export function TabBar<T extends string>({
   className?: string | undefined;
 }) {
   return (
-    <div className={cn("mb-5 flex gap-1 overflow-x-auto border-b border-border", className)}>
+    <div
+      className={cn(
+        "mb-5 flex gap-1 overflow-x-auto border-b border-border pb-px [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        className,
+      )}
+    >
       {tabs.map((t) => (
         <button
           key={t}
+          type="button"
           onClick={() => onChange(t)}
           className={cn(
-            "-mb-px border-b-2 px-3 py-2.5 text-[13px] whitespace-nowrap transition-colors",
+            "-mb-px shrink-0 border-b-2 px-3 py-2.5 text-[13px] whitespace-nowrap transition-colors",
             active === t
               ? "border-primary font-semibold text-primary"
               : "border-transparent font-medium text-muted-foreground hover:border-border-strong hover:text-foreground",

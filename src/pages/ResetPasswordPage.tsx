@@ -5,16 +5,21 @@ import { ApiError } from "../api/client";
 import { AuthShell } from "../components/auth/AuthShell";
 import { Button } from "../components/ui/Button";
 import { PasswordInput } from "../components/ui/PasswordInput";
+import { PasswordRequirements } from "../components/ui/PasswordRequirements";
+import {
+  PASSWORD_MIN_LENGTH,
+  isPasswordPolicyMet,
+  passwordPolicyError,
+} from "../lib/passwordPolicy";
 import { ui } from "../lib/ui";
-
-const PASSWORD_MIN_LENGTH = 8;
+import { takeQueryToken } from "../lib/urlToken";
 
 const INVALID_LINK_MESSAGE =
   "This setup link is invalid, expired, or has already been used. Password reset cannot continue.";
 
 export function ResetPasswordPage() {
   const [params] = useSearchParams();
-  const token = params.get("token") || "";
+  const [token] = useState(() => takeQueryToken(params));
   const navigate = useNavigate();
 
   const [email, setEmail] = useState("");
@@ -58,8 +63,9 @@ export function ResetPasswordPage() {
       setError("New password and confirm password do not match.");
       return;
     }
-    if (password.length < PASSWORD_MIN_LENGTH) {
-      setError(`Password must be at least ${PASSWORD_MIN_LENGTH} characters.`);
+    const policyError = passwordPolicyError(password);
+    if (policyError) {
+      setError(policyError);
       return;
     }
     setSubmitting(true);
@@ -171,6 +177,7 @@ export function ResetPasswordPage() {
               minLength={PASSWORD_MIN_LENGTH}
               required
             />
+            <PasswordRequirements password={password} />
             <PasswordInput
               id="reset-confirm"
               label="Confirm Password"
@@ -180,10 +187,11 @@ export function ResetPasswordPage() {
               minLength={PASSWORD_MIN_LENGTH}
               required
             />
-            <p className="mb-4 text-[0.82rem] text-slate-500 dark:text-slate-400">
-              Password must be at least {PASSWORD_MIN_LENGTH} characters.
-            </p>
-            <Button type="submit" disabled={submitting} style={{ width: "100%" }}>
+            <Button
+              type="submit"
+              disabled={submitting || !isPasswordPolicyMet(password) || password !== confirm}
+              style={{ width: "100%" }}
+            >
               {submitting ? "Saving…" : "Update password"}
             </Button>
           </form>

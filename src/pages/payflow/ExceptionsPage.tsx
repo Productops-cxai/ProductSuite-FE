@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import {
@@ -10,8 +10,10 @@ import {
   Btn,
   DataTable,
   EmptyState,
+  FilterBar,
   FilterSelect,
   KpiCard,
+  KpiGrid,
   PageHeader,
   Panel,
   StatusPill,
@@ -19,8 +21,14 @@ import {
   Tr,
   type Tone,
 } from "../../components/payflow/lovable/payflow-ui";
+import { MobileRecordCard, MobileRecordCards } from "../../components/ui/MobileRecordCards";
+import { Pagination } from "../../components/ui/Pagination";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
+import { useIsMobile } from "../../hooks/useIsMobile";
+import { useOffsetPagination } from "../../hooks/useOffsetPagination";
 import type { PayflowOperationalException } from "../../types";
+
+const PAGE_SIZE = 10;
 
 function severityTone(severity: string): Tone {
   switch (severity) {
@@ -68,7 +76,9 @@ export function PayFlowExceptionsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { hasPermission } = usePayFlowAccess();
   const canManage = hasPermission("manage_operational_exceptions");
+  const isMobile = useIsMobile();
   const [rows, setRows] = useState<PayflowOperationalException[]>([]);
+  const [total, setTotal] = useState(0);
   const [openCount, setOpenCount] = useState(0);
   const [ackCount, setAckCount] = useState(0);
   const [resolvedCount, setResolvedCount] = useState(0);
@@ -80,6 +90,8 @@ export function PayFlowExceptionsPage() {
     searchParams.get("type") || "All Types",
   );
   const highlightId = Number(searchParams.get("id") || "");
+  const filterKey = `${status}|${exceptionType}`;
+  const { offset, pageSize, goPrev, goNext } = useOffsetPagination(PAGE_SIZE, filterKey);
 
   useEffect(() => {
     const nextStatus = searchParams.get("status");
@@ -94,16 +106,18 @@ export function PayFlowExceptionsPage() {
     el?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [highlightId, loading, rows]);
 
-  function reload() {
+  const reload = useCallback(() => {
     setLoading(true);
     setError("");
     listPayflowOperationalExceptions({
       status: status !== "All Statuses" ? status : undefined,
       exception_type: exceptionType !== "All Types" ? exceptionType : undefined,
-      limit: 100,
+      limit: pageSize,
+      offset,
     })
       .then((res) => {
         setRows(res.exceptions || []);
+        setTotal(res.total ?? (res.exceptions || []).length);
         setOpenCount(res.open_count || 0);
         setAckCount(res.acknowledged_count || 0);
         setResolvedCount(res.resolved_count || 0);
@@ -111,14 +125,14 @@ export function PayFlowExceptionsPage() {
       .catch((err) => {
         setError(err instanceof ApiError ? err.detail : "Failed to load exceptions");
         setRows([]);
+        setTotal(0);
       })
       .finally(() => setLoading(false));
-  }
+  }, [status, exceptionType, pageSize, offset]);
 
   useEffect(() => {
     reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, exceptionType]);
+  }, [reload]);
 
   async function onAcknowledge(id: number) {
     if (!canManage) return;
@@ -146,6 +160,11 @@ export function PayFlowExceptionsPage() {
     }
   }
 
+  function caseLink(ex: PayflowOperationalException) {
+    if (ex.account_id) return ex.link || `/payflow/cases/${ex.account_id}`;
+    return ex.link || undefined;
+  }
+
   return (
     <>
       <PageHeader
@@ -153,17 +172,17 @@ export function PayFlowExceptionsPage() {
         description="Failed or blocked collection activities that need investigation. Separate from Human Review governance."
       />
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-3">
+      <KpiGrid className="mb-4 sm:grid-cols-3 lg:grid-cols-3">
         <KpiCard label="Open" value={String(openCount)} />
         <KpiCard label="Acknowledged" value={String(ackCount)} />
         <KpiCard label="Resolved" value={String(resolvedCount)} />
-      </div>
+      </KpiGrid>
 
       <Panel
         title="Exceptions"
         description="Communication, workflow, payment, and processing issues in your client scope."
       >
-        <div className="mb-3 flex flex-wrap items-center gap-2">
+        <FilterBar className="mb-3">
           <FilterSelect
             label="Status"
             value={status}
@@ -188,7 +207,7 @@ export function PayFlowExceptionsPage() {
               "processing_discrepancy",
             ]}
           />
-        </div>
+        </FilterBar>
 
         {error ? <p className="mb-3 text-sm text-destructive">{error}</p> : null}
         {loading ? <p className="text-sm text-muted-foreground">Loading exceptions…</p> : null}
@@ -201,89 +220,155 @@ export function PayFlowExceptionsPage() {
         ) : null}
 
         {!loading && rows.length > 0 ? (
-          <DataTable
-            minWidth={1100}
-            head={[
-              "When",
-              "Type",
-              "Severity",
-              "Client",
-              "Case",
-              "Reason",
-              "Retriable",
-              "Status",
-              "",
-            ]}
-          >
-            {rows.map((ex) => (
-              <Tr
-                key={ex.id}
-                id={`exception-${ex.id}`}
-                className={
-                  highlightId === ex.id
-                    ? "bg-primary/5 ring-1 ring-inset ring-primary/30"
-                    : undefined
-                }
+          <>
+            {isMobile ? (
+              <MobileRecordCards>
+                {rows.map((ex) => {
+                  const to = caseLink(ex);
+                  return (
+                    <div key={ex.id} id={`exception-${ex.id}`}>
+                      <MobileRecordCard
+                        title={typeLabel(ex.exception_type)}
+                        subtitle={`${ex.client_name || "—"} · ${formatStamp(ex.created_at)}`}
+                        badges={
+                          <>
+                            <StatusPill tone={severityTone(ex.severity)}>{ex.severity}</StatusPill>
+                            <StatusPill tone={statusTone(ex.status)}>{ex.status}</StatusPill>
+                          </>
+                        }
+                        meta={<p className="line-clamp-3">{ex.reason}</p>}
+                        footer={
+                          <>
+                            {to ? (
+                              <Link
+                                to={to}
+                                className="text-[12.5px] font-semibold text-primary hover:underline"
+                              >
+                                Open record
+                              </Link>
+                            ) : null}
+                            {canManage && ex.status === "Open" ? (
+                              <Btn
+                                variant="secondary"
+                                disabled={busyId === ex.id}
+                                onClick={() => void onAcknowledge(ex.id)}
+                              >
+                                Ack
+                              </Btn>
+                            ) : null}
+                            {canManage && ex.status !== "Resolved" ? (
+                              <Btn
+                                variant="secondary"
+                                disabled={busyId === ex.id}
+                                onClick={() => void onResolve(ex.id)}
+                              >
+                                Resolve
+                              </Btn>
+                            ) : null}
+                          </>
+                        }
+                      />
+                    </div>
+                  );
+                })}
+              </MobileRecordCards>
+            ) : (
+              <DataTable
+                minWidth={1100}
+                head={[
+                  "When",
+                  "Type",
+                  "Severity",
+                  "Client",
+                  "Case",
+                  "Reason",
+                  "Retriable",
+                  "Status",
+                  "",
+                ]}
               >
-                <Td className="tabular text-muted-foreground">{formatStamp(ex.created_at)}</Td>
-                <Td>{typeLabel(ex.exception_type)}</Td>
-                <Td>
-                  <StatusPill tone={severityTone(ex.severity)}>{ex.severity}</StatusPill>
-                </Td>
-                <Td>{ex.client_name || "—"}</Td>
-                <Td>
-                  {ex.account_id ? (
-                    <Link
-                      to={ex.link || `/payflow/cases/${ex.account_id}`}
-                      className="text-primary hover:underline"
-                    >
-                      {ex.account_reference || ex.case_reference || `#${ex.account_id}`}
-                    </Link>
-                  ) : ex.link ? (
-                    <Link to={ex.link} className="text-primary hover:underline">
-                      Open record
-                    </Link>
-                  ) : (
-                    "—"
-                  )}
-                </Td>
-                <Td className="max-w-[240px]" title={ex.reason}>
-                  <span className="line-clamp-2">{ex.reason}</span>
-                  {ex.diagnostic_ref ? (
-                    <span className="mt-0.5 block text-[11px] text-muted-foreground">
-                      Ref · {ex.diagnostic_ref}
-                    </span>
-                  ) : null}
-                </Td>
-                <Td>{ex.retriable ? "Yes" : "No"}</Td>
-                <Td>
-                  <StatusPill tone={statusTone(ex.status)}>{ex.status}</StatusPill>
-                </Td>
-                <Td>
-                  <div className="flex flex-wrap gap-1.5">
-                    {canManage && ex.status === "Open" ? (
-                      <Btn
-                        variant="secondary"
-                        disabled={busyId === ex.id}
-                        onClick={() => void onAcknowledge(ex.id)}
-                      >
-                        Ack
-                      </Btn>
-                    ) : null}
-                    {canManage && ex.status !== "Resolved" ? (
-                      <Btn
-                        variant="secondary"
-                        disabled={busyId === ex.id}
-                        onClick={() => void onResolve(ex.id)}
-                      >
-                        Resolve
-                      </Btn>
-                    ) : null}
-                  </div>
-                </Td>
-              </Tr>
-            ))}
-          </DataTable>
+                {rows.map((ex) => (
+                  <Tr
+                    key={ex.id}
+                    id={`exception-${ex.id}`}
+                    className={
+                      highlightId === ex.id
+                        ? "bg-primary/5 ring-1 ring-inset ring-primary/30"
+                        : undefined
+                    }
+                  >
+                    <Td className="tabular text-muted-foreground">
+                      {formatStamp(ex.created_at)}
+                    </Td>
+                    <Td>{typeLabel(ex.exception_type)}</Td>
+                    <Td>
+                      <StatusPill tone={severityTone(ex.severity)}>{ex.severity}</StatusPill>
+                    </Td>
+                    <Td>{ex.client_name || "—"}</Td>
+                    <Td>
+                      {ex.account_id ? (
+                        <Link
+                          to={ex.link || `/payflow/cases/${ex.account_id}`}
+                          className="text-primary hover:underline"
+                        >
+                          {ex.account_reference || ex.case_reference || `#${ex.account_id}`}
+                        </Link>
+                      ) : ex.link ? (
+                        <Link to={ex.link} className="text-primary hover:underline">
+                          Open record
+                        </Link>
+                      ) : (
+                        "—"
+                      )}
+                    </Td>
+                    <Td className="max-w-[240px]" title={ex.reason}>
+                      <span className="line-clamp-2">{ex.reason}</span>
+                      {ex.diagnostic_ref ? (
+                        <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                          Ref · {ex.diagnostic_ref}
+                        </span>
+                      ) : null}
+                    </Td>
+                    <Td>{ex.retriable ? "Yes" : "No"}</Td>
+                    <Td>
+                      <StatusPill tone={statusTone(ex.status)}>{ex.status}</StatusPill>
+                    </Td>
+                    <Td>
+                      <div className="flex flex-wrap gap-1.5">
+                        {canManage && ex.status === "Open" ? (
+                          <Btn
+                            variant="secondary"
+                            disabled={busyId === ex.id}
+                            onClick={() => void onAcknowledge(ex.id)}
+                          >
+                            Ack
+                          </Btn>
+                        ) : null}
+                        {canManage && ex.status !== "Resolved" ? (
+                          <Btn
+                            variant="secondary"
+                            disabled={busyId === ex.id}
+                            onClick={() => void onResolve(ex.id)}
+                          >
+                            Resolve
+                          </Btn>
+                        ) : null}
+                      </div>
+                    </Td>
+                  </Tr>
+                ))}
+              </DataTable>
+            )}
+            <Pagination
+              total={total}
+              offset={offset}
+              pageSize={pageSize}
+              rowCount={rows.length}
+              onPrevious={goPrev}
+              onNext={goNext}
+              disabled={loading}
+            />
+          </>
         ) : null}
       </Panel>
     </>

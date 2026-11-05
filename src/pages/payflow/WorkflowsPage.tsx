@@ -6,12 +6,15 @@ import { StrategyMiniMap } from "../../components/payflow/strategy-canvas";
 import {
   Btn,
   EmptyState,
+  FilterBar,
   FilterSelect,
   PageHeader,
   SearchInput,
   StatusPill,
 } from "../../components/payflow/lovable/payflow-ui";
+import { Pagination } from "../../components/ui/Pagination";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
+import { useClientPagedList } from "../../hooks/useOffsetPagination";
 import {
   originTone,
   segmentChips,
@@ -23,6 +26,8 @@ import type {
   PayflowStrategiesSummary,
   PayflowStrategy,
 } from "../../types";
+
+const PAGE_SIZE = 10;
 
 function PlusIcon({ className }: { className?: string }) {
   return (
@@ -110,13 +115,20 @@ export function PayFlowWorkflowsPage() {
     return ["All Portfolios", ...Array.from(names).sort()];
   }, [strategies, client]);
 
-  const rows = useMemo(() => {
+  const filtered = useMemo(() => {
     return strategies.filter((s) => {
       if (client !== "All Clients" && s.client_name !== client) return false;
       if (portfolio !== "All Portfolios" && s.portfolio_name !== portfolio) return false;
       return true;
     });
   }, [strategies, client, portfolio]);
+
+  const filterKey = `${search}|${client}|${portfolio}|${status}`;
+  const { pageItems: rows, total, offset, pageSize, goPrev, goNext } = useClientPagedList(
+    filtered,
+    PAGE_SIZE,
+    filterKey,
+  );
 
   const awaiting =
     summary.awaiting_review ?? summary.ai_proposed + (summary.under_review || 0);
@@ -150,12 +162,12 @@ export function PayFlowWorkflowsPage() {
         </p>
       )}
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <FilterBar>
         <SearchInput
           value={search}
           onChange={setSearch}
           placeholder="Search strategies"
-          className="w-56"
+          className="w-full md:col-span-2 xl:w-64"
         />
         <FilterSelect
           label="Client"
@@ -185,11 +197,11 @@ export function PayFlowWorkflowsPage() {
             "Inactive",
           ])]}
         />
-      </div>
+      </FilterBar>
 
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading workflows…</p>
-      ) : rows.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <EmptyState
           title={strategies.length === 0 ? "No strategies yet" : "No strategies match these filters"}
           description={
@@ -208,83 +220,93 @@ export function PayFlowWorkflowsPage() {
           }
         />
       ) : (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {rows.map((s) => {
-            const awaitingCard = s.awaiting_review || s.status === "AI Proposed" || s.status === "Under Review";
-            return (
-              <Link
-                key={s.id}
-                to={`/payflow/workflows/${s.id}`}
-                className={cn(
-                  "group rounded-xl border bg-card px-4 py-4 shadow-subtle transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-panel",
-                  awaitingCard ? "border-ai/40 ring-1 ring-ai/15" : "border-border/80",
-                )}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <p className="text-[14px] leading-snug font-semibold text-foreground group-hover:text-primary">
-                    {s.name}
-                  </p>
-                  <StatusPill tone={strategyStatusTone(s.status)} dot>
-                    {s.status}
-                  </StatusPill>
-                </div>
-                <p className="mt-1 text-[11.5px] text-muted-foreground">
-                  {s.client_name || "Client"}
-                  {s.portfolio_name ? ` · ${s.portfolio_name}` : ""}
-                </p>
-
-                <div className="mt-3">
-                  <StrategyMiniMap strategy={s} />
-                </div>
-
-                <div className="mt-2.5 flex flex-wrap items-center gap-3 text-[11.5px] text-muted-foreground">
-                  <span className="tabular">{s.stats?.steps ?? s.steps?.length ?? 0} steps</span>
-                  <span>{s.stats?.branches ?? 0} branches</span>
-                  <span>{s.stats?.emails ?? 0} email</span>
-                  <span>{s.stats?.sms ?? 0} sms</span>
-                </div>
-
-                {s.summary && (
-                  <p className="mt-2.5 line-clamp-2 text-[12px] leading-relaxed text-muted-foreground">
-                    {s.summary}
-                  </p>
-                )}
-
-                {segmentChips(s.segment).length > 0 && (
-                  <div className="mt-2.5 flex flex-wrap gap-1.5">
-                    {segmentChips(s.segment)
-                      .slice(0, 4)
-                      .map((chip) => (
-                        <StatusPill key={chip}>{chip}</StatusPill>
-                      ))}
+        <>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {rows.map((s) => {
+              const awaitingCard = s.awaiting_review || s.status === "AI Proposed" || s.status === "Under Review";
+              return (
+                <Link
+                  key={s.id}
+                  to={`/payflow/workflows/${s.id}`}
+                  className={cn(
+                    "group rounded-xl border bg-card px-4 py-4 shadow-subtle transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-panel",
+                    awaitingCard ? "border-ai/40 ring-1 ring-ai/15" : "border-border/80",
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-[14px] leading-snug font-semibold text-foreground group-hover:text-primary">
+                      {s.name}
+                    </p>
+                    <StatusPill tone={strategyStatusTone(s.status)} dot>
+                      {s.status}
+                    </StatusPill>
                   </div>
-                )}
+                  <p className="mt-1 text-[11.5px] text-muted-foreground">
+                    {s.client_name || "Client"}
+                    {s.portfolio_name ? ` · ${s.portfolio_name}` : ""}
+                  </p>
 
-                <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                  <StatusPill tone={originTone(s.origin)}>{s.origin}</StatusPill>
-                  {s.human_modified && s.origin !== "Human Modified" && (
-                    <StatusPill tone="info">Human Modified</StatusPill>
+                  <div className="mt-3">
+                    <StrategyMiniMap strategy={s} />
+                  </div>
+
+                  <div className="mt-2.5 flex flex-wrap items-center gap-3 text-[11.5px] text-muted-foreground">
+                    <span className="tabular">{s.stats?.steps ?? s.steps?.length ?? 0} steps</span>
+                    <span>{s.stats?.branches ?? 0} branches</span>
+                    <span>{s.stats?.emails ?? 0} email</span>
+                    <span>{s.stats?.sms ?? 0} sms</span>
+                  </div>
+
+                  {s.summary && (
+                    <p className="mt-2.5 line-clamp-2 text-[12px] leading-relaxed text-muted-foreground">
+                      {s.summary}
+                    </p>
                   )}
-                  {s.source === "AI Generated" && s.origin !== "AI Proposed" && (
-                    <StatusPill tone="ai">AI Generated</StatusPill>
+
+                  {segmentChips(s.segment).length > 0 && (
+                    <div className="mt-2.5 flex flex-wrap gap-1.5">
+                      {segmentChips(s.segment)
+                        .slice(0, 4)
+                        .map((chip) => (
+                          <StatusPill key={chip}>{chip}</StatusPill>
+                        ))}
+                    </div>
                   )}
-                  {s.source === "Human Created" && (
-                    <StatusPill>Human Created</StatusPill>
-                  )}
-                  <StatusPill>v{s.version}</StatusPill>
-                </div>
-                <div className="mt-2 flex items-center justify-between border-t border-border/60 pt-2 text-[11.5px] text-muted-foreground">
-                  <span>
-                    {s.cases_covered != null
-                      ? `${s.cases_covered.toLocaleString()} cases`
-                      : s.coverage || "Targeted segment"}
-                  </span>
-                  <span>{s.last_updated_label ? `Updated ${s.last_updated_label}` : ""}</span>
-                </div>
-              </Link>
-            );
-          })}
-        </div>
+
+                  <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                    <StatusPill tone={originTone(s.origin)}>{s.origin}</StatusPill>
+                    {s.human_modified && s.origin !== "Human Modified" && (
+                      <StatusPill tone="info">Human Modified</StatusPill>
+                    )}
+                    {s.source === "AI Generated" && s.origin !== "AI Proposed" && (
+                      <StatusPill tone="ai">AI Generated</StatusPill>
+                    )}
+                    {s.source === "Human Created" && (
+                      <StatusPill>Human Created</StatusPill>
+                    )}
+                    <StatusPill>v{s.version}</StatusPill>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between border-t border-border/60 pt-2 text-[11.5px] text-muted-foreground">
+                    <span>
+                      {s.cases_covered != null
+                        ? `${s.cases_covered.toLocaleString()} cases`
+                        : s.coverage || "Targeted segment"}
+                    </span>
+                    <span>{s.last_updated_label ? `Updated ${s.last_updated_label}` : ""}</span>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+          <Pagination
+            total={total}
+            offset={offset}
+            pageSize={pageSize}
+            rowCount={rows.length}
+            onPrevious={goPrev}
+            onNext={goNext}
+          />
+        </>
       )}
     </>
   );

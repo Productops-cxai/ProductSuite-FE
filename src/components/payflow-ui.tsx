@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import type { ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "../lib/utils";
 
 /**
@@ -15,7 +16,7 @@ export function PageHeader({
   backTo,
 }: {
   title: string;
-  description?: string;
+  description?: ReactNode;
   actions?: ReactNode;
   breadcrumb?: { label: string; to?: string }[];
   /** Optional back link shown as a simple arrow on the left of the title. */
@@ -39,8 +40,8 @@ export function PageHeader({
           ))}
         </nav>
       ) : null}
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-5 pb-2 sm:flex sm:flex-wrap sm:justify-between">
-        <div className="flex min-w-0 items-start gap-2.5">
+      <div className="flex flex-col gap-3 pb-2 lg:flex-row lg:items-start lg:justify-between lg:gap-5">
+        <div className="flex min-w-0 flex-1 items-start gap-2.5">
           {backTo ? (
             <Link
               to={backTo}
@@ -62,17 +63,21 @@ export function PageHeader({
             </Link>
           ) : null}
           <div className="min-w-0">
-            <h1 className="font-display text-[28px] font-semibold leading-tight tracking-tight text-slate-900 dark:text-slate-50">
+            <h1 className="font-display text-[24px] font-semibold leading-tight tracking-tight break-words text-slate-900 sm:text-[28px] dark:text-slate-50">
               {title}
             </h1>
             {description ? (
-              <p className="mt-2 max-w-2xl text-[13.5px] leading-relaxed text-slate-500 dark:text-slate-400">
+              <div className="mt-2 max-w-2xl text-[13.5px] leading-relaxed text-slate-500 dark:text-slate-400">
                 {description}
-              </p>
+              </div>
             ) : null}
           </div>
         </div>
-        {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+        {actions ? (
+          <div className="flex max-w-full flex-wrap items-center gap-2 lg:max-w-[min(100%,28rem)] lg:justify-end">
+            {actions}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -116,6 +121,21 @@ export function Panel({
   );
 }
 
+/** Responsive KPI strip — 2-up on phones; override columns via className. */
+export function KpiGrid({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("mb-5 grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4", className)}>
+      {children}
+    </div>
+  );
+}
+
 export function KpiCard({
   label,
   value,
@@ -150,22 +170,22 @@ export function KpiCard({
           tone === "primary" ? "bg-primary" : "bg-transparent group-hover:bg-primary/70",
         )}
       />
-      <p className="text-eyebrow transition-colors group-hover:text-primary/80">{label}</p>
+      <p className="text-eyebrow leading-snug transition-colors group-hover:text-primary/80">{label}</p>
       <p
         className={cn(
-          "tabular mt-2.5 text-[25px] font-bold leading-none transition-colors",
+          "tabular mt-1.5 text-[20px] font-bold leading-none transition-colors sm:mt-2 sm:text-[25px]",
           tone === "primary" ? "text-primary" : "text-slate-900 dark:text-slate-50",
         )}
       >
         {value}
       </p>
       {trend ? (
-        <p className={cn("mt-2 text-[11px] font-medium", trendColor)}>
+        <p className={cn("mt-1.5 text-[11px] font-medium sm:mt-2", trendColor)}>
           {trend.direction === "up" ? "↑" : trend.direction === "down" ? "↓" : "→"} {trend.text}
         </p>
       ) : null}
       {hint && !trend ? (
-        <p className="mt-2 min-h-4 text-[11px] font-medium text-slate-400 transition-colors group-hover:text-slate-500 dark:group-hover:text-slate-300">
+        <p className="mt-1.5 min-h-0 text-[11px] font-medium text-slate-400 transition-colors group-hover:text-slate-500 sm:mt-2 dark:group-hover:text-slate-300">
           {hint}
         </p>
       ) : null}
@@ -173,7 +193,7 @@ export function KpiCard({
   );
 
   const shell = cn(
-    "group relative min-h-[112px] overflow-hidden rounded-lg border border-slate-200/80 bg-white px-5 py-4.5 text-left shadow-card transition-all duration-200 dark:border-slate-700 dark:bg-slate-900",
+    "group relative overflow-hidden rounded-lg border border-slate-200/80 bg-white px-3.5 py-3 text-left shadow-card transition-all duration-200 sm:min-h-[96px] sm:px-5 sm:py-4 dark:border-slate-700 dark:bg-slate-900",
     tone === "primary" &&
       "border-primary/40 bg-gradient-to-br from-primary/[0.08] to-transparent dark:border-blue-700 dark:bg-blue-950/40",
     (to || onClick) &&
@@ -215,48 +235,134 @@ export function FilterSelect({
   onChange?: (value: string) => void;
   "aria-label"?: string;
 }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
   const normalized = options.map((o) =>
     typeof o === "string" ? { value: o, label: o } : o,
   );
   const first = normalized[0]?.value ?? "";
+  const current = value ?? defaultValue ?? first;
   const applied =
-    (value ?? defaultValue ?? first) !== first &&
-    !(value ?? defaultValue ?? "").toString().startsWith("All ");
+    current !== first && !current.toString().startsWith("All ");
+  const display = normalized.find((o) => o.value === current)?.label ?? current;
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
 
   return (
-    <label
+    <div ref={ref} className="relative min-w-0 w-full xl:w-auto">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title={typeof display === "string" ? display : undefined}
+        aria-label={ariaLabel || label}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={cn(
+          "flex h-9 w-full min-w-0 items-center gap-2 rounded-md border py-0 pl-3 pr-2.5 shadow-card transition-all xl:max-w-[min(100%,22rem)]",
+          applied
+            ? "border-primary/40 bg-primary/[0.06] dark:border-blue-500/50 dark:bg-blue-950/40"
+            : "border-slate-200 bg-white hover:border-slate-300 dark:border-slate-600 dark:bg-slate-900",
+        )}
+      >
+        <span
+          className={cn(
+            "shrink-0 text-[11px] font-medium",
+            applied ? "text-primary" : "text-slate-500 dark:text-slate-400",
+          )}
+        >
+          {label}
+        </span>
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate text-left text-[13px] font-medium",
+            applied ? "text-primary dark:text-blue-300" : "text-slate-900 dark:text-slate-100",
+          )}
+        >
+          {display}
+        </span>
+        <svg
+          viewBox="0 0 24 24"
+          className="size-3.5 shrink-0 text-slate-400"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          aria-hidden
+        >
+          <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      {open ? (
+        <div
+          role="listbox"
+          aria-label={ariaLabel || label}
+          className="absolute inset-x-0 z-40 mt-1.5 max-h-[min(280px,50vh)] overflow-y-auto rounded-md border border-slate-200 bg-white p-1 shadow-lg dark:border-slate-600 dark:bg-slate-900 xl:inset-x-auto xl:left-0 xl:min-w-[min(100%,22rem)] xl:max-w-[min(100vw-2rem,28rem)]"
+        >
+          {normalized.map((option) => {
+            const on = option.value === current;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="option"
+                aria-selected={on}
+                onClick={() => {
+                  onChange?.(option.value);
+                  setOpen(false);
+                }}
+                className={cn(
+                  "flex w-full items-start justify-between gap-2 rounded px-2.5 py-2 text-left text-[12.5px] leading-snug whitespace-normal hover:bg-slate-50 dark:hover:bg-slate-800",
+                  on
+                    ? "bg-slate-50 font-medium text-slate-900 dark:bg-slate-800 dark:text-slate-100"
+                    : "text-slate-800 dark:text-slate-200",
+                )}
+              >
+                <span className="min-w-0 flex-1">{option.label}</span>
+                {on ? (
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="mt-0.5 size-3.5 shrink-0 text-primary"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    aria-hidden
+                  >
+                    <path d="M20 6 9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Responsive filter row — matches lovable FilterBar. */
+export function FilterBar({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
       className={cn(
-        "flex h-9 items-center gap-2 rounded-md border px-3 shadow-card transition-all",
-        applied
-          ? "border-primary/40 bg-primary/[0.06] dark:border-blue-500/50 dark:bg-blue-950/40"
-          : "border-slate-200 bg-white hover:border-slate-300 dark:border-slate-600 dark:bg-slate-900",
+        "mb-4 grid grid-cols-1 gap-2 [&>*]:min-w-0 md:grid-cols-2 xl:flex xl:flex-wrap xl:items-center xl:[&>*]:w-auto",
+        className,
       )}
     >
-      <span
-        className={cn(
-          "text-[11px] font-medium",
-          applied ? "text-primary" : "text-slate-500 dark:text-slate-400",
-        )}
-      >
-        {label}
-      </span>
-      <select
-        value={value}
-        defaultValue={value === undefined ? defaultValue : undefined}
-        onChange={onChange ? (e) => onChange(e.target.value) : undefined}
-        aria-label={ariaLabel || label}
-        className={cn(
-          "bg-transparent text-[13px] font-medium outline-none",
-          applied ? "text-primary dark:text-blue-300" : "text-slate-900 dark:text-slate-100",
-        )}
-      >
-        {normalized.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </label>
+      {children}
+    </div>
   );
 }
 

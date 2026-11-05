@@ -73,6 +73,17 @@ const MAIN_TABS = [
 
 type MainTab = (typeof MAIN_TABS)[number];
 
+/** null = covered by page view_client gate; otherwise any-of required to show the tab. */
+const TAB_ANY_OF: Record<MainTab, string[] | null> = {
+  Overview: null,
+  "Sub-Clients / Portfolios": null,
+  Configuration: null,
+  Accounts: ["view_customer_accounts", "view_collection_cases"],
+  Communications: ["view_communications"],
+  Workflows: ["view_workflows"],
+  Rules: ["view_rules"],
+};
+
 const CONFIG_SECTIONS = [
   "General",
   "Data Source",
@@ -83,6 +94,48 @@ const CONFIG_SECTIONS = [
 ] as const;
 
 type ConfigSection = (typeof CONFIG_SECTIONS)[number];
+
+const CONFIG_FIELD_KEYS: Record<
+  Exclude<ConfigSection, "AI & Governance" | "Assigned Users">,
+  string[]
+> = {
+  General: [
+    "name",
+    "code",
+    "client_type",
+    "business_domain",
+    "industry",
+    "contact_name",
+    "contact_title",
+    "contact_email",
+    "contact_phone",
+    "address_line1",
+    "address_line2",
+    "city",
+    "province_state",
+    "country",
+    "postal_code",
+    "correspondence_language",
+    "currency_code",
+  ],
+  "Data Source": [
+    "data_source_type",
+    "connection_status",
+    "crm_client_number",
+    "integration_ref",
+    "environment",
+    "sync_frequency",
+    "mappings",
+  ],
+  "Branding & Channels": [
+    "brand_name",
+    "sender_name",
+    "email_from",
+    "sms_sender_id",
+    "channels",
+  ],
+  "Payment Options": ["payment_settings"],
+};
 
 function statusTone(status: string): Tone {
   const s = status.toLowerCase();
@@ -98,12 +151,28 @@ export function PayFlowClientDetailPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { hasPermission } = usePayFlowAccess();
   const canEdit = hasPermission("edit_client");
+  const canModifyConfig =
+    canEdit || hasPermission("modify_client_configuration");
+  const canModifyAi = canEdit || hasPermission("modify_ai_mode");
+  const canModifyGov = canEdit || hasPermission("modify_governance");
   const canDelete = SHOW_PAYFLOW_DELETE && hasPermission("delete_client");
   const id = Number(clientId);
 
+  const visibleTabs = useMemo(
+    () =>
+      MAIN_TABS.filter((t) => {
+        const needed = TAB_ANY_OF[t];
+        return !needed || hasPermission(needed);
+      }),
+    [hasPermission],
+  );
+
   const initialTab = (searchParams.get("tab") as MainTab) || "Overview";
   const [tab, setTab] = useState<MainTab>(
-    MAIN_TABS.includes(initialTab) ? initialTab : "Overview",
+    MAIN_TABS.includes(initialTab) &&
+      (!TAB_ANY_OF[initialTab] || hasPermission(TAB_ANY_OF[initialTab]!))
+      ? initialTab
+      : "Overview",
   );
   const [configSection, setConfigSection] = useState<ConfigSection>("General");
   const [detail, setDetail] = useState<PayflowClientDetail | null>(null);
@@ -125,10 +194,11 @@ export function PayFlowClientDetailPage() {
     setLoading(true);
     setError("");
     try {
+      // Users list needs manage_users — soft-fail so view_client can still open the record.
       const [client, users, catalog] = await Promise.all([
         getPayflowClient(id),
-        listPayflowUsers(),
-        getPayflowClientMappingCatalog(),
+        listPayflowUsers().catch(() => ({ users: [] as PayflowUser[] })),
+        getPayflowClientMappingCatalog().catch(() => ({ governance_rules: [] as string[] })),
       ]);
       setDetail(client);
       setDraft(draftFromDetail(client));
@@ -146,6 +216,14 @@ export function PayFlowClientDetailPage() {
   useEffect(() => {
     void load();
   }, [id]);
+
+  // Drop onto Overview if deep-linked tab is not permitted.
+  useEffect(() => {
+    if (!visibleTabs.includes(tab)) {
+      setTab("Overview");
+      setSearchParams({});
+    }
+  }, [visibleTabs, tab, setSearchParams]);
 
   // Refresh governance list when returning from Rule Builder (new tab).
   useEffect(() => {
@@ -165,16 +243,24 @@ export function PayFlowClientDetailPage() {
     setDraft((d) => ({ ...d, config: { ...d.config, ...p } }));
 
   const readOnly = !canEdit;
-  const brandingReadOnly = readOnly || detail?.status !== "draft";
+  const brandingReadOnly = !canModifyConfig || detail?.status !== "draft";
+  const sectionCanSave =
+    configSection === "Assigned Users"
+      ? canEdit
+      : configSection === "AI & Governance"
+        ? canModifyAi || canModifyGov
+        : configSection === "Branding & Channels"
+          ? canModifyConfig && detail?.status === "draft"
+          : canModifyConfig;
 
   async function saveConfig() {
-    if (!detail || readOnly) return;
+    if (!detail || !sectionCanSave) return;
     if (configSection === "Branding & Channels" && detail.status !== "draft") {
       setError("Branding & channels can only be updated while the client is in Draft status");
       return;
     }
     const postalError = postalCodeConfigIssues(draft)[0];
-    if (postalError) {
+    if (postalError && (canEdit || configSection === "General")) {
       setError(postalError);
       return;
     }
@@ -195,6 +281,20 @@ export function PayFlowClientDetailPage() {
           ...rest
         } = full;
         payload = rest;
+      }
+      // Fine-grained modify_* without edit_client: send only fields for this section.
+      if (!canEdit) {
+        const scoped: Record<string, unknown> = {};
+        if (configSection === "AI & Governance") {
+          if (canModifyAi) scoped.ai_mode = full.ai_mode;
+          if (canModifyGov) scoped.governance_rules = full.governance_rules;
+        } else if (configSection !== "Assigned Users") {
+          const src = payload as Record<string, unknown>;
+          for (const key of CONFIG_FIELD_KEYS[configSection]) {
+            if (key in src) scoped[key] = src[key];
+          }
+        }
+        payload = scoped as UpdatePayflowClientPayload;
       }
       const updated = await updatePayflowClient(detail.id, payload);
       setDetail(updated);
@@ -312,10 +412,19 @@ export function PayFlowClientDetailPage() {
         : s,
     );
   }, [detail, draft]);
-  const checksDone = activationChecks.filter((c) => c.done).length;
-  const checksPct = activationChecks.length
-    ? Math.round((checksDone / activationChecks.length) * 100)
-    : 0;
+  // Align with list/banner: required onboarding only (portfolios are optional).
+  const requiredStepsDone = detail?.onboarding?.completed_required;
+  const requiredStepsTotal = detail?.onboarding?.total_required;
+  const requiredActivationChecks = activationChecks.filter((c) => c.required);
+  const checksDone =
+    typeof requiredStepsDone === "number"
+      ? requiredStepsDone
+      : requiredActivationChecks.filter((c) => c.done).length;
+  const checksTotal =
+    typeof requiredStepsTotal === "number" && requiredStepsTotal > 0
+      ? requiredStepsTotal
+      : requiredActivationChecks.length;
+  const checksPct = checksTotal ? Math.round((checksDone / checksTotal) * 100) : 0;
   const requiredBlockers = activationChecks.filter((c) => c.required && !c.done);
   const canActivate =
     Boolean(detail) &&
@@ -345,7 +454,9 @@ export function PayFlowClientDetailPage() {
     patchConfig,
     supervisorUsers: supervisors,
     governanceRules,
-    readOnly,
+    readOnly: !canModifyConfig,
+    aiReadOnly: !canModifyAi,
+    governanceReadOnly: !canModifyGov,
     clientId: detail.id,
     onClientUpdated: (updated: { logo_url?: string | null }) => {
       setDetail((prev) => (prev ? { ...prev, logo_url: updated.logo_url ?? null } : prev));
@@ -364,7 +475,21 @@ export function PayFlowClientDetailPage() {
           { label: detail.name },
         ]}
         title={detail.name}
-        description={`${detail.business_domain_label || detail.industry || "Collections"} · ${detail.code} · ${detail.client_type_label || "—"}`}
+        description={
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="whitespace-nowrap">
+              {detail.business_domain_label || detail.industry || "Collections"}
+            </span>
+            <span className="select-none opacity-40" aria-hidden>
+              ·
+            </span>
+            <span className="whitespace-nowrap tabular-nums">{detail.code}</span>
+            <span className="select-none opacity-40" aria-hidden>
+              ·
+            </span>
+            <span className="whitespace-nowrap">{detail.client_type_label || "—"}</span>
+          </span>
+        }
         actions={
           <>
             <Link
@@ -378,54 +503,15 @@ export function PayFlowClientDetailPage() {
                 <Btn variant="primary" onClick={() => changeTab("Configuration")}>
                   Edit configuration
                 </Btn>
-                <span className="flex items-center gap-1.5">
-                  <Btn
-                    variant="primary"
-                    disabled={!canActivate || busy}
-                    onClick={() => void activate()}
-                  >
-                    Activate Client
-                  </Btn>
-                  {!canActivate ? (
-                    <span className="text-[11px] text-muted-foreground">
-                      Complete all required setup first
-                    </span>
-                  ) : null}
-                </span>
+                <Btn
+                  variant="primary"
+                  disabled={!canActivate || busy}
+                  onClick={() => void activate()}
+                >
+                  Activate Client
+                </Btn>
               </>
             ) : null}
-            <StatusPill tone={statusTone(statusLabel)}>{statusLabel}</StatusPill>
-            <StatusPill
-              tone={
-                (detail.added_through || "") === "file_upload" ||
-                (detail.added_through_label || "").toLowerCase().includes("file upload")
-                  ? "info"
-                  : "neutral"
-              }
-            >
-              {detail.added_through_label ||
-                ((detail.added_through || "") === "file_upload"
-                  ? "Created from file upload"
-                  : "Created")}
-            </StatusPill>
-            {detail.ai_mode_label ? (
-              <StatusPill tone={detail.ai_mode_label === "Autopilot" ? "ai" : "neutral"}>
-                {detail.ai_mode_label}
-              </StatusPill>
-            ) : null}
-            <StatusPill
-              tone={
-                (detail.data_source_type || "").toLowerCase() === "file" ||
-                (detail.connection_status || "").toLowerCase() === "connected"
-                  ? "info"
-                  : "warning"
-              }
-            >
-              {(detail.data_source_type || "").toLowerCase() === "file"
-                ? "Daily file"
-                : (detail.data_source_type || "").toUpperCase() || "No data source"}
-            </StatusPill>
-            <StatusPill>Supervisor: {supervisorLabel}</StatusPill>
             {canDelete ? (
               <Btn variant="danger" onClick={() => setConfirmDelete(true)}>
                 Delete
@@ -434,6 +520,41 @@ export function PayFlowClientDetailPage() {
           </>
         }
       />
+
+      <div className="-mt-5 mb-6 flex flex-wrap items-center gap-2">
+        <StatusPill tone={statusTone(statusLabel)}>{statusLabel}</StatusPill>
+        <StatusPill
+          tone={
+            (detail.added_through || "") === "file_upload" ||
+            (detail.added_through_label || "").toLowerCase().includes("file upload")
+              ? "info"
+              : "neutral"
+          }
+        >
+          {detail.added_through_label ||
+            ((detail.added_through || "") === "file_upload"
+              ? "Created from file upload"
+              : "Created")}
+        </StatusPill>
+        {detail.ai_mode_label ? (
+          <StatusPill tone={detail.ai_mode_label === "Autopilot" ? "ai" : "neutral"}>
+            {detail.ai_mode_label}
+          </StatusPill>
+        ) : null}
+        <StatusPill
+          tone={
+            (detail.data_source_type || "").toLowerCase() === "file" ||
+            (detail.connection_status || "").toLowerCase() === "connected"
+              ? "info"
+              : "warning"
+          }
+        >
+          {(detail.data_source_type || "").toLowerCase() === "file"
+            ? "Daily file"
+            : (detail.data_source_type || "").toUpperCase() || "No data source"}
+        </StatusPill>
+        <StatusPill>Supervisor: {supervisorLabel}</StatusPill>
+      </div>
 
       {error && (
         <p className="mb-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-[13px] text-destructive">
@@ -457,11 +578,12 @@ export function PayFlowClientDetailPage() {
             const issueMessages = remainingSetupIssueMessages(detail, draft);
             if (missing.length === 0 && issueMessages.length === 0) return null;
             const drafting = isClientSettingUp(statusLabel);
-            const issueCount = Math.max(missing.length, issueMessages.length);
+            // Same remaining count as clients list / required onboarding (chips), not optional portfolios.
+            const issueCount = missing.length > 0 ? missing.length : issueMessages.length;
             return (
               <div className="mb-4 rounded-lg border border-warning/40 bg-warning/8 px-4 py-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="min-w-0">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 flex-1">
                     <p className="text-[13px] font-semibold text-foreground">
                       <span className="mr-1.5 inline-block" aria-hidden>
                         ⚠
@@ -471,8 +593,8 @@ export function PayFlowClientDetailPage() {
                     </p>
                     <p className="mt-0.5 text-[12px] text-muted-foreground">
                       {drafting
-                        ? "Complete the remaining configuration to activate this Client. It stays in Draft until an Operations Admin activates it."
-                        : "Some onboarding steps are still open — for example Sub-Clients / Portfolios."}
+                        ? "Complete the remaining required configuration to activate this Client. Sub-clients / portfolios are optional. It stays in Draft until an Operations Admin activates it."
+                        : "Some required onboarding steps are still open. Sub-clients / portfolios remain optional."}
                     </p>
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {missing.map((m) => (
@@ -506,12 +628,7 @@ export function PayFlowClientDetailPage() {
                     <Btn
                       variant="primary"
                       className="shrink-0"
-                      onClick={() =>
-                        missing.some((m) => /portfolio|sub-client/i.test(m)) ||
-                        issueMessages.some((m) => /portfolio|sub-client/i.test(m))
-                          ? goSetupTarget("portfolios")
-                          : changeTab("Configuration")
-                      }
+                      onClick={() => changeTab("Configuration")}
                     >
                       Complete Setup
                     </Btn>
@@ -521,7 +638,7 @@ export function PayFlowClientDetailPage() {
             );
           })()}
 
-      <TabBar tabs={MAIN_TABS} active={tab} onChange={changeTab} />
+      <TabBar tabs={visibleTabs} active={tab} onChange={changeTab} />
 
       {tab === "Overview" && (
         <div className="space-y-4">
@@ -529,7 +646,7 @@ export function PayFlowClientDetailPage() {
             title="Latest Source File"
             description="Every figure on this page is based on the most recently received and assigned file."
           >
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
               <PrimaryCell
                 title={detail.updated_at ? new Date(detail.updated_at).toLocaleString() : "—"}
                 subtitle="Last updated"
@@ -539,7 +656,7 @@ export function PayFlowClientDetailPage() {
               <PrimaryCell title="—" subtitle="Change Since Previous File" />
             </div>
           </Panel>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
             <KpiCard label="Customer Accounts" value="0" />
             <KpiCard label="Active Cases" value="0" />
             <KpiCard label="Outstanding" value="—" />
@@ -619,18 +736,26 @@ export function PayFlowClientDetailPage() {
               />
               <OverviewCard
                 title="Sub-Clients / Portfolios"
-                tone={(detail.portfolio_count || 0) > 0 ? "success" : "warning"}
+                tone={(detail.portfolio_count || 0) > 0 ? "success" : "neutral"}
                 status={
                   (detail.portfolio_count || 0) > 0
                     ? `${detail.portfolio_count} total`
-                    : "Pending"
+                    : "Optional"
                 }
                 lines={[
-                  `${(detail.portfolios || []).filter((p) => (p.status || "").toLowerCase() === "active").length} active`,
-                  `${(detail.portfolios || []).filter((p) => (p.status || "").toLowerCase() !== "active").length} onboarding / other`,
+                  (detail.portfolio_count || 0) > 0
+                    ? `${(detail.portfolios || []).filter((p) => (p.status || "").toLowerCase() === "active").length} active`
+                    : "Not required — accounts can sit on the parent client",
+                  (detail.portfolio_count || 0) > 0
+                    ? `${(detail.portfolios || []).filter((p) => (p.status || "").toLowerCase() !== "active").length} onboarding / other`
+                    : "Add only if you need separate portfolios",
                 ]}
                 onClick={() => goSetupTarget("portfolios")}
-                cta="Manage portfolios"
+                cta={
+                  (detail.portfolio_count || 0) > 0
+                    ? "Manage portfolios"
+                    : "Add portfolio (optional)"
+                }
               />
               <OverviewCard
                 title="Data Source"
@@ -697,7 +822,7 @@ export function PayFlowClientDetailPage() {
                   />
                 </div>
                 <p className="mt-2 text-[12px] text-muted-foreground">
-                  {checksDone} of {activationChecks.length} steps complete
+                  {checksDone} of {checksTotal} required steps complete
                 </p>
               </div>
             </div>
@@ -752,12 +877,12 @@ export function PayFlowClientDetailPage() {
                   ? brandingReadOnly
                     ? "Branding is read-only after activation (Draft only)."
                     : "Changes save when you click Save."
-                  : canEdit
+                  : sectionCanSave
                     ? "Changes save when you click Save."
                     : "Read-only"
               }
               action={
-                canEdit && !(configSection === "Branding & Channels" && brandingReadOnly) ? (
+                sectionCanSave ? (
                   <Btn variant="primary" disabled={busy} onClick={() => void saveConfig()}>
                     {busy ? "Saving…" : "Save"}
                   </Btn>
@@ -773,7 +898,9 @@ export function PayFlowClientDetailPage() {
                 <PaymentSettingsSection {...sectionProps} />
               )}
               {configSection === "AI & Governance" && <AiGovernanceSection {...sectionProps} />}
-              {configSection === "Assigned Users" && <SupervisorSection {...sectionProps} />}
+              {configSection === "Assigned Users" && (
+                <SupervisorSection {...sectionProps} readOnly={!canEdit} />
+              )}
             </Panel>
           </div>
         </div>
@@ -846,7 +973,7 @@ function ActivationCheckRow({ check }: { check: SetupCheck }) {
         />
         {check.label}
         {!check.required ? (
-          <span className="text-[11px] text-muted-foreground">(informational)</span>
+          <span className="text-[11px] text-muted-foreground">(optional)</span>
         ) : null}
       </span>
       <span className="text-muted-foreground">{check.detail}</span>
@@ -866,9 +993,22 @@ function OnboardingStepper({
       <SectionHeading title="Onboarding progress" />
       <ol className="mt-2 grid gap-2 sm:grid-cols-3 xl:grid-cols-6">
         {stages.map((st, i) => {
-          const state = st.done ? "Completed" : st.blocked ? "Blocked" : "Pending";
-          const tone: Tone = st.done ? "success" : st.blocked ? "danger" : "warning";
-          const clickable = !st.done && !!st.target;
+          const optional = Boolean(st.informational);
+          const state = st.done
+            ? "Completed"
+            : st.blocked
+              ? "Blocked"
+              : optional
+                ? "Optional"
+                : "Pending";
+          const tone: Tone = st.done
+            ? "success"
+            : st.blocked
+              ? "danger"
+              : optional
+                ? "neutral"
+                : "warning";
+          const clickable = (!st.done || optional) && !!st.target;
           return (
             <li key={st.key}>
               <button
@@ -906,7 +1046,9 @@ function OnboardingStepper({
                   {state}
                 </StatusPill>
                 {clickable ? (
-                  <span className="text-[11px] font-semibold text-primary">Complete step →</span>
+                  <span className="text-[11px] font-semibold text-primary">
+                    {optional && !st.done ? "Add if needed →" : "Complete step →"}
+                  </span>
                 ) : null}
               </button>
             </li>

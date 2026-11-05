@@ -259,9 +259,12 @@ function FactRows({ rows }: { rows: { label: string; value: string }[] }) {
   return (
     <dl className="divide-y divide-border">
       {rows.map((f) => (
-        <div key={f.label} className="flex items-start justify-between gap-6 px-4 py-2.5">
-          <dt className="shrink-0 text-[13px] text-muted-foreground">{f.label}</dt>
-          <dd className="tabular min-w-0 text-right text-[13px] font-medium break-words text-foreground">
+        <div
+          key={f.label}
+          className="flex flex-col gap-0.5 px-4 py-2.5 sm:flex-row sm:items-start sm:justify-between sm:gap-6"
+        >
+          <dt className="text-[13px] text-muted-foreground sm:shrink-0">{f.label}</dt>
+          <dd className="tabular min-w-0 text-[13px] font-medium break-words text-foreground sm:text-right">
             {f.value}
           </dd>
         </div>
@@ -380,14 +383,17 @@ export function PayFlowCaseDetailPage() {
     setExecutionError("");
     setPaymentLinksError("");
     setPaymentsError("");
+    // Soft-fail each side-load independently so one 403 does not wipe the rest.
     Promise.all([
       listPayflowReviews({
         client_id: account.client_id,
         search: account.account_reference,
         sort_by: "created_at",
         sort_dir: "desc",
-      }),
-      listPayflowComms({ account_id: account.id }),
+      }).catch(() => ({ reviews: [] })),
+      listPayflowComms({ account_id: account.id }).catch(() => ({
+        communications: [],
+      })),
       getPayflowAccountCommunicationEligibility(account.id).catch(() => null),
       getAccountWorkflowExecution(account.id).catch((err) => {
         if (!cancelled) {
@@ -424,16 +430,6 @@ export function PayFlowCaseDetailPage() {
         setExecution(execRes.execution || null);
         setPaymentLinks(linksRes.payment_links || []);
         setPayments(paymentsRes);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setReviews([]);
-          setComms([]);
-          setEligibility(null);
-          setExecution(null);
-          setPaymentLinks([]);
-          setPayments(null);
-        }
       })
       .finally(() => {
         if (!cancelled) {
@@ -836,8 +832,7 @@ export function PayFlowCaseDetailPage() {
             const ctx = [...(account.ai_decision_context || [])].reverse();
             const latestRec = ctx.find((e) => e.kind === "ai_recommendation");
             const latestHr = ctx.find((e) => e.kind === "human_decision");
-            const canSuggest =
-              hasPermission("manage_workflows") || hasPermission("view_workflows");
+            const canSuggest = hasPermission("create_edit_workflows");
             return (
               <Panel
                 title="AI recommendation"

@@ -5,8 +5,10 @@ import { listPayflowClients, listPayflowRules } from "../../api/payflow";
 import {
   Btn,
   DataTable,
+  FilterBar,
   FilterSelect,
   KpiCard,
+  KpiGrid,
   PageHeader,
   PrimaryCell,
   SearchInput,
@@ -16,7 +18,13 @@ import {
   Tr,
   type Tone,
 } from "../../components/payflow/lovable/payflow-ui";
+import { MobileRecordCard, MobileRecordCards } from "../../components/ui/MobileRecordCards";
+import { Pagination } from "../../components/ui/Pagination";
+import { useIsMobile } from "../../hooks/useIsMobile";
+import { useClientPagedList } from "../../hooks/useOffsetPagination";
 import type { PayflowClient, PayflowRule, PayflowRulesSummary } from "../../types";
+
+const PAGE_SIZE = 10;
 
 function ruleStatusTone(status: string): Tone {
   if (status === "Active") return "success";
@@ -25,6 +33,7 @@ function ruleStatusTone(status: string): Tone {
 }
 
 export function PayFlowRulesPage() {
+  const isMobile = useIsMobile();
   const [rules, setRules] = useState<PayflowRule[]>([]);
   const [clients, setClients] = useState<PayflowClient[]>([]);
   const [summary, setSummary] = useState<PayflowRulesSummary>({
@@ -74,7 +83,7 @@ export function PayFlowRulesPage() {
     };
   }, []);
 
-  const rows = useMemo(() => {
+  const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     return rules.filter((r) => {
       if (tab === "System Rules" && r.rule_type !== "System Rule") return false;
@@ -96,6 +105,13 @@ export function PayFlowRulesPage() {
     });
   }, [rules, tab, client, category, status, action, search]);
 
+  const filterKey = `${tab}|${search}|${client}|${category}|${status}|${action}`;
+  const { pageItems: rows, total, offset, pageSize, goPrev, goNext } = useClientPagedList(
+    filtered,
+    PAGE_SIZE,
+    filterKey,
+  );
+
   return (
     <>
       <PageHeader
@@ -112,12 +128,12 @@ export function PayFlowRulesPage() {
         }
       />
 
-      <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <KpiGrid>
         <KpiCard label="Active Rules" value={String(summary.active)} tone="primary" />
         <KpiCard label="System Rules" value={String(summary.system)} />
         <KpiCard label="Client Rules" value={String(summary.client)} />
         <KpiCard label="Triggers · last 7 days" value={String(summary.triggers_7d)} />
-      </div>
+      </KpiGrid>
 
       <TabBar
         tabs={["All Rules", "System Rules", "Client Rules"] as const}
@@ -126,8 +142,13 @@ export function PayFlowRulesPage() {
         className="mb-4"
       />
 
-      <div className="mb-4 flex flex-wrap gap-2">
-        <SearchInput value={search} onChange={setSearch} placeholder="Search rules…" />
+      <FilterBar>
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Search rules…"
+          className="w-full md:col-span-2 xl:w-64"
+        />
         <FilterSelect
           label="Client"
           value={client}
@@ -152,65 +173,111 @@ export function PayFlowRulesPage() {
           onChange={setAction}
           options={["All Actions", ...actions]}
         />
-      </div>
+      </FilterBar>
 
       {error ? <p className="mb-3 text-sm text-destructive">{error}</p> : null}
       {loading ? <p className="text-sm text-muted-foreground">Loading rules…</p> : null}
 
       {!loading && !error ? (
         <>
-          <DataTable
-            minWidth={1080}
-            head={[
-              "Rule Name",
-              "Type",
-              "Client / Scope",
-              "Category",
-              "Condition Summary",
-              "Result",
-              "Status",
-              "Last Updated",
-              "Action",
-            ]}
-          >
-            {rows.map((r) => (
-              <Tr key={r.id}>
-                <Td>
-                  <Link to={`/payflow/rules/${r.id}`}>
-                    <PrimaryCell title={r.name} subtitle={r.action} />
-                  </Link>
-                </Td>
-                <Td className="text-muted-foreground">{r.rule_type}</Td>
-                <Td className="text-muted-foreground">
-                  {r.client_name || "All Clients"}
-                </Td>
-                <Td className="text-muted-foreground">{r.category}</Td>
-                <Td className="max-w-[240px] truncate text-muted-foreground">
-                  {r.condition_summary || "—"}
-                </Td>
-                <Td className="text-muted-foreground">{r.action}</Td>
-                <Td>
-                  <StatusPill tone={ruleStatusTone(r.status)}>{r.status}</StatusPill>
-                </Td>
-                <Td className="tabular text-muted-foreground">
-                  {r.last_updated_label || "—"}
-                </Td>
-                <Td>
-                  {r.can_edit ? (
-                    <Link to={`/payflow/rules/${r.id}/edit`}>
-                      <Btn variant="ghost" className="text-primary hover:text-primary">
-                        Edit
-                      </Btn>
-                    </Link>
-                  ) : (
-                    <span className="text-[13px] text-muted-foreground">—</span>
-                  )}
-                </Td>
-              </Tr>
-            ))}
-          </DataTable>
-          {rows.length === 0 ? (
+          {filtered.length === 0 ? (
             <p className="mt-3 text-sm text-muted-foreground">No rules match these filters.</p>
+          ) : isMobile ? (
+            <MobileRecordCards>
+              {rows.map((r) => (
+                <MobileRecordCard
+                  key={r.id}
+                  to={`/payflow/rules/${r.id}`}
+                  title={r.name}
+                  subtitle={r.action}
+                  badges={
+                    <StatusPill tone={ruleStatusTone(r.status)}>{r.status}</StatusPill>
+                  }
+                  meta={
+                    <div className="space-y-0.5">
+                      <p>
+                        {r.rule_type} · {r.client_name || "All Clients"}
+                      </p>
+                      <p>{r.category}</p>
+                      {r.condition_summary ? <p className="truncate">{r.condition_summary}</p> : null}
+                      <p>Updated {r.last_updated_label || "—"}</p>
+                    </div>
+                  }
+                  footer={
+                    r.can_edit ? (
+                      <Link
+                        to={`/payflow/rules/${r.id}/edit`}
+                        className="text-[12.5px] font-semibold text-primary hover:underline"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        Edit
+                      </Link>
+                    ) : undefined
+                  }
+                />
+              ))}
+            </MobileRecordCards>
+          ) : (
+            <DataTable
+              minWidth={1080}
+              head={[
+                "Rule Name",
+                "Type",
+                "Client / Scope",
+                "Category",
+                "Condition Summary",
+                "Result",
+                "Status",
+                "Last Updated",
+                "Action",
+              ]}
+            >
+              {rows.map((r) => (
+                <Tr key={r.id}>
+                  <Td>
+                    <Link to={`/payflow/rules/${r.id}`}>
+                      <PrimaryCell title={r.name} subtitle={r.action} />
+                    </Link>
+                  </Td>
+                  <Td className="text-muted-foreground">{r.rule_type}</Td>
+                  <Td className="text-muted-foreground">
+                    {r.client_name || "All Clients"}
+                  </Td>
+                  <Td className="text-muted-foreground">{r.category}</Td>
+                  <Td className="max-w-[240px] truncate text-muted-foreground">
+                    {r.condition_summary || "—"}
+                  </Td>
+                  <Td className="text-muted-foreground">{r.action}</Td>
+                  <Td>
+                    <StatusPill tone={ruleStatusTone(r.status)}>{r.status}</StatusPill>
+                  </Td>
+                  <Td className="tabular text-muted-foreground">
+                    {r.last_updated_label || "—"}
+                  </Td>
+                  <Td>
+                    {r.can_edit ? (
+                      <Link to={`/payflow/rules/${r.id}/edit`}>
+                        <Btn variant="ghost" className="text-primary hover:text-primary">
+                          Edit
+                        </Btn>
+                      </Link>
+                    ) : (
+                      <span className="text-[13px] text-muted-foreground">—</span>
+                    )}
+                  </Td>
+                </Tr>
+              ))}
+            </DataTable>
+          )}
+          {filtered.length > 0 ? (
+            <Pagination
+              total={total}
+              offset={offset}
+              pageSize={pageSize}
+              rowCount={rows.length}
+              onPrevious={goPrev}
+              onNext={goNext}
+            />
           ) : null}
           <p className="mt-4 text-[12px] text-muted-foreground">
             Autopilot clients execute matching actions automatically. Supervised AI clients may still

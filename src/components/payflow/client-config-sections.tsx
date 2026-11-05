@@ -17,6 +17,7 @@ import { resolveAvatarUrl } from "../ui/UserAvatar";
 import { LogoCropModal } from "./LogoCropModal";
 import { removePayflowClientLogo, uploadPayflowClientLogo } from "../../api/payflow";
 import { ApiError } from "../../api/client";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import {
   fetchCities,
   fetchCountryNames,
@@ -99,6 +100,10 @@ export interface SectionProps {
   payflowFields?: string[];
   governanceRules?: string[];
   readOnly?: boolean;
+  /** AI mode only — falls back to readOnly when unset. */
+  aiReadOnly?: boolean;
+  /** Governance rules only — falls back to readOnly when unset. */
+  governanceReadOnly?: boolean;
   clientId?: number | null;
   onClientUpdated?: (detail: {
     logo_url?: string | null;
@@ -833,7 +838,7 @@ export function DataSourceSection({ readOnly }: SectionProps) {
       <div className="grid gap-3 sm:grid-cols-2 max-w-3xl">
         <ChoiceCard
           title="Daily file"
-          description="Upload daily account / reminder files using client_code + sub_client_code after sub-clients exist."
+          description="Upload daily account files linked by client_code (Canaccede Client Number usually carries that code). sub_client_code is optional — leave blank for parent-level accounts."
           selected
           disabled={readOnly}
         />
@@ -849,8 +854,9 @@ export function DataSourceSection({ readOnly }: SectionProps) {
       <div className="rounded-lg border border-border bg-surface p-4">
         <p className="text-[13px] font-semibold text-foreground">Daily file intake</p>
         <p className="mt-1 text-[12px] text-muted-foreground">
-          Create the client and sub-clients, then upload daily files from Cases / Imports.
-          Global CRM source → PayFlow field mapping lives under Administration → System Mapping.
+          Create the client (sub-clients / portfolios optional), then upload daily files from Cases /
+          Imports. Accounts without a sub-client attach to the parent client. Global CRM → PayFlow
+          field mapping lives under Administration → System Mapping.
         </p>
       </div>
     </div>
@@ -872,6 +878,7 @@ export function MappingSection({
   payflowFields = ["— Not mapped —"],
   readOnly,
 }: SectionProps) {
+  const isMobile = useIsMobile();
   const summary = mappingSummary(draft.config);
 
   const setField = (index: number, payflowField: string) => {
@@ -910,39 +917,95 @@ export function MappingSection({
           {summary.unmapped} Unmapped
         </StatusPill>
       </div>
-      <DataTable head={["CRM Source", "PayFlow Field", "Sample", "Status"]}>
-        {draft.config.mappings.map((m, i) => (
-          <tr key={m.sourceField} className="border-b border-border last:border-0">
-            <Td className="tabular text-muted-foreground">
-              {m.sourceField}
-              {m.isRequired ? " *" : ""}
-            </Td>
-            <Td>
-              <SelectInput
-                value={m.payflowField}
-                options={payflowFields}
-                onChange={(v) => setField(i, v)}
-                disabled={readOnly}
-              />
-            </Td>
-            <Td className="tabular text-muted-foreground">{m.sampleValue || "—"}</Td>
-            <Td>
-              <select
-                value={m.status}
-                onChange={(e) => setStatus(i, e.target.value as MappingStatusLabel)}
-                disabled={readOnly}
-                className="rounded-md border border-border bg-card px-2 py-1 text-[12px] outline-none"
-              >
-                {mappingStatuses.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </Td>
-          </tr>
-        ))}
-      </DataTable>
+      {isMobile ? (
+        <div className="flex flex-col gap-2">
+          {draft.config.mappings.map((m, i) => (
+            <div
+              key={m.sourceField}
+              className="space-y-2 rounded-lg border border-border bg-card px-3.5 py-3"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <p className="min-w-0 text-[13px] font-semibold text-foreground">
+                  {m.sourceField}
+                  {m.isRequired ? " *" : ""}
+                </p>
+                <StatusPill
+                  tone={
+                    m.status === "Mapped" || m.status === "Validated"
+                      ? "success"
+                      : m.status === "Needs Attention"
+                        ? "warning"
+                        : "neutral"
+                  }
+                >
+                  {m.status}
+                </StatusPill>
+              </div>
+              {m.sampleValue ? (
+                <p className="text-[12px] text-muted-foreground">Sample · {m.sampleValue}</p>
+              ) : null}
+              <label className="block space-y-1">
+                <span className="text-[11px] font-medium text-muted-foreground">PayFlow field</span>
+                <SelectInput
+                  value={m.payflowField}
+                  options={payflowFields}
+                  onChange={(v) => setField(i, v)}
+                  disabled={readOnly}
+                />
+              </label>
+              <label className="block space-y-1">
+                <span className="text-[11px] font-medium text-muted-foreground">Status</span>
+                <select
+                  value={m.status}
+                  onChange={(e) => setStatus(i, e.target.value as MappingStatusLabel)}
+                  disabled={readOnly}
+                  className="w-full rounded-md border border-border bg-card px-2 py-1.5 text-[12px] outline-none"
+                >
+                  {mappingStatuses.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <DataTable head={["CRM Source", "PayFlow Field", "Sample", "Status"]}>
+          {draft.config.mappings.map((m, i) => (
+            <tr key={m.sourceField} className="border-b border-border last:border-0">
+              <Td className="tabular text-muted-foreground">
+                {m.sourceField}
+                {m.isRequired ? " *" : ""}
+              </Td>
+              <Td>
+                <SelectInput
+                  value={m.payflowField}
+                  options={payflowFields}
+                  onChange={(v) => setField(i, v)}
+                  disabled={readOnly}
+                />
+              </Td>
+              <Td className="tabular text-muted-foreground">{m.sampleValue || "—"}</Td>
+              <Td>
+                <select
+                  value={m.status}
+                  onChange={(e) => setStatus(i, e.target.value as MappingStatusLabel)}
+                  disabled={readOnly}
+                  className="rounded-md border border-border bg-card px-2 py-1 text-[12px] outline-none"
+                >
+                  {mappingStatuses.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </Td>
+            </tr>
+          ))}
+        </DataTable>
+      )}
       <p className="text-[11px] text-muted-foreground">
         Catalog v0.3 — CRM placement columns → PayFlow fields. Required (*). Contact needs at least
         one channel (email and/or phone). History fields are PayFlow-built. Ambiguous / missing
@@ -1381,10 +1444,14 @@ export function AiGovernanceSection({
   patchConfig,
   governanceRules = [],
   readOnly,
+  aiReadOnly,
+  governanceReadOnly,
 }: SectionProps) {
   const rules = draft.config.governanceRules;
   // Active system rules from Rules + any already-selected names (so edits stay visible).
   const library = Array.from(new Set([...governanceRules, ...rules]));
+  const aiLocked = aiReadOnly ?? readOnly;
+  const govLocked = governanceReadOnly ?? readOnly;
 
   const toggleRule = (rule: string) =>
     patchConfig({
@@ -1404,15 +1471,15 @@ export function AiGovernanceSection({
           title="Autopilot"
           description="PayFlow performs routine collection decisions and actions autonomously within configured operating boundaries. Routine human approval is not required; security and compliance controls still apply."
           selected={draft.aiMode === "Autopilot"}
-          onSelect={readOnly ? undefined : () => patch({ aiMode: "Autopilot" })}
-          disabled={readOnly}
+          onSelect={aiLocked ? undefined : () => patch({ aiMode: "Autopilot" })}
+          disabled={aiLocked}
         />
         <ChoiceCard
           title="Supervised AI"
           description="PayFlow performs the operational work, while configured governance rules determine when supervisor review is required."
           selected={draft.aiMode === "Supervised AI"}
-          onSelect={readOnly ? undefined : () => patch({ aiMode: "Supervised AI" })}
-          disabled={readOnly}
+          onSelect={aiLocked ? undefined : () => patch({ aiMode: "Supervised AI" })}
+          disabled={aiLocked}
         />
       </div>
 
@@ -1420,7 +1487,7 @@ export function AiGovernanceSection({
         <div className="rounded-lg border border-border bg-surface p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-[13px] font-semibold text-foreground">Governance Rules</p>
-            {!readOnly ? (
+            {!govLocked ? (
               <Link to="/payflow/rules/new" target="_blank" rel="noreferrer">
                 <Btn variant="ghost" className="text-primary hover:text-primary-hover">
                   + Create Rule
@@ -1446,8 +1513,8 @@ export function AiGovernanceSection({
                   <input
                     type="checkbox"
                     checked={rules.includes(rule)}
-                    onChange={() => !readOnly && toggleRule(rule)}
-                    disabled={readOnly}
+                    onChange={() => !govLocked && toggleRule(rule)}
+                    disabled={govLocked}
                     className="size-3.5 rounded border-border-strong accent-[var(--color-primary)] dark:border-slate-500"
                   />
                   <span className="text-[13px] text-foreground">{rule}</span>

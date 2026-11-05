@@ -267,7 +267,8 @@ export interface AiSuggestJob {
   client_id: number;
   client_name?: string | null;
   client_code?: string | null;
-  portfolio_id: number;
+  /** Null = client-level / parent accounts scope. */
+  portfolio_id?: number | null;
   portfolio_name?: string | null;
   portfolio_code?: string | null;
   trigger: string;
@@ -634,21 +635,32 @@ export interface PayflowBulkUploadCreatedRow {
 }
 
 export interface PayflowBulkUploadErrorRow {
-  row: number;
+  row?: number;
   code?: string | null;
-  message: string;
+  message?: string;
+  /** Hierarchy client import (preferred). */
+  record_id?: string;
+  client?: string;
+  sub_client?: string;
+  field?: string;
+  error?: string;
+  status?: string;
+  client_id?: number | null;
+  setup_issues?: string[];
 }
 
 export interface PayflowBulkUploadResult {
-  created_count: number;
-  error_count: number;
-  created: PayflowBulkUploadCreatedRow[];
+  created_count?: number;
+  error_count?: number;
+  created?: PayflowBulkUploadCreatedRow[];
   errors: PayflowBulkUploadErrorRow[];
   import_id?: number | null;
   status?: string;
   message?: string | null;
   summary?: PayflowImportPreviewSummary;
   preview?: PayflowImportPreviewRecord[];
+  ok?: boolean;
+  file_name?: string;
 }
 
 export interface PayflowImportPreviewRecord {
@@ -695,6 +707,8 @@ export interface PayflowImportPreviewResponse {
     field: string;
     error: string;
     status: string;
+    client_id?: number | null;
+    setup_issues?: string[];
   }>;
 }
 
@@ -792,6 +806,9 @@ export interface PayflowAccountsListResponse {
   intake: PayflowAccountsIntake;
   workflows: string[];
   statuses: string[];
+  total?: number;
+  limit?: number;
+  offset?: number;
 }
 
 export interface PayflowImportErrorItem {
@@ -1028,6 +1045,10 @@ export interface PayflowReviewsSummary {
 export interface PayflowReviewsListResponse {
   reviews: PayflowReview[];
   summary: PayflowReviewsSummary;
+  page?: number;
+  page_size?: number;
+  total?: number;
+  total_pages?: number;
   statuses: string[];
   priorities: string[];
   reasons: string[];
