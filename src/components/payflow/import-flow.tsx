@@ -35,6 +35,7 @@ import {
   importStatusTone,
   lastImport,
   lastSuccessfulImport,
+  isOptionalPortfolioSetupIssue,
   mapApiImportRun,
   mapImportErrorStatus,
   normalizeImportCounts,
@@ -46,6 +47,23 @@ import {
   type ImportRun,
   type ImportStatus,
 } from "../../lib/import-data";
+
+function filterRequiredSetupIssues(issues: string[] | undefined | null): string[] {
+  return (issues || []).filter((m) => !isOptionalPortfolioSetupIssue(m));
+}
+
+/** Drop Draft rows that only had optional portfolio warnings (nothing left to fix). */
+function keepMeaningfulImportErrors(errors: ImportError[]): ImportError[] {
+  return errors.filter((e) => {
+    if (e.status !== "Draft" && e.status !== "Attention") return true;
+    const issues = filterRequiredSetupIssues(
+      e.setupIssues && e.setupIssues.length > 0
+        ? e.setupIssues
+        : parseImportSetupIssues(e.error).issues,
+    );
+    return issues.length > 0;
+  });
+}
 
 type Stage = "upload" | "uploading" | "validating" | "preview" | "processing" | "done";
 
@@ -244,8 +262,9 @@ function ImportSetupNeedsCell({
   phase?: "preview" | "result";
 }) {
   const parsed = parseImportSetupIssues(e.error);
-  const issues =
-    e.setupIssues && e.setupIssues.length > 0 ? e.setupIssues : parsed.issues;
+  const issues = filterRequiredSetupIssues(
+    e.setupIssues && e.setupIssues.length > 0 ? e.setupIssues : parsed.issues,
+  );
   const clientId = e.clientId ?? parsed.clientId;
   // Setup-issue rows are Draft warnings even if status was mis-mapped as Rejected.
   const isDraft =
@@ -435,6 +454,7 @@ export function ImportResult({
 function ClientPreviewTable({ records }: { records: ImportRecord[] }) {
   const isMobile = useIsMobile();
   type Group = {
+    key: string;
     name: string;
     clientId: string;
     master?: ImportRecord;
@@ -445,11 +465,19 @@ function ClientPreviewTable({ records }: { records: ImportRecord[] }) {
     const isSub =
       r.isSub === true ||
       (r.isSub !== false && Boolean(r.subClientId) && r.subClientId !== "—");
-    const key = r.clientName || r.clientId || r.id;
-    const g = (acc[key] ??= { name: r.clientName || key, clientId: r.clientId, subs: [] });
+    // Group by client code (unique), never by display name — same name + different codes
+    // must stay separate rows (e.g. multiple "PayPal Inc." masters).
+    const key = (r.clientId || "").trim() || r.id;
+    const g = (acc[key] ??= {
+      key,
+      name: r.clientName || key,
+      clientId: r.clientId,
+      subs: [],
+    });
     if (isSub) {
       g.subs.push(r);
-      if (r.clientId && (!g.clientId || g.clientId === g.name)) g.clientId = r.clientId;
+      if (r.clientId) g.clientId = r.clientId;
+      if (r.clientName) g.name = r.clientName;
     } else {
       g.master = r;
       g.clientId = r.clientId || g.clientId;
@@ -465,7 +493,7 @@ function ClientPreviewTable({ records }: { records: ImportRecord[] }) {
       <MobileRecordCards>
         {groupList.map((g) => (
           <MobileRecordCard
-            key={g.name}
+            key={g.key}
             title={g.name}
             subtitle={`${g.clientId || "—"} · ${g.subs.length} sub-client${g.subs.length === 1 ? "" : "s"}`}
             badges={
@@ -499,7 +527,7 @@ function ClientPreviewTable({ records }: { records: ImportRecord[] }) {
   return (
     <DataTable minWidth={760} head={["Client / Sub-Client", "Client ID", "Sub-Client ID", "Action", "Status"]}>
       {groupList.map((g) => (
-        <Fragment key={g.name}>
+        <Fragment key={g.key}>
           <tr className="bg-muted/40">
             <Td>
               <span className="font-semibold text-foreground">{g.name}</span>
@@ -546,42 +574,58 @@ function ClientPreviewTable({ records }: { records: ImportRecord[] }) {
   );
 }
 
+function accountHasSubClient(r: ImportRecord): boolean {
+  return Boolean(
+    (r.subClientId && r.subClientId !== "—") ||
+      (r.subClientName && r.subClientName !== "—"),
+  );
+}
+
+function accountScopeLabel(r: ImportRecord): { client: string; scope: string } {
+  const client = r.clientName || r.clientId || "—";
+  if (accountHasSubClient(r)) {
+    const subName = r.subClientName && r.subClientName !== "—" ? r.subClientName : "Sub-client";
+    const subCode = r.subClientId && r.subClientId !== "—" ? ` (${r.subClientId})` : "";
+    return { client, scope: `${subName}${subCode}` };
+  }
+  return { client, scope: "Parent client (no sub-client)" };
+}
+
 function AccountPreviewTable({ records }: { records: ImportRecord[] }) {
   const isMobile = useIsMobile();
   if (isMobile) {
     return (
       <MobileRecordCards>
-        {records.map((r) => (
-          <MobileRecordCard
-            key={r.id}
-            title={r.note || "Account"}
-            subtitle={
-              r.subClientId && r.subClientId !== "—"
-                ? `${r.clientName} → ${r.subClientName} (${r.subClientId})`
-                : `${r.clientName} → ${r.subClientName || "—"}`
-            }
-            badges={<StatusPill tone={actionTone(r.action)}>{r.action}</StatusPill>}
-            meta={
-              <div className="flex flex-wrap gap-x-3 gap-y-1">
-                <span>
-                  Incoming {formatCurrency(r.incomingBalance ?? 0)}
-                  {r.currentBalance != null && r.incomingBalance !== r.currentBalance
-                    ? (r.incomingBalance ?? 0) < r.currentBalance
-                      ? " (↓)"
-                      : " (↑)"
-                    : ""}
-                </span>
-                <span>
-                  In PayFlow{" "}
-                  {r.currentBalance == null ? "—" : formatCurrency(r.currentBalance)}
-                </span>
-                <span className={r.action === "Error" ? "text-destructive" : undefined}>
-                  {r.action === "Error" ? "Needs correction" : "Valid"}
-                </span>
-              </div>
-            }
-          />
-        ))}
+        {records.map((r) => {
+          const scope = accountScopeLabel(r);
+          return (
+            <MobileRecordCard
+              key={r.id}
+              title={r.note || "Account"}
+              subtitle={`${scope.client} → ${scope.scope}`}
+              badges={<StatusPill tone={actionTone(r.action)}>{r.action}</StatusPill>}
+              meta={
+                <div className="flex flex-wrap gap-x-3 gap-y-1">
+                  <span>
+                    Incoming {formatCurrency(r.incomingBalance ?? 0)}
+                    {r.currentBalance != null && r.incomingBalance !== r.currentBalance
+                      ? (r.incomingBalance ?? 0) < r.currentBalance
+                        ? " (↓)"
+                        : " (↑)"
+                      : ""}
+                  </span>
+                  <span>
+                    In PayFlow{" "}
+                    {r.currentBalance == null ? "—" : formatCurrency(r.currentBalance)}
+                  </span>
+                  <span className={r.action === "Error" ? "text-destructive" : undefined}>
+                    {r.action === "Error" ? "Needs correction" : "Valid"}
+                  </span>
+                </div>
+              }
+            />
+          );
+        })}
       </MobileRecordCards>
     );
   }
@@ -597,42 +641,38 @@ function AccountPreviewTable({ records }: { records: ImportRecord[] }) {
         "Status",
       ]}
     >
-      {records.map((r) => (
-        <Tr key={r.id}>
-          <Td className="tabular font-medium">{r.note}</Td>
-          <Td>
-            <PrimaryCell
-              title={
-                r.subClientId && r.subClientId !== "—"
-                  ? `${r.subClientName} (${r.subClientId})`
-                  : r.subClientName
-              }
-              subtitle={r.clientName}
-            />
-          </Td>
-          <Td className="tabular text-muted-foreground">
-            {r.currentBalance == null ? "—" : formatCurrency(r.currentBalance)}
-          </Td>
-          <Td className="tabular font-medium">
-            {formatCurrency(r.incomingBalance ?? 0)}
-            {r.currentBalance != null && r.incomingBalance !== r.currentBalance && (
-              <span className="ml-1.5 text-[11px] text-muted-foreground">
-                {(r.incomingBalance ?? 0) < r.currentBalance ? "(↓)" : "(↑)"}
-              </span>
-            )}
-          </Td>
-          <Td>
-            <StatusPill tone={actionTone(r.action)}>{r.action}</StatusPill>
-          </Td>
-          <Td className="text-[12.5px]">
-            {r.action === "Error" ? (
-              <span className="text-destructive">Needs correction</span>
-            ) : (
-              <span className="text-muted-foreground">Valid</span>
-            )}
-          </Td>
-        </Tr>
-      ))}
+      {records.map((r) => {
+        const scope = accountScopeLabel(r);
+        return (
+          <Tr key={r.id}>
+            <Td className="tabular font-medium">{r.note}</Td>
+            <Td>
+              <PrimaryCell title={scope.client} subtitle={scope.scope} />
+            </Td>
+            <Td className="tabular text-muted-foreground">
+              {r.currentBalance == null ? "—" : formatCurrency(r.currentBalance)}
+            </Td>
+            <Td className="tabular font-medium">
+              {formatCurrency(r.incomingBalance ?? 0)}
+              {r.currentBalance != null && r.incomingBalance !== r.currentBalance && (
+                <span className="ml-1.5 text-[11px] text-muted-foreground">
+                  {(r.incomingBalance ?? 0) < r.currentBalance ? "(↓)" : "(↑)"}
+                </span>
+              )}
+            </Td>
+            <Td>
+              <StatusPill tone={actionTone(r.action)}>{r.action}</StatusPill>
+            </Td>
+            <Td className="text-[12.5px]">
+              {r.action === "Error" ? (
+                <span className="text-destructive">Needs correction</span>
+              ) : (
+                <span className="text-muted-foreground">Valid</span>
+              )}
+            </Td>
+          </Tr>
+        );
+      })}
     </DataTable>
   );
 }
@@ -697,7 +737,7 @@ function mapPreviewRecords(rows: PayflowImportPreviewResponse["preview"]): Impor
       currentBalance: r.current_balance,
       incomingBalance: r.incoming_balance ?? undefined,
       note: r.note ?? r.record_id,
-      setupIssues: r.setup_issues || [],
+      setupIssues: filterRequiredSetupIssues(r.setup_issues),
     };
   });
 }
@@ -723,7 +763,7 @@ function failedRunFromPreview(
       rejected: preview.summary?.rejected ?? preview.errors.length,
       successful: 0,
     },
-    errors: preview.errors.map((e) => mapClientImportApiError(e)),
+    errors: keepMeaningfulImportErrors(preview.errors.map((e) => mapClientImportApiError(e))),
   };
 }
 
@@ -772,25 +812,34 @@ function mapClientImportApiError(
       fieldLower === "setup" ||
       parsed.clientId != null ||
       (Array.isArray(row.setup_issues) && row.setup_issues.length > 0);
-    const setupIssues =
+    const setupIssues = filterRequiredSetupIssues(
       row.setup_issues && row.setup_issues.length > 0
         ? row.setup_issues
         : status === "Draft" || looksLikeSetupWarning
           ? parsed.issues
-          : undefined;
+          : undefined,
+    );
     // Remaining-setup warnings must never show as Rejected (row still imports as Draft).
-    if (status === "Rejected" && looksLikeSetupWarning && setupIssues && setupIssues.length > 0) {
+    if (status === "Rejected" && looksLikeSetupWarning && setupIssues.length > 0) {
+      status = "Draft";
+    }
+    // Optional-only portfolio warnings → not an error row.
+    if (
+      (status === "Draft" || status === "Attention") &&
+      setupIssues.length === 0 &&
+      (fieldLower === "setup" || looksLikeSetupWarning)
+    ) {
       status = "Draft";
     }
     return {
       recordId: row.record_id || (row.row != null ? String(row.row) : "—"),
       client: row.client || row.code || "—",
       subClient: row.sub_client || "—",
-      field: status === "Draft" && setupIssues && setupIssues.length > 0 ? "setup" : row.field || "—",
-      error: errorText,
+      field: status === "Draft" && setupIssues.length > 0 ? "setup" : row.field || "—",
+      error: setupIssues.length > 0 ? setupIssues.join("\n") : errorText,
       status,
       clientId: row.client_id ?? parsed.clientId,
-      setupIssues,
+      setupIssues: setupIssues.length > 0 ? setupIssues : undefined,
     };
   }
   const legacy = e as { row?: number | string; code?: string | null; message?: string };
@@ -803,7 +852,7 @@ function mapClientImportApiError(
       client: legacy.code || "—",
       subClient: "—",
       field: "setup",
-      error: message,
+      error: parsed.issues.join("\n"),
       status: "Draft",
       clientId: parsed.clientId,
       setupIssues: parsed.issues,
@@ -834,7 +883,9 @@ function bulkUploadToRun(file: File, result: PayflowBulkUploadResult, uploadedBy
   const rawErrors = (result.errors || []) as Array<
     PayflowImportPreviewResponse["errors"][number] | PayflowBulkUploadResult["errors"][number]
   >;
-  const errors: ImportError[] = rawErrors.map((e) => mapClientImportApiError(e));
+  const errors: ImportError[] = keepMeaningfulImportErrors(
+    rawErrors.map((e) => mapClientImportApiError(e)),
+  );
   return {
     id: result.import_id != null ? String(result.import_id) : `bulk-${Date.now()}`,
     kind: "client",
@@ -910,7 +961,9 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
       }
       setPreviewSummary(preview.summary);
       setPreviewRecords(mapPreviewRecords(preview.preview));
-      setPreviewErrors((preview.errors || []).map((e) => mapClientImportApiError(e)));
+      setPreviewErrors(
+        keepMeaningfulImportErrors((preview.errors || []).map((e) => mapClientImportApiError(e))),
+      );
       setPreviewMessage(preview.message?.trim() || null);
       setStage("preview");
     } catch (err) {

@@ -209,16 +209,20 @@ export function PayFlowWorkflowNewPage() {
         if (cancelled) return;
         const list = res.portfolios || [];
         setPortfolios(list);
-        if (preferred && list.some((p) => String(p.id) === preferred)) {
+        if (preferred === "parent" || preferred === "none") {
+          setPortfolioId("parent");
+        } else if (preferred && list.some((p) => String(p.id) === preferred)) {
           setPortfolioId(preferred);
+        } else if (list[0]) {
+          setPortfolioId(String(list[0].id));
         } else {
-          setPortfolioId(list[0] ? String(list[0].id) : "");
+          setPortfolioId("parent");
         }
       })
       .catch(() => {
         if (!cancelled) {
           setPortfolios([]);
-          setPortfolioId("");
+          setPortfolioId("parent");
         }
       });
     return () => {
@@ -231,7 +235,10 @@ export function PayFlowWorkflowNewPage() {
     [clients],
   );
   const portfolioOptions = useMemo(
-    () => portfolios.map((p) => ({ label: p.name, value: String(p.id) })),
+    () => [
+      { label: "Parent client (no sub-client)", value: "parent" },
+      ...portfolios.map((p) => ({ label: p.name, value: String(p.id) })),
+    ],
     [portfolios],
   );
 
@@ -305,7 +312,7 @@ export function PayFlowWorkflowNewPage() {
       return;
     }
     if (!portfolioId) {
-      setError("Select a sub-client / portfolio.");
+      setError("Select a scope: parent client or a sub-client / portfolio.");
       return;
     }
     if (steps.length === 0) {
@@ -318,7 +325,7 @@ export function PayFlowWorkflowNewPage() {
       const created = await createPayflowWorkflow({
         name: name.trim(),
         client_id: Number(clientId),
-        portfolio_id: Number(portfolioId),
+        portfolio_id: portfolioId === "parent" ? null : Number(portfolioId),
         summary: summary.trim() || "Human-created workflow.",
         coverage: "Targeted segment",
         segment,
@@ -369,14 +376,10 @@ export function PayFlowWorkflowNewPage() {
                   }}
                 />
               </Field>
-              <Field label="Sub-client / Portfolio">
+              <Field label="Scope (parent or sub-client)">
                 <SelectInput
                   value={portfolioOptions.find((p) => p.value === portfolioId)?.label || ""}
-                  options={
-                    portfolioOptions.length
-                      ? portfolioOptions.map((p) => p.label)
-                      : ["No portfolios"]
-                  }
+                  options={portfolioOptions.map((p) => p.label)}
                   onChange={(label) => {
                     const match = portfolioOptions.find((p) => p.label === label);
                     if (match) setPortfolioId(match.value);

@@ -267,7 +267,8 @@ export interface AiSuggestJob {
   client_id: number;
   client_name?: string | null;
   client_code?: string | null;
-  portfolio_id: number;
+  /** Null = client-level / parent accounts scope. */
+  portfolio_id?: number | null;
   portfolio_name?: string | null;
   portfolio_code?: string | null;
   trigger: string;

@@ -185,7 +185,10 @@ export function AiSuggestJobsPage() {
               <MobileRecordCard
                 key={row.id}
                 title={row.client_name || `#${row.client_id}`}
-                subtitle={row.portfolio_name || `#${row.portfolio_id}`}
+                subtitle={
+                  row.portfolio_name ||
+                  (row.portfolio_id == null ? "Parent client" : `#${row.portfolio_id}`)
+                }
                 badges={
                   <span className={`text-[11px] font-semibold capitalize ${statusClass(row.status)}`}>
                     {row.status}
@@ -236,7 +239,10 @@ export function AiSuggestJobsPage() {
                     {row.client_code ? <div className={ui.desc}>{row.client_code}</div> : null}
                   </td>
                   <td className={ui.td}>
-                    <strong>{row.portfolio_name || `#${row.portfolio_id}`}</strong>
+                    <strong>
+                      {row.portfolio_name ||
+                        (row.portfolio_id == null ? "Parent client" : `#${row.portfolio_id}`)}
+                    </strong>
                     {row.portfolio_code ? (
                       <div className={ui.desc}>{row.portfolio_code}</div>
                     ) : null}

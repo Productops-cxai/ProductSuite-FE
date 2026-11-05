@@ -29,6 +29,12 @@ export interface ImportError {
 
 const CLIENT_ID_MARKER = /(?:^|\n)__client_id__=(\d+)\s*$/;
 
+/** Sub-clients / portfolios are optional — never show as import setup blockers. */
+export function isOptionalPortfolioSetupIssue(message: string): boolean {
+  const l = (message || "").trim().toLowerCase();
+  return l.includes("sub-clients / portfolios") || l.includes("add at least one sub-client");
+}
+
 /** Split setup warning text into bullets; strip hidden client_id marker. */
 export function parseImportSetupIssues(error: string): {
   issues: string[];
@@ -47,7 +53,11 @@ export function parseImportSetupIssues(error: string): {
     text = text.replace(draftPrefix, "").trim();
   }
   const issues = text
-    ? text.split(/\n|; /).map((s) => s.trim()).filter(Boolean)
+    ? text
+        .split(/\n|; /)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .filter((s) => !isOptionalPortfolioSetupIssue(s))
     : [];
   return { issues, clientId, headline };
 }
@@ -283,34 +293,44 @@ export function mapApiImportRun(row: {
     setup_issues?: string[];
   }>;
 }): ImportRun {
-  const errors: ImportError[] = (row.errors || []).map((e) => {
-    let status = mapImportErrorStatus(e.status);
-    const parsed = parseImportSetupIssues(e.error);
-    const fieldLower = (e.field || "").toLowerCase();
-    const looksLikeSetupWarning =
-      fieldLower === "setup" ||
-      parsed.clientId != null ||
-      (Array.isArray(e.setup_issues) && e.setup_issues.length > 0);
-    const setupIssues =
-      e.setup_issues && e.setup_issues.length > 0
-        ? e.setup_issues
-        : status === "Draft" || looksLikeSetupWarning
-          ? parsed.issues
-          : undefined;
-    if (status === "Rejected" && looksLikeSetupWarning && setupIssues && setupIssues.length > 0) {
-      status = "Draft";
-    }
-    return {
-      recordId: e.record_id,
-      client: e.client,
-      subClient: e.sub_client,
-      field: status === "Draft" && setupIssues && setupIssues.length > 0 ? "setup" : e.field,
-      error: e.error,
-      status,
-      clientId: e.client_id ?? parsed.clientId,
-      setupIssues,
-    };
-  });
+  const errors: ImportError[] = (row.errors || [])
+    .map((e): ImportError | null => {
+      let status = mapImportErrorStatus(e.status);
+      const parsed = parseImportSetupIssues(e.error);
+      const fieldLower = (e.field || "").toLowerCase();
+      const looksLikeSetupWarning =
+        fieldLower === "setup" ||
+        parsed.clientId != null ||
+        (Array.isArray(e.setup_issues) && e.setup_issues.length > 0);
+      const setupIssues = (
+        e.setup_issues && e.setup_issues.length > 0
+          ? e.setup_issues
+          : status === "Draft" || looksLikeSetupWarning
+            ? parsed.issues
+            : []
+      ).filter((m) => !isOptionalPortfolioSetupIssue(m));
+      if (status === "Rejected" && looksLikeSetupWarning && setupIssues.length > 0) {
+        status = "Draft";
+      }
+      if (
+        (status === "Draft" || status === "Attention") &&
+        setupIssues.length === 0 &&
+        looksLikeSetupWarning
+      ) {
+        return null;
+      }
+      return {
+        recordId: e.record_id,
+        client: e.client,
+        subClient: e.sub_client,
+        field: status === "Draft" && setupIssues.length > 0 ? "setup" : e.field,
+        error: setupIssues.length > 0 ? setupIssues.join("\n") : e.error,
+        status,
+        clientId: e.client_id ?? parsed.clientId,
+        setupIssues: setupIssues.length > 0 ? setupIssues : undefined,
+      };
+    })
+    .filter((e): e is ImportError => e != null);
   return {
     id: String(row.id),
     kind: row.kind === "client" ? "client" : "account",
