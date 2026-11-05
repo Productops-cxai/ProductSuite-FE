@@ -218,6 +218,33 @@ export function StepConfigForm({
                 onChange={(v) => onChange({ body: v.slice(0, BODY_MAX) || null })}
               />
             </Field>
+            {canWriteMessages && onRewriteMessage ? (
+              <div className="space-y-2 rounded-lg border border-ai/20 bg-ai/[0.04] p-2.5">
+                <p className="text-[11.5px] text-muted-foreground">
+                  {hasOwnText
+                    ? "Improve this email / SMS only — optional note guides tone. Status stays unchanged."
+                    : "Write this email / SMS with AI — optional note guides tone. Leave blank to use the template below."}
+                </p>
+                <TextArea
+                  value={rewriteRemarks}
+                  disabled={!canEdit || writingMessages}
+                  onChange={(v) => setRewriteRemarks(v.slice(0, REMARKS_MAX))}
+                  placeholder="e.g. softer tone, mention the payment plan"
+                />
+                <Btn
+                  disabled={!canEdit || writingMessages}
+                  onClick={() =>
+                    onRewriteMessage(rewriteRemarks.trim() || undefined)
+                  }
+                >
+                  {writingMessages
+                    ? "Writing…"
+                    : hasOwnText
+                      ? "Rewrite this message with AI"
+                      : "Write this message with AI"}
+                </Btn>
+              </div>
+            ) : null}
             {hasOwnText ? (
               <div className="rounded-lg border border-border/70 bg-card p-3">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -232,29 +259,6 @@ export function StepConfigForm({
                 <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap font-sans text-[11.5px] leading-relaxed text-muted-foreground">
                   {previewBody || "(empty body)"}
                 </pre>
-              </div>
-            ) : null}
-            {canWriteMessages && onRewriteMessage ? (
-              <div className="space-y-2 border-t border-border/60 pt-3">
-                <Field
-                  label="Rewrite with AI"
-                  hint="Optional remarks for this message only. Takes a few seconds."
-                >
-                  <TextArea
-                    value={rewriteRemarks}
-                    disabled={!canEdit || writingMessages}
-                    onChange={(v) => setRewriteRemarks(v.slice(0, REMARKS_MAX))}
-                    placeholder="e.g. softer tone, mention the payment plan"
-                  />
-                </Field>
-                <Btn
-                  disabled={!canEdit || writingMessages}
-                  onClick={() =>
-                    onRewriteMessage(rewriteRemarks.trim() || undefined)
-                  }
-                >
-                  {writingMessages ? "Writing…" : "Rewrite with AI"}
-                </Btn>
               </div>
             ) : null}
           </div>

@@ -50,7 +50,7 @@ import type {
   PayflowStrategyStepConfig,
 } from "../../types";
 
-type NoteAction = "update" | "approve" | "activate" | "reject" | "write_all";
+type NoteAction = "update" | "approve" | "activate" | "reject";
 
 function findStep(strategy: PayflowStrategy, id: string | null): PayflowStrategyStep | null {
   if (!id) return null;
@@ -370,10 +370,6 @@ export function PayFlowWorkflowDetailPage() {
       await persistSteps(note);
       return;
     }
-    if (noteAction === "write_all") {
-      await writeMessages({ remarks: note.trim() || undefined });
-      return;
-    }
     if (noteAction === "approve") {
       await runAction(
         () => approvePayflowWorkflow(strategy.id, { note: note || undefined }),
@@ -532,14 +528,6 @@ export function PayFlowWorkflowDetailPage() {
                 }
               >
                 Save Draft
-              </Btn>
-            )}
-            {allowWriteMessages && (
-              <Btn
-                disabled={busy || writingMessages}
-                onClick={() => setNoteAction("write_all")}
-              >
-                {writingMessages ? "Writing messages…" : "Write all messages with AI"}
               </Btn>
             )}
             {showDelete && (
@@ -993,17 +981,6 @@ export function PayFlowWorkflowDetailPage() {
         busy={busy}
         required={false}
         placeholder="e.g. SMS timing reduced from 5 days to 3 days after previous email"
-        onClose={() => setNoteAction(null)}
-        onConfirm={(note) => void onNoteConfirm(note)}
-      />
-      <WorkflowActionNoteModal
-        open={noteAction === "write_all"}
-        title="Write all messages with AI"
-        description="PayFlow will write (or improve) the text of every email and SMS step. Optional remarks guide the tone. Status and origin stay unchanged. Takes about 5–20 seconds."
-        confirmLabel={writingMessages ? "Writing…" : "Write messages"}
-        busy={busy || writingMessages}
-        required={false}
-        placeholder="e.g. shorter, firmer, mention payment plans"
         onClose={() => setNoteAction(null)}
         onConfirm={(note) => void onNoteConfirm(note)}
       />
