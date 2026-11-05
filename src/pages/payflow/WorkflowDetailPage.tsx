@@ -499,102 +499,106 @@ export function PayFlowWorkflowDetailPage() {
         title={strategy.name}
         description={strategy.summary || undefined}
         actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusPill tone={strategyStatusTone(strategy.status)} dot>
-              {strategy.status}
-            </StatusPill>
-            <StatusPill>v{strategy.version}</StatusPill>
-            {(strategy.human_modified || strategy.origin === "Human Modified") && (
-              <StatusPill tone="info">Human Modified</StatusPill>
-            )}
-            {canSubmitReview && (
-              <Btn
-                disabled={busy}
-                onClick={() =>
-                  void runAction(
-                    () => submitPayflowWorkflowReview(strategy.id),
-                    "Submitted for review.",
-                  )
-                }
-              >
-                Submit for review
-              </Btn>
-            )}
-            {canSaveDraft && (
-              <Btn
-                disabled={busy}
-                onClick={() =>
-                  void runAction(() => savePayflowWorkflowDraft(strategy.id), "Draft saved.")
-                }
-              >
-                Save Draft
-              </Btn>
-            )}
-            {showDelete && (
-              <Btn variant="danger" disabled={busy} onClick={() => setConfirmDelete(true)}>
-                Delete
-              </Btn>
-            )}
-            {showReject && (
-              <Btn
-                variant="danger"
-                disabled={busy}
-                onClick={() => {
-                  // Sidebar "Note for PayFlow" feeds Reject / regeneration.
-                  if (isAiGenerated && rejectNote.trim().length >= 3) {
-                    void runReject(rejectNote);
-                    return;
-                  }
-                  setNoteAction("reject");
-                }}
-              >
-                Reject / Request Regeneration
-              </Btn>
-            )}
-            {showPrimaryAction && (
-              <Btn
-                variant="primary"
-                disabled={busy}
-                onClick={() => {
-                  // After approve → same primary button becomes Activate (AC1).
-                  if (primaryIsActivate) {
-                    setNoteAction("activate");
-                    return;
-                  }
-                  if (isAiProposed || isUnderReview) {
-                    setNoteAction("approve");
-                    return;
-                  }
-                  if (isDraft && isHumanCreated) {
+          <>
+            <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
+              <StatusPill tone={strategyStatusTone(strategy.status)} dot>
+                {strategy.status}
+              </StatusPill>
+              <StatusPill>v{strategy.version}</StatusPill>
+              {(strategy.human_modified || strategy.origin === "Human Modified") && (
+                <StatusPill tone="info">Human Modified</StatusPill>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+              {canSubmitReview && (
+                <Btn
+                  disabled={busy}
+                  onClick={() =>
                     void runAction(
                       () => submitPayflowWorkflowReview(strategy.id),
                       "Submitted for review.",
-                    );
-                    return;
+                    )
                   }
-                  setNotice(
-                    "Approve is available once the workflow is AI Proposed or Under Review.",
-                  );
-                  setError("");
-                }}
-              >
-                {primaryIsActivate ? "Activate" : "Approve Strategy"}
-              </Btn>
-            )}
-            {canDeactivate && (
-              <Btn
-                disabled={busy}
-                onClick={() =>
-                  void runAction(
-                    () => deactivatePayflowWorkflow(strategy.id),
-                    "Workflow deactivated. History and prior executions are retained.",
-                  )
-                }
-              >
-                Deactivate
-              </Btn>
-            )}
-          </div>
+                >
+                  Submit for review
+                </Btn>
+              )}
+              {canSaveDraft && (
+                <Btn
+                  disabled={busy}
+                  onClick={() =>
+                    void runAction(() => savePayflowWorkflowDraft(strategy.id), "Draft saved.")
+                  }
+                >
+                  Save Draft
+                </Btn>
+              )}
+              {showDelete && (
+                <Btn variant="danger" disabled={busy} onClick={() => setConfirmDelete(true)}>
+                  Delete
+                </Btn>
+              )}
+              {showReject && (
+                <Btn
+                  variant="danger"
+                  disabled={busy}
+                  onClick={() => {
+                    // Sidebar "Note for PayFlow" feeds Reject / regeneration.
+                    if (isAiGenerated && rejectNote.trim().length >= 3) {
+                      void runReject(rejectNote);
+                      return;
+                    }
+                    setNoteAction("reject");
+                  }}
+                >
+                  Reject / Regenerate
+                </Btn>
+              )}
+              {showPrimaryAction && (
+                <Btn
+                  variant="primary"
+                  disabled={busy}
+                  onClick={() => {
+                    // After approve → same primary button becomes Activate (AC1).
+                    if (primaryIsActivate) {
+                      setNoteAction("activate");
+                      return;
+                    }
+                    if (isAiProposed || isUnderReview) {
+                      setNoteAction("approve");
+                      return;
+                    }
+                    if (isDraft && isHumanCreated) {
+                      void runAction(
+                        () => submitPayflowWorkflowReview(strategy.id),
+                        "Submitted for review.",
+                      );
+                      return;
+                    }
+                    setNotice(
+                      "Approve is available once the workflow is AI Proposed or Under Review.",
+                    );
+                    setError("");
+                  }}
+                >
+                  {primaryIsActivate ? "Activate" : "Approve Strategy"}
+                </Btn>
+              )}
+              {canDeactivate && (
+                <Btn
+                  disabled={busy}
+                  onClick={() =>
+                    void runAction(
+                      () => deactivatePayflowWorkflow(strategy.id),
+                      "Workflow deactivated. History and prior executions are retained.",
+                    )
+                  }
+                >
+                  Deactivate
+                </Btn>
+              )}
+            </div>
+          </>
         }
       />
 

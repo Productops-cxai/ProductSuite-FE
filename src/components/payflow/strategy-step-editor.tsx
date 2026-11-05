@@ -193,13 +193,42 @@ export function StepConfigForm({
 
           <div className="space-y-2 rounded-lg border border-border/70 bg-surface/60 p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-[12.5px] font-semibold text-foreground">Message text</p>
-              {cfg.tone ? <StatusPill tone="ai">{cfg.tone}</StatusPill> : null}
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-[12.5px] font-semibold text-foreground">Message text</p>
+                {cfg.tone ? <StatusPill tone="ai">{cfg.tone}</StatusPill> : null}
+              </div>
+              {canWriteMessages && onRewriteMessage ? (
+                <Btn
+                  disabled={!canEdit || writingMessages}
+                  onClick={() =>
+                    onRewriteMessage(rewriteRemarks.trim() || undefined)
+                  }
+                >
+                  {writingMessages
+                    ? "Writing…"
+                    : hasOwnText
+                      ? "Rewrite with AI"
+                      : "Write with AI"}
+                </Btn>
+              ) : null}
             </div>
             <p className="text-[11.5px] text-muted-foreground">
               Leave blank to send the template below. Edited text is saved with the step and
               becomes Human Modified.
             </p>
+            {canWriteMessages && onRewriteMessage ? (
+              <Field
+                label="Note for AI (optional)"
+                hint="Only this email / SMS is rewritten. Status stays unchanged."
+              >
+                <TextArea
+                  value={rewriteRemarks}
+                  disabled={!canEdit || writingMessages}
+                  onChange={(v) => setRewriteRemarks(v.slice(0, REMARKS_MAX))}
+                  placeholder="e.g. softer tone, mention the payment plan"
+                />
+              </Field>
+            ) : null}
             {isEmail ? (
               <Field label="Subject" hint={`Max ${SUBJECT_MAX} characters.`}>
                 <TextInput
@@ -218,33 +247,6 @@ export function StepConfigForm({
                 onChange={(v) => onChange({ body: v.slice(0, BODY_MAX) || null })}
               />
             </Field>
-            {canWriteMessages && onRewriteMessage ? (
-              <div className="space-y-2 rounded-lg border border-ai/20 bg-ai/[0.04] p-2.5">
-                <p className="text-[11.5px] text-muted-foreground">
-                  {hasOwnText
-                    ? "Improve this email / SMS only — optional note guides tone. Status stays unchanged."
-                    : "Write this email / SMS with AI — optional note guides tone. Leave blank to use the template below."}
-                </p>
-                <TextArea
-                  value={rewriteRemarks}
-                  disabled={!canEdit || writingMessages}
-                  onChange={(v) => setRewriteRemarks(v.slice(0, REMARKS_MAX))}
-                  placeholder="e.g. softer tone, mention the payment plan"
-                />
-                <Btn
-                  disabled={!canEdit || writingMessages}
-                  onClick={() =>
-                    onRewriteMessage(rewriteRemarks.trim() || undefined)
-                  }
-                >
-                  {writingMessages
-                    ? "Writing…"
-                    : hasOwnText
-                      ? "Rewrite this message with AI"
-                      : "Write this message with AI"}
-                </Btn>
-              </div>
-            ) : null}
             {hasOwnText ? (
               <div className="rounded-lg border border-border/70 bg-card p-3">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
