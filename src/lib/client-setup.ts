@@ -85,16 +85,21 @@ function isHiddenJourneyLabel(label: string): boolean {
   return l.includes("data mapping") || l === "mapping";
 }
 
-/** Banner / clients-grid chips — every journey step still open (not Data Mapping). */
+/** Banner / clients-grid chips — required journey steps (portfolios are optional). */
 const BANNER_CHIP_KEYS = new Set([
   "profile",
-  "portfolios",
   "data_source",
   "branding",
   "ai_governance",
   "supervisors",
   "activation",
 ]);
+
+/** Sub-clients / portfolios are optional — never treat as setup blockers. */
+function isOptionalPortfolioSetupLabel(label: string): boolean {
+  const l = label.trim().toLowerCase();
+  return l.includes("sub-client") || l.includes("portfolio");
+}
 
 /** Setup steps still incomplete — used by clients list + detail header chips. */
 export function incompleteSetupSections(
@@ -103,7 +108,7 @@ export function incompleteSetupSections(
 ): string[] {
   if (Array.isArray(setupIncomplete) && setupIncomplete.length > 0) {
     return setupIncomplete
-      .filter((label) => !isHiddenJourneyLabel(label))
+      .filter((label) => !isHiddenJourneyLabel(label) && !isOptionalPortfolioSetupLabel(label))
       .map(setupDisplayLabel);
   }
   if (!onboarding?.steps?.length) return [];
@@ -177,7 +182,7 @@ export function remainingSetupIssueMessages(
   const byKey = new Map<string, string>();
   for (const raw of merged) {
     const t = (raw || "").trim();
-    if (!t) continue;
+    if (!t || isOptionalPortfolioSetupLabel(t)) continue;
     const key = setupIssueDedupeKey(t);
     if (!key) continue;
     const prev = byKey.get(key);
@@ -281,14 +286,17 @@ export function buildActivationChecks(detail: PayflowClientDetail): SetupCheck[]
     },
     {
       label: "Sub-Client / Portfolio",
-      done: portfolioCount > 0,
-      detail: `${portfolioCount} configured`,
+      done: true, // optional — never blocks activation
+      detail:
+        portfolioCount > 0
+          ? `${portfolioCount} configured`
+          : "Optional — accounts can sit on the parent client",
       required: false,
     },
     {
       label: "Client governance rules",
-      done: govCount > 0,
-      detail: govCount ? `${govCount} applied` : "System rules apply",
+      done: true, // optional — system rules apply by default
+      detail: govCount ? `${govCount} applied` : "Optional — system rules apply",
       required: false,
     },
   ];
@@ -327,9 +335,10 @@ export function buildOnboardingStages(detail: PayflowClientDetail): OnboardingSt
     {
       key: "portfolios",
       label: "Portfolios",
+      // Optional: never treat as incomplete/pending required work.
       done: portfolioCount > 0,
       blocked: false,
-      pending: portfolioCount === 0,
+      pending: false,
       informational: true,
       target: "portfolios",
     },

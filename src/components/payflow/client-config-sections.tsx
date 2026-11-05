@@ -834,7 +834,7 @@ export function DataSourceSection({ readOnly }: SectionProps) {
       <div className="grid gap-3 sm:grid-cols-2 max-w-3xl">
         <ChoiceCard
           title="Daily file"
-          description="Upload daily account / reminder files using client_code + sub_client_code after sub-clients exist."
+          description="Upload daily account files with client_code. sub_client_code is optional — leave blank for parent-level accounts."
           selected
           disabled={readOnly}
         />
@@ -850,8 +850,9 @@ export function DataSourceSection({ readOnly }: SectionProps) {
       <div className="rounded-lg border border-border bg-surface p-4">
         <p className="text-[13px] font-semibold text-foreground">Daily file intake</p>
         <p className="mt-1 text-[12px] text-muted-foreground">
-          Create the client and sub-clients, then upload daily files from Cases / Imports.
-          Global CRM source → PayFlow field mapping lives under Administration → System Mapping.
+          Create the client (sub-clients / portfolios optional), then upload daily files from Cases /
+          Imports. Accounts without a sub-client attach to the parent client. Global CRM → PayFlow
+          field mapping lives under Administration → System Mapping.
         </p>
       </div>
     </div>
