@@ -9,6 +9,7 @@ import type {
   PayflowAccount,
   PayflowBulkUploadResult,
   PayflowImportPreviewResponse,
+  PayflowImportJob,
   PayflowImportListResponse,
   PayflowImportRun,
   PayflowClientDetail,
@@ -350,6 +351,15 @@ export async function validatePayflowClientsBulk(file: File) {
   );
 }
 
+export async function startPayflowClientsBulkValidate(file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+  return apiRequestMultipart<PayflowImportJob>(
+    "/payflow/clients/bulk-validate/start",
+    formData,
+  );
+}
+
 export async function uploadPayflowClientsBulk(file: File) {
   const formData = new FormData();
   formData.append("file", file);
@@ -359,6 +369,17 @@ export async function uploadPayflowClientsBulk(file: File) {
   );
   invalidateCache("payflow:");
   return result;
+}
+
+export async function startPayflowClientsBulkUpload(file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const job = await apiRequestMultipart<PayflowImportJob>(
+    "/payflow/clients/bulk-upload/start",
+    formData,
+  );
+  invalidateCache("payflow:");
+  return job;
 }
 
 export function listPayflowPermissions() {
@@ -454,6 +475,15 @@ export async function validatePayflowAccountImport(file: File) {
   );
 }
 
+export async function startPayflowAccountImportValidate(file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+  return apiRequestMultipart<PayflowImportJob>(
+    "/payflow/imports/accounts/validate/start",
+    formData,
+  );
+}
+
 export async function uploadPayflowAccountImport(file: File) {
   const formData = new FormData();
   formData.append("file", file);
@@ -465,6 +495,17 @@ export async function uploadPayflowAccountImport(file: File) {
   return result;
 }
 
+export async function startPayflowAccountImportUpload(file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const job = await apiRequestMultipart<PayflowImportJob>(
+    "/payflow/imports/accounts/upload/start",
+    formData,
+  );
+  invalidateCache("payflow:");
+  return job;
+}
+
 export function listPayflowImports(params?: { type?: string }) {
   const q = new URLSearchParams();
   if (params?.type) q.set("type", params.type);
@@ -474,6 +515,40 @@ export function listPayflowImports(params?: { type?: string }) {
 
 export function getPayflowImport(importId: string | number) {
   return apiRequest<PayflowImportRun>(`/payflow/imports/${importId}`);
+}
+
+export function getPayflowImportJob(jobId: number) {
+  return apiRequest<PayflowImportJob>(`/payflow/import-jobs/${jobId}`);
+}
+
+/** Poll until import job reaches completed/failed. Calls onProgress on each tick. */
+export async function pollPayflowImportJob(
+  jobId: number,
+  onProgress?: (job: PayflowImportJob) => void,
+  opts?: { intervalMs?: number; signal?: AbortSignal },
+): Promise<PayflowImportJob> {
+  const intervalMs = opts?.intervalMs ?? 500;
+  for (;;) {
+    if (opts?.signal?.aborted) {
+      throw new DOMException("Import polling aborted", "AbortError");
+    }
+    const job = await getPayflowImportJob(jobId);
+    onProgress?.(job);
+    if (job.status === "completed" || job.status === "failed") {
+      return job;
+    }
+    await new Promise<void>((resolve, reject) => {
+      const t = window.setTimeout(() => resolve(), intervalMs);
+      opts?.signal?.addEventListener(
+        "abort",
+        () => {
+          window.clearTimeout(t);
+          reject(new DOMException("Import polling aborted", "AbortError"));
+        },
+        { once: true },
+      );
+    });
+  }
 }
 
 export function listPayflowIntegrations(params?: {
