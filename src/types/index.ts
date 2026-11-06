@@ -822,6 +822,7 @@ export interface PayflowImportErrorItem {
 
 export interface PayflowImportCounts {
   total: number;
+  processed?: number;
   created: number;
   updated: number;
   unchanged: number;
@@ -839,6 +840,20 @@ export interface PayflowImportRun {
   status: string;
   counts: PayflowImportCounts;
   errors: PayflowImportErrorItem[];
+}
+
+export interface PayflowImportJob {
+  id: number;
+  job_type: string;
+  status: "queued" | "running" | "completed" | "failed" | string;
+  file_name: string;
+  processed_count: number;
+  total_count: number;
+  import_run_id?: number | null;
+  error_message?: string | null;
+  result?: unknown;
+  created_at?: string | null;
+  completed_at?: string | null;
 }
 
 export interface PayflowImportListResponse {
