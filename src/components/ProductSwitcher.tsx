@@ -129,10 +129,10 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
   const triggerClass =
     variant === "platform"
       ? "inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 py-1 pl-1 pr-3 text-[0.82rem] font-semibold text-blue-800 dark:border-blue-400/50 dark:bg-blue-950 dark:text-blue-100"
-      : "inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] font-semibold text-slate-900 transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-500 dark:hover:bg-slate-800";
+      : "inline-flex max-w-full items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[12px] font-semibold text-slate-900 transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-500 dark:hover:bg-slate-800 sm:gap-1.5 sm:px-2.5";
 
   const rowClass =
-    "flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left text-[0.92rem] text-slate-900 hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-slate-800";
+    "flex w-full min-w-0 items-center justify-between gap-3 px-4 py-2.5 text-left text-[0.92rem] text-slate-900 hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-slate-800";
 
   const otherProducts = products.filter(
     (p) => isPlatform || p.code.toUpperCase() !== String(current).toUpperCase(),
@@ -184,7 +184,7 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
               <rect width="7" height="7" x="14" y="14" rx="1" />
               <rect width="7" height="7" x="3" y="14" rx="1" />
             </svg>
-            <span className="max-w-[88px] truncate sm:max-w-[140px]">{currentLabel}</span>
+            <span className="max-w-[4.75rem] truncate sm:max-w-[140px]">{currentLabel}</span>
             {/* ChevronsUpDown — matches Lovable product chip */}
             <svg
               viewBox="0 0 24 24"
@@ -205,7 +205,7 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
 
       {open ? (
         <div
-          className="absolute right-0 top-[calc(100%+8px)] z-40 w-[300px] max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-slate-200 bg-white py-1.5 shadow-[0_12px_32px_rgba(15,23,42,0.12)] dark:border-slate-700 dark:bg-slate-900 dark:shadow-[0_12px_32px_rgba(0,0,0,0.45)]"
+          className="fixed left-3 right-3 top-[72px] z-50 max-h-[min(70vh,calc(100dvh-5.5rem))] overflow-y-auto overflow-x-hidden rounded-xl border border-slate-200 bg-white py-1.5 shadow-[0_12px_32px_rgba(15,23,42,0.12)] dark:border-slate-700 dark:bg-slate-900 dark:shadow-[0_12px_32px_rgba(0,0,0,0.45)] sm:absolute sm:left-auto sm:right-0 sm:top-[calc(100%+8px)] sm:max-h-none sm:w-[300px] sm:max-w-[calc(100vw-1.5rem)] sm:overflow-hidden"
           role="menu"
         >
           {isPlatform && user ? (
@@ -241,7 +241,9 @@ export function ProductSwitcher({ current, variant = "product" }: Props) {
             CURRENT PRODUCT
           </div>
           <div className="flex items-center justify-between gap-3 px-4 py-2 text-[0.95rem]">
-            <span className="font-medium text-slate-900 dark:text-slate-100">{currentLabel}</span>
+            <span className="min-w-0 truncate font-medium text-slate-900 dark:text-slate-100">
+              {currentLabel}
+            </span>
             {!isPlatform ? <span className="shrink-0 text-sm font-medium text-primary">Active</span> : null}
           </div>
 

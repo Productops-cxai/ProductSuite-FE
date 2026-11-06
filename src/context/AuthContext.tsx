@@ -9,6 +9,7 @@ import {
 } from "react";
 import * as authApi from "../api/auth";
 import { ApiError, clearTokens } from "../api/client";
+import { invalidateCache } from "../lib/dedupeAsync";
 import type { LoginNextStep, LoginResponse, MeResponse, PersonBrief, ProductBrief } from "../types";
 
 type AuthState = {
@@ -63,10 +64,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const onSessionEnded = () => {
       clearTokens();
+      invalidateCache();
       setUser(null);
       setProducts([]);
       setNextStep(null);
       setLoading(false);
+      // Protected routes Navigate to /login when user is null.
+      if (
+        typeof window !== "undefined" &&
+        !window.location.pathname.startsWith("/login") &&
+        !window.location.pathname.startsWith("/activate") &&
+        !window.location.pathname.startsWith("/reset-password") &&
+        !window.location.pathname.startsWith("/pay/")
+      ) {
+        window.location.assign("/login");
+      }
     };
     window.addEventListener("ps:session-ended", onSessionEnded);
     return () => window.removeEventListener("ps:session-ended", onSessionEnded);
