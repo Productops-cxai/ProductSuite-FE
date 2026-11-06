@@ -13,12 +13,24 @@ import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { cn } from "../../lib/utils";
 import type { PayflowCommunication } from "../../types";
 
-function formatCurrency(value: number) {
+function formatCurrency(value: number | null | undefined) {
+  const amount = typeof value === "number" && Number.isFinite(value) ? value : 0;
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
     maximumFractionDigits: 0,
-  }).format(value);
+  }).format(amount);
+}
+
+function FactRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-0.5 px-4 py-2.5 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+      <dt className="shrink-0 text-[13px] text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 break-words text-[13px] font-medium text-foreground sm:max-w-[65%] sm:text-right">
+        {children}
+      </dd>
+    </div>
+  );
 }
 
 function formatStamp(value?: string | null) {
@@ -146,12 +158,6 @@ export function PayFlowCommDetailPage() {
     };
   }, [communicationId, reloadTick]);
 
-  useEffect(() => {
-    const onFocus = () => setReloadTick((n) => n + 1);
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, []);
-
   if (loading) {
     return <p className="text-sm text-muted-foreground">Loading communication…</p>;
   }
@@ -278,7 +284,7 @@ export function PayFlowCommDetailPage() {
         title={`${comm.channel} · ${comm.purpose}`}
         description={`${comm.customer_name || "Customer"} · ${comm.account_reference || "—"} · ${formatStamp(comm.sent_at || comm.created_at)}`}
         actions={
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
             <StatusPill tone={commStatusTone(comm.status)}>{comm.status}</StatusPill>
             <StatusPill>{comm.code}</StatusPill>
             {canResend ? (
@@ -287,8 +293,10 @@ export function PayFlowCommDetailPage() {
               </Btn>
             ) : null}
             {previewLink ? (
-              <a href={previewLink} target="_blank" rel="noreferrer">
-                <Btn variant="primary">Preview Payment Experience</Btn>
+              <a href={previewLink} target="_blank" rel="noreferrer" className="w-full sm:w-auto">
+                <Btn variant="primary" className="w-full sm:w-auto">
+                  Preview Payment Experience
+                </Btn>
               </a>
             ) : null}
           </div>
@@ -310,26 +318,23 @@ export function PayFlowCommDetailPage() {
         </div>
       ) : null}
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
-        <div className="space-y-5">
+      <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+        <div className="min-w-0 space-y-5">
           <Panel title="Communication Summary" bodyClassName="p-0">
             <dl className="divide-y divide-border">
               {facts.map((f) => (
-                <div key={f.label} className="flex items-center justify-between gap-4 px-4 py-2.5">
-                  <dt className="text-[13px] text-muted-foreground">{f.label}</dt>
-                  <dd className="tabular text-[13px] font-medium text-foreground">
-                    {f.label === "Workflow" && comm.strategy_id ? (
-                      <Link
-                        to={`/payflow/workflows/${comm.strategy_id}`}
-                        className="text-primary hover:underline"
-                      >
-                        {f.value}
-                      </Link>
-                    ) : (
-                      f.value
-                    )}
-                  </dd>
-                </div>
+                <FactRow key={f.label} label={f.label}>
+                  {f.label === "Workflow" && comm.strategy_id ? (
+                    <Link
+                      to={`/payflow/workflows/${comm.strategy_id}`}
+                      className="text-primary hover:underline"
+                    >
+                      {f.value}
+                    </Link>
+                  ) : (
+                    <span className="tabular">{f.value}</span>
+                  )}
+                </FactRow>
               ))}
             </dl>
           </Panel>
@@ -421,21 +426,25 @@ export function PayFlowCommDetailPage() {
           </Panel>
         </div>
 
-        <div className="space-y-5">
+        <div className="min-w-0 space-y-5">
           <Panel title="Message Preview" description="The communication as the customer sees it">
             <div className="overflow-hidden rounded-lg border border-border">
               <div className="bg-primary px-4 py-3 text-primary-foreground">
-                <p className="text-[13px] font-semibold">{brandName}</p>
+                <p className="text-[13px] font-semibold break-words">{brandName}</p>
                 {comm.subject ? (
-                  <p className="mt-0.5 text-[11px] opacity-90">{comm.subject}</p>
+                  <p className="mt-0.5 text-[11px] break-words opacity-90">{comm.subject}</p>
                 ) : null}
               </div>
               <div className="space-y-3 bg-card px-4 py-4">
-                {(comm.body_lines || []).map((line, i) => (
-                  <p key={i} className="text-[13px] leading-relaxed text-foreground">
-                    {line}
-                  </p>
-                ))}
+                {(comm.body_lines || []).length > 0 ? (
+                  (comm.body_lines || []).map((line, i) => (
+                    <p key={i} className="text-[13px] leading-relaxed break-words text-foreground">
+                      {line}
+                    </p>
+                  ))
+                ) : (
+                  <p className="text-[13px] text-muted-foreground">No message body recorded.</p>
+                )}
                 <div className="rounded-md border border-border bg-surface px-3 py-2">
                   <p className="text-[11px] text-muted-foreground">Outstanding Balance</p>
                   <p className="tabular text-[16px] font-semibold text-foreground">
@@ -492,12 +501,9 @@ export function PayFlowCommDetailPage() {
           <Panel title="Engagement metrics" bodyClassName="p-0">
             <dl className="divide-y divide-border">
               {engagementFacts.map((f) => (
-                <div key={f.label} className="flex items-center justify-between gap-4 px-4 py-2.5">
-                  <dt className="text-[13px] text-muted-foreground">{f.label}</dt>
-                  <dd className="max-w-[55%] truncate text-right tabular text-[13px] font-medium text-foreground">
-                    {f.value}
-                  </dd>
-                </div>
+                <FactRow key={f.label} label={f.label}>
+                  <span className="tabular">{f.value}</span>
+                </FactRow>
               ))}
             </dl>
             {comm.engagement_tracking === "not_available" ||
@@ -519,13 +525,17 @@ export function PayFlowCommDetailPage() {
                 {(comm.events || []).map((e, i) => (
                   <li key={`${e.label}-${i}`} className="relative">
                     <span className="absolute top-1 -left-5 size-[11px] rounded-full border-2 border-card bg-primary/70" />
-                    <div className="flex items-baseline justify-between gap-3">
-                      <p className="text-[13px] font-medium text-foreground">{e.label}</p>
+                    <div className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3">
+                      <p className="min-w-0 text-[13px] font-medium break-words text-foreground">
+                        {e.label}
+                      </p>
                       <span className="shrink-0 text-xs text-muted-foreground">
                         {formatStamp(e.at)}
                       </span>
                     </div>
-                    {e.detail ? <p className="text-xs text-muted-foreground">{e.detail}</p> : null}
+                    {e.detail ? (
+                      <p className="text-xs break-words text-muted-foreground">{e.detail}</p>
+                    ) : null}
                   </li>
                 ))}
               </ol>

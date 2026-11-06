@@ -121,7 +121,10 @@ async function parseError(res: Response): Promise<ApiError> {
       if (
         code === "session_replaced" ||
         code === "session_ended" ||
-        /another location/i.test(detail)
+        code === "refresh_expired" ||
+        /another location/i.test(detail) ||
+        /refresh token expired/i.test(detail) ||
+        /please sign in again/i.test(detail)
       ) {
         notifySessionEnded();
       }
@@ -272,12 +275,16 @@ async function tryRefresh(): Promise<boolean> {
           return false;
         }
         clearTokens();
+        // Access + refresh both dead → end the UI session (login redirect via AuthContext).
+        markSessionEnded(err.detail, err.code || "session_ended");
+        notifySessionEnded();
         return false;
       }
       // Cookies updated by Set-Cookie; ignore any JSON token fields.
       return true;
     } catch {
       clearTokens();
+      notifySessionEnded();
       return false;
     } finally {
       refreshInFlight = null;
