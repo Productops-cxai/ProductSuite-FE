@@ -55,6 +55,7 @@ import {
   CustomerPaymentPortalPage,
   CustomerPaymentResultPage,
 } from "./pages/pay/CustomerPaymentPortalPage";
+import { EmailPreferencesPage } from "./pages/pay/EmailPreferencesPage";
 
 function HomeRedirect() {
   const { loading, user, nextStep, products } = useAuth();
@@ -77,6 +78,8 @@ export default function App() {
       <Route path="/pay/:token" element={<CustomerPaymentPortalPage />} />
       <Route path="/pay/:token/checkout" element={<CustomerPaymentCheckoutPage />} />
       <Route path="/pay/:token/result" element={<CustomerPaymentResultPage />} />
+      {/* Collection email unsubscribe / resubscribe — public */}
+      <Route path="/email-preferences/:token" element={<EmailPreferencesPage />} />
 
       <Route path="/platform" element={<PlatformLayout />}>
         <Route index element={<OverviewPage />} />

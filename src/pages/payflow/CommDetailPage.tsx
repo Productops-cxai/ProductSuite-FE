@@ -80,6 +80,28 @@ function previewPayUrl(url: string | null | undefined) {
   }
 }
 
+/** Hide raw payment URLs from preview copy — the Pay Now button carries the href. */
+function previewBodyLines(lines: string[] | null | undefined, hidePayUrls: boolean) {
+  const rows = lines || [];
+  if (!hidePayUrls) return rows;
+  return rows
+    .map((line) =>
+      line
+        .replace(/https?:\/\/[^\s<>"']*\/pay\/[^\s<>"']+/gi, "")
+        .replace(/\s*[:\-–]\s*$/g, "")
+        .trimEnd(),
+    )
+    .filter((line) => {
+      const t = line.trim();
+      if (!t) return true;
+      if (/^https?:\/\/\S+$/i.test(t)) return false;
+      if (/^(pay(?:\s+securely|\s+here)?|pay now|set up your plan)\s*[:\-–]?\s*$/i.test(t)) {
+        return false;
+      }
+      return true;
+    });
+}
+
 function engagementLabel(c: PayflowCommunication) {
   if (c.engagement_tracking === "not_available") return "Not available";
   if (c.engagement == null || c.engagement === "") return "Not trackable";
@@ -436,15 +458,19 @@ export function PayFlowCommDetailPage() {
                 ) : null}
               </div>
               <div className="space-y-3 bg-card px-4 py-4">
-                {(comm.body_lines || []).length > 0 ? (
-                  (comm.body_lines || []).map((line, i) => (
+                {(() => {
+                  const lines = previewBodyLines(comm.body_lines, Boolean(comm.payment_link));
+                  if (lines.length === 0) {
+                    return (
+                      <p className="text-[13px] text-muted-foreground">No message body recorded.</p>
+                    );
+                  }
+                  return lines.map((line, i) => (
                     <p key={i} className="text-[13px] leading-relaxed break-words text-foreground">
                       {line}
                     </p>
-                  ))
-                ) : (
-                  <p className="text-[13px] text-muted-foreground">No message body recorded.</p>
-                )}
+                  ));
+                })()}
                 <div className="rounded-md border border-border bg-surface px-3 py-2">
                   <p className="text-[11px] text-muted-foreground">Outstanding Balance</p>
                   <p className="tabular text-[16px] font-semibold text-foreground">
@@ -455,7 +481,7 @@ export function PayFlowCommDetailPage() {
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <a
-                        href={payLink || "#"}
+                        href={previewLink || payLink || "#"}
                         target="_blank"
                         rel="noreferrer"
                         className={cn(
@@ -484,8 +510,7 @@ export function PayFlowCommDetailPage() {
                       )}
                     </div>
                     <p className="mt-1.5 text-[11px] text-muted-foreground">
-                      Unique secure payment link · opens the branded customer payment portal at
-                      /pay/…
+                      Customer email shows this Pay Now button only — no raw URL in the message.
                     </p>
                   </div>
                 ) : null}
