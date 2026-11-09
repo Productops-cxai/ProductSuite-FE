@@ -221,6 +221,12 @@ export interface UpdatePayflowClientPayload {
     min_plan_amount?: number;
     stripe_payments_enabled?: boolean;
     accepted_currencies?: string[];
+    plan_limits?: Array<{
+      id?: string;
+      min_balance?: number;
+      max_balance?: number | null;
+      max_term_months?: number;
+    }>;
   };
   mappings?: {
     source_field: string;

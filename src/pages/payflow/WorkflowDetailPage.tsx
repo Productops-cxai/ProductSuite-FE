@@ -283,9 +283,14 @@ export function PayFlowWorkflowDetailPage() {
     }
   }
 
-  /** Reject / regenerate using the sidebar note (Lovable: panel note feeds this action). */
+  /**
+   * Reject writes history on this workflow, then regenerates a new AI Proposed version
+   * from those remarks. Active → Under Review (same id, runs stopped); other statuses
+   * reset to AI Proposed / Draft before regenerate.
+   */
   async function runReject(note: string) {
     if (!strategy) return;
+    const rejectingActive = strategy.status === "Active";
     const shouldRegen = regeneratesOnReject(strategy);
     if (shouldRegen && note.trim().length < 3) {
       setError("Remarks of at least 3 characters are required to regenerate.");
@@ -301,7 +306,11 @@ export function PayFlowWorkflowDetailPage() {
         const regenerated = ensureStepLinks(
           await regeneratePayflowWorkflow(strategy.id, { remarks: note.trim() }),
         );
-        setNotice("Regeneration requested. PayFlow will propose a revised strategy.");
+        setNotice(
+          rejectingActive
+            ? "Rejected to Under Review (history kept). Regenerated a new AI Proposed workflow from your remarks."
+            : "Regeneration requested. PayFlow will propose a revised strategy.",
+        );
         navigate(`/payflow/workflows/${regenerated.id}`);
         return;
       }
@@ -545,7 +554,7 @@ export function PayFlowWorkflowDetailPage() {
                   variant="danger"
                   disabled={busy}
                   onClick={() => {
-                    // Sidebar "Note for PayFlow" feeds Reject / regeneration.
+                    // Sidebar note feeds Reject / regeneration (Active → Under Review + new version).
                     if (isAiGenerated && rejectNote.trim().length >= 3) {
                       void runReject(rejectNote);
                       return;
@@ -922,7 +931,11 @@ export function PayFlowWorkflowDetailPage() {
             <Panel title="Request regeneration">
               <Field
                 label="Note for PayFlow"
-                hint="Optional. Explain what should change, then use Reject / Request Regeneration."
+                hint={
+                  isActive
+                    ? "Required (≥3 chars). Active workflow stays Under Review with history; AI regenerates a new proposed version."
+                    : "Optional. Explain what should change, then use Reject / Request Regeneration."
+                }
               >
                 <TextArea
                   value={rejectNote}
@@ -1012,13 +1025,13 @@ export function PayFlowWorkflowDetailPage() {
       />
       <WorkflowActionNoteModal
         open={noteAction === "reject"}
-        title={
-          isAiGenerated ? "Reject & regenerate" : "Reject workflow"
-        }
+        title={isAiGenerated ? "Reject & regenerate" : "Reject workflow"}
         description={
-          isAiGenerated
-            ? "Your remarks are sent to PayFlow AI to regenerate a new AI Proposed workflow."
-            : "Explain what should change. Status will return to Draft."
+          isActive
+            ? "This Active workflow returns to Under Review (execution stops, history kept). Your remarks regenerate a new AI Proposed workflow."
+            : isAiGenerated
+              ? "Your remarks are sent to PayFlow AI to regenerate a new AI Proposed workflow."
+              : "Explain what should change. Status will return to Draft."
         }
         confirmLabel={isAiGenerated ? "Reject & regenerate" : "Reject"}
         busy={busy}

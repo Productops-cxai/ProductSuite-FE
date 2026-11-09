@@ -81,7 +81,67 @@ export interface ClientDraftConfig {
     stripe_payments_enabled: boolean;
     /** Comma-separated ISO codes; empty = allow case/client currency only (no extra list). */
     accepted_currencies: string;
+    /** Balance tiers that cap how long a payment plan may run. */
+    plan_limits: PlanLimitRule[];
   };
+}
+
+/** Balance tier that limits how long a payment plan may run. */
+export interface PlanLimitRule {
+  id: string;
+  min_balance: number;
+  max_balance: number | null;
+  max_term_months: number;
+}
+
+/** Best-practice limits auto-created when payment plans are switched on. */
+export const DEFAULT_PLAN_LIMITS: PlanLimitRule[] = [
+  { id: "pl-1", min_balance: 0, max_balance: 500, max_term_months: 3 },
+  { id: "pl-2", min_balance: 500, max_balance: 1000, max_term_months: 5 },
+  { id: "pl-3", min_balance: 1000, max_balance: 2000, max_term_months: 6 },
+  { id: "pl-4", min_balance: 2000, max_balance: null, max_term_months: 12 },
+];
+
+const PLAN_LIMIT_TO_OPTIONS = ["500", "1000", "2000", "No limit"];
+const PLAN_LIMIT_TERM_OPTIONS = ["3 months", "5 months", "6 months", "9 months", "12 months"];
+
+function formatPlanLimitMoney(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function normalizePlanLimits(raw: unknown): PlanLimitRule[] {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return DEFAULT_PLAN_LIMITS.map((r) => ({ ...r }));
+  }
+  const out: PlanLimitRule[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    const item = raw[i];
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    const minRaw = row.min_balance ?? row.minBalance;
+    const maxRaw = row.max_balance ?? row.maxBalance;
+    const termRaw = row.max_term_months ?? row.maxTermMonths;
+    const min_balance = Number(minRaw ?? 0);
+    if (!Number.isFinite(min_balance)) continue;
+    let max_balance: number | null = null;
+    if (maxRaw !== null && maxRaw !== undefined && maxRaw !== "" && maxRaw !== "No limit") {
+      const n = Number(maxRaw);
+      if (!Number.isFinite(n)) continue;
+      max_balance = n;
+    }
+    const max_term_months = Math.max(1, Math.min(36, Number(termRaw) || 12));
+    out.push({
+      id: String(row.id || `pl-${i + 1}`),
+      min_balance,
+      max_balance,
+      max_term_months,
+    });
+  }
+  return out.length ? out : DEFAULT_PLAN_LIMITS.map((r) => ({ ...r }));
 }
 
 export interface ClientDraft {
@@ -216,6 +276,7 @@ export function emptyDraft(): ClientDraft {
         min_plan_amount: 100,
         stripe_payments_enabled: true,
         accepted_currencies: "",
+        plan_limits: DEFAULT_PLAN_LIMITS.map((r) => ({ ...r })),
       },
     },
   };
@@ -263,6 +324,7 @@ export function draftFromDetail(
       min_plan_amount?: number;
       stripe_payments_enabled?: boolean;
       accepted_currencies?: string[] | string;
+      plan_limits?: unknown;
     } | null;
   },
 ): ClientDraft {
@@ -318,6 +380,7 @@ export function draftFromDetail(
         min_plan_amount: Number(ps.min_plan_amount ?? 100),
         stripe_payments_enabled: ps.stripe_payments_enabled !== false,
         accepted_currencies: acceptedList,
+        plan_limits: normalizePlanLimits(ps.plan_limits),
       },
     },
   };
@@ -367,6 +430,12 @@ export function draftToUpdatePayload(draft: ClientDraft) {
         .split(",")
         .map((c) => c.trim().toUpperCase())
         .filter(Boolean),
+      plan_limits: draft.config.paymentSettings.plan_limits.map((r) => ({
+        id: r.id,
+        min_balance: r.min_balance,
+        max_balance: r.max_balance,
+        max_term_months: r.max_term_months,
+      })),
     },
     mappings: draft.config.mappings.map((m) => ({
       source_field: m.sourceField,
@@ -382,6 +451,37 @@ export function draftToUpdatePayload(draft: ClientDraft) {
 
 export function PaymentSettingsSection({ draft, patchConfig, readOnly }: SectionProps) {
   const ps = draft.config.paymentSettings;
+  const planLimits = ps.plan_limits?.length
+    ? ps.plan_limits
+    : DEFAULT_PLAN_LIMITS.map((r) => ({ ...r }));
+
+  const patchPs = (p: Partial<typeof ps>) =>
+    patchConfig({ paymentSettings: { ...ps, ...p } });
+
+  const patchRule = (id: string, p: Partial<PlanLimitRule>) =>
+    patchPs({
+      plan_limits: planLimits.map((r) => (r.id === id ? { ...r, ...p } : r)),
+    });
+
+  const addRule = () => {
+    const last = planLimits[planLimits.length - 1];
+    patchPs({
+      plan_limits: [
+        ...planLimits.map((r) =>
+          r.max_balance === null
+            ? { ...r, max_balance: (last?.min_balance ?? 0) + 1000 }
+            : r,
+        ),
+        {
+          id: `pl-${Date.now()}`,
+          min_balance: (last?.max_balance ?? last?.min_balance ?? 0) || 0,
+          max_balance: null,
+          max_term_months: 12,
+        },
+      ],
+    });
+  };
+
   return (
     <div className="space-y-4">
       <div>
@@ -396,23 +496,145 @@ export function PaymentSettingsSection({ draft, patchConfig, readOnly }: Section
         description="Customer can enter an amount within configured limits"
         checked={ps.allow_partial}
         onChange={
-          readOnly
-            ? undefined
-            : (v) => patchConfig({ paymentSettings: { ...ps, allow_partial: v } })
+          readOnly ? undefined : (v) => patchPs({ allow_partial: v })
         }
         disabled={readOnly}
       />
+      {ps.allow_partial ? (
+        <div className="sm:max-w-xs">
+          <Field label="Minimum partial amount">
+            <TextInput
+              value={String(ps.min_partial_amount)}
+              onChange={(v) =>
+                !readOnly &&
+                patchPs({ min_partial_amount: Math.max(0, Number(v) || 0) })
+              }
+              disabled={readOnly}
+            />
+          </Field>
+        </div>
+      ) : null}
       <ToggleRow
         label="Allow payment plans"
-        description="Show installment schedule options on the portal"
+        description="Show instalment schedule options on the portal"
         checked={ps.allow_plans}
         onChange={
           readOnly
             ? undefined
-            : (v) => patchConfig({ paymentSettings: { ...ps, allow_plans: v } })
+            : (v) =>
+                patchPs({
+                  allow_plans: v,
+                  plan_limits:
+                    v && (!ps.plan_limits || ps.plan_limits.length === 0)
+                      ? DEFAULT_PLAN_LIMITS.map((r) => ({ ...r }))
+                      : ps.plan_limits,
+                })
         }
         disabled={readOnly}
       />
+      {ps.allow_plans ? (
+        <div className="space-y-3 pt-1">
+          <div className="sm:max-w-xs">
+            <Field label="Minimum plan total">
+              <TextInput
+                value={String(ps.min_plan_amount)}
+                onChange={(v) =>
+                  !readOnly &&
+                  patchPs({ min_plan_amount: Math.max(0, Number(v) || 0) })
+                }
+                disabled={readOnly}
+              />
+            </Field>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[13px] font-semibold text-foreground">Payment plan limits</p>
+              <p className="text-[11px] text-muted-foreground">
+                How long a plan may run, based on the customer&apos;s balance. Applied
+                automatically on the payment page.
+              </p>
+            </div>
+            {!readOnly ? <Btn onClick={addRule}>+ Add limit</Btn> : null}
+          </div>
+          <div className="overflow-hidden rounded-lg border border-border">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-border bg-surface">
+                  <th className="px-3 py-2 text-[11px] font-semibold text-muted-foreground">
+                    If balance is
+                  </th>
+                  <th className="px-3 py-2 text-[11px] font-semibold text-muted-foreground">To</th>
+                  <th className="px-3 py-2 text-[11px] font-semibold text-muted-foreground">
+                    Allow plans up to
+                  </th>
+                  <th className="w-10 px-3 py-2" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {planLimits.map((rule) => (
+                  <tr key={rule.id}>
+                    <td className="px-3 py-2">
+                      <span className="tabular text-[13px] font-medium text-foreground">
+                        {rule.min_balance === 0
+                          ? "Up to"
+                          : `Greater than ${formatPlanLimitMoney(rule.min_balance)}`}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">
+                      <SelectInput
+                        value={
+                          rule.max_balance === null ? "No limit" : String(rule.max_balance)
+                        }
+                        options={PLAN_LIMIT_TO_OPTIONS}
+                        disabled={readOnly}
+                        onChange={(v) =>
+                          !readOnly &&
+                          patchRule(rule.id, {
+                            max_balance: v === "No limit" ? null : Number(v),
+                          })
+                        }
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <SelectInput
+                        value={`${rule.max_term_months} months`}
+                        options={PLAN_LIMIT_TERM_OPTIONS}
+                        disabled={readOnly}
+                        onChange={(v) =>
+                          !readOnly &&
+                          patchRule(rule.id, {
+                            max_term_months: Number(v.split(" ")[0]) || 12,
+                          })
+                        }
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {!readOnly ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            patchPs({
+                              plan_limits: planLimits.filter((r) => r.id !== rule.id),
+                            })
+                          }
+                          className="text-[12px] font-medium text-muted-foreground transition-colors hover:text-destructive"
+                          aria-label="Remove limit"
+                        >
+                          Remove
+                        </button>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            Example: a balance greater than {formatPlanLimitMoney(1000)} can be paid over up to 6
+            months. The payment page suggests the best-practice plan within these limits.
+          </p>
+        </div>
+      ) : null}
       <ToggleRow
         label="Enable Stripe online payments"
         description="When off, this client cannot start Checkout even if platform Stripe keys are set"
@@ -420,44 +642,14 @@ export function PaymentSettingsSection({ draft, patchConfig, readOnly }: Section
         onChange={
           readOnly
             ? undefined
-            : (v) =>
-                patchConfig({ paymentSettings: { ...ps, stripe_payments_enabled: v } })
+            : (v) => patchPs({ stripe_payments_enabled: v })
         }
         disabled={readOnly}
       />
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Minimum partial amount">
-          <TextInput
-            value={String(ps.min_partial_amount)}
-            onChange={(v) =>
-              !readOnly &&
-              patchConfig({
-                paymentSettings: { ...ps, min_partial_amount: Math.max(0, Number(v) || 0) },
-              })
-            }
-            disabled={readOnly}
-          />
-        </Field>
-        <Field label="Minimum plan total">
-          <TextInput
-            value={String(ps.min_plan_amount)}
-            onChange={(v) =>
-              !readOnly &&
-              patchConfig({
-                paymentSettings: { ...ps, min_plan_amount: Math.max(0, Number(v) || 0) },
-              })
-            }
-            disabled={readOnly}
-          />
-        </Field>
-      </div>
       <Field label="Accepted currencies (optional)">
         <TextInput
           value={ps.accepted_currencies}
-          onChange={(v) =>
-            !readOnly &&
-            patchConfig({ paymentSettings: { ...ps, accepted_currencies: v } })
-          }
+          onChange={(v) => !readOnly && patchPs({ accepted_currencies: v })}
           disabled={readOnly}
           placeholder="e.g. CAD, USD — leave blank to use case currency"
         />
