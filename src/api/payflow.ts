@@ -454,6 +454,13 @@ export function getPayflowAccount(accountId: number) {
   return apiRequest<PayflowAccount>(`/payflow/accounts/${accountId}`);
 }
 
+export function updatePayflowAccountEmailConsent(accountId: number, emailConsent: boolean) {
+  return apiRequest<PayflowAccount>(`/payflow/accounts/${accountId}/email-consent/update`, {
+    method: "POST",
+    body: { email_consent: emailConsent },
+  });
+}
+
 export async function downloadPayflowAccountImportTemplate() {
   const blob = await apiRequestBlob("/payflow/imports/accounts/template");
   const url = window.URL.createObjectURL(blob);

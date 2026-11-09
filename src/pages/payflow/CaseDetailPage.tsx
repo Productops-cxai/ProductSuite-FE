@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import {
@@ -13,6 +13,7 @@ import {
   revokePayflowPaymentLink,
   sendPayflowManualEmail,
   sendPayflowManualSms,
+  updatePayflowAccountEmailConsent,
 } from "../../api/payflow";
 import { WorkflowFlowPanel } from "../../components/payflow/WorkflowFlowPanel";
 import {
@@ -273,7 +274,7 @@ function FactRows({ rows }: { rows: { label: string; value: string }[] }) {
   );
 }
 
-function DetailGrid({ rows }: { rows: { label: string; value: string }[] }) {
+function DetailGrid({ rows }: { rows: { label: string; value: ReactNode }[] }) {
   return (
     <dl className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
       {rows.map((f) => (
@@ -329,6 +330,8 @@ export function PayFlowCaseDetailPage() {
   const [revokingId, setRevokingId] = useState<number | null>(null);
   const [reassessing, setReassessing] = useState(false);
   const [reassessMsg, setReassessMsg] = useState("");
+  const [consentBusy, setConsentBusy] = useState(false);
+  const [consentError, setConsentError] = useState("");
 
   useEffect(() => {
     const id = Number(accountId);
@@ -455,6 +458,22 @@ export function PayFlowCaseDetailPage() {
     eligibility?.email?.eligibility_status !== "Blocked";
 
   const canRevokeLink = hasPermission("send_communications");
+  const canToggleEmailConsent = hasPermission("send_communications");
+
+  async function handleEmailConsentToggle(next: boolean) {
+    if (!account || consentBusy) return;
+    setConsentBusy(true);
+    setConsentError("");
+    try {
+      const updated = await updatePayflowAccountEmailConsent(account.id, next);
+      setAccount(updated);
+      setCommsRefresh((n) => n + 1);
+    } catch (err) {
+      setConsentError(err instanceof ApiError ? err.detail : "Failed to update email consent");
+    } finally {
+      setConsentBusy(false);
+    }
+  }
 
   async function handleCopyPaymentLink(link: PayflowPaymentLink) {
     if (!link.is_usable || !link.url) return;
@@ -768,7 +787,42 @@ export function PayFlowCaseDetailPage() {
     { label: "Region", value: account.region || "—" },
     { label: "Country", value: account.country_code || "—" },
     { label: "Email", value: account.email || "—" },
-    { label: "Email consent", value: yn(account.email_consent) },
+    {
+      label: "Email consent",
+      value: canToggleEmailConsent ? (
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span>{yn(account.email_consent)}</span>
+            {account.email_consent === false ? (
+              <Btn
+                variant="secondary"
+                disabled={consentBusy}
+                onClick={() => void handleEmailConsentToggle(true)}
+              >
+                {consentBusy ? "Saving…" : "Restore consent"}
+              </Btn>
+            ) : (
+              <Btn
+                variant="secondary"
+                disabled={consentBusy}
+                onClick={() => void handleEmailConsentToggle(false)}
+              >
+                {consentBusy ? "Saving…" : "Mark unsubscribed"}
+              </Btn>
+            )}
+          </div>
+          {consentError ? (
+            <p className="text-[12px] font-normal text-destructive">{consentError}</p>
+          ) : (
+            <p className="text-[11px] font-normal text-muted-foreground">
+              Customer can also change this via the unsubscribe link in emails.
+            </p>
+          )}
+        </div>
+      ) : (
+        yn(account.email_consent)
+      ),
+    },
     { label: "Mobile", value: account.phone_mobile || "—" },
     { label: "Work phone", value: account.phone_work || "—" },
     { label: "Provincial / communication hold", value: yn(account.provincial_hold) },
