@@ -8,7 +8,7 @@ import {
   deletePayflowWorkflow,
   getPayflowWorkflow,
   listPayflowWorkflows,
-  regeneratePayflowWorkflow,
+  rejectAndRegeneratePayflowWorkflow,
   rejectPayflowWorkflow,
   savePayflowWorkflowDraft,
   submitPayflowWorkflowReview,
@@ -286,7 +286,8 @@ export function PayFlowWorkflowDetailPage() {
   /**
    * Reject writes history on this workflow, then regenerates a new AI Proposed version
    * from those remarks. Active → Under Review (same id, runs stopped); other statuses
-   * reset to AI Proposed / Draft before regenerate.
+   * reset to AI Proposed / Draft before regenerate. Regen uses one BE call to avoid
+   * proxy timeouts that the browser reports as CORS.
    */
   async function runReject(note: string) {
     if (!strategy) return;
@@ -300,11 +301,10 @@ export function PayFlowWorkflowDetailPage() {
     setBusy(true);
     setError("");
     try {
-      await rejectPayflowWorkflow(strategy.id, { note: note || undefined });
       setRejectNote("");
       if (shouldRegen) {
         const regenerated = ensureStepLinks(
-          await regeneratePayflowWorkflow(strategy.id, { remarks: note.trim() }),
+          await rejectAndRegeneratePayflowWorkflow(strategy.id, { remarks: note.trim() }),
         );
         setNotice(
           rejectingActive
@@ -314,12 +314,25 @@ export function PayFlowWorkflowDetailPage() {
         navigate(`/payflow/workflows/${regenerated.id}`);
         return;
       }
-      const refreshed = ensureStepLinks(await getPayflowWorkflow(strategy.id));
-      setStrategy(refreshed);
+      const rejected = ensureStepLinks(
+        await rejectPayflowWorkflow(strategy.id, { note: note || undefined }),
+      );
+      setStrategy(rejected);
       setPendingSteps(null);
       setNotice("Returned for changes. Status reset; history is retained.");
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Reject / regenerate failed");
+      const detail =
+        err instanceof ApiError
+          ? err.detail
+          : "Reject / regenerate failed (network or timeout). If the workflow was rejected, open it and try Regenerate again.";
+      setError(detail);
+      try {
+        const refreshed = ensureStepLinks(await getPayflowWorkflow(strategy.id));
+        setStrategy(refreshed);
+        setPendingSteps(null);
+      } catch {
+        /* ignore refresh failure */
+      }
     } finally {
       setBusy(false);
       setNoteAction(null);
