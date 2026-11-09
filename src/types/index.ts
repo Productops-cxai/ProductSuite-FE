@@ -1288,8 +1288,6 @@ export interface PayflowStrategy {
   last_updated_label?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
-  /** True when reject-regenerate queued AI regenerate in the background. */
-  regeneration_pending?: boolean | null;
 }
 
 export interface PayflowStrategiesSummary {

@@ -117,13 +117,11 @@ export function PayFlowWorkflowsPage() {
 
   const filtered = useMemo(() => {
     return strategies.filter((s) => {
-      // Hide superseded regenerations unless the user explicitly filters Inactive.
-      if (status === "All Statuses" && s.status === "Inactive") return false;
       if (client !== "All Clients" && s.client_name !== client) return false;
       if (portfolio !== "All Portfolios" && s.portfolio_name !== portfolio) return false;
       return true;
     });
-  }, [strategies, client, portfolio, status]);
+  }, [strategies, client, portfolio]);
 
   const filterKey = `${search}|${client}|${portfolio}|${status}`;
   const { pageItems: rows, total, offset, pageSize, goPrev, goNext } = useClientPagedList(
@@ -276,22 +274,16 @@ export function PayFlowWorkflowsPage() {
                   )}
 
                   <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                    {/* Avoid double-status: Under Review + origin "AI Proposed" looks broken. */}
-                    {s.origin === "Human Modified" || s.origin === "Human Created" ? (
-                      <StatusPill tone={originTone(s.origin)}>{s.origin}</StatusPill>
-                    ) : null}
+                    <StatusPill tone={originTone(s.origin)}>{s.origin}</StatusPill>
                     {s.human_modified && s.origin !== "Human Modified" && (
                       <StatusPill tone="info">Human Modified</StatusPill>
                     )}
-                    {s.source === "AI Generated" ? (
+                    {s.source === "AI Generated" && s.origin !== "AI Proposed" && (
                       <StatusPill tone="ai">AI Generated</StatusPill>
-                    ) : null}
-                    {s.source === "Human Created" && s.origin !== "Human Created" ? (
+                    )}
+                    {s.source === "Human Created" && (
                       <StatusPill>Human Created</StatusPill>
-                    ) : null}
-                    {s.revision_of_id ? (
-                      <StatusPill tone="info">Revision of #{s.revision_of_id}</StatusPill>
-                    ) : null}
+                    )}
                     <StatusPill>v{s.version}</StatusPill>
                   </div>
                   <div className="mt-2 flex items-center justify-between border-t border-border/60 pt-2 text-[11.5px] text-muted-foreground">
