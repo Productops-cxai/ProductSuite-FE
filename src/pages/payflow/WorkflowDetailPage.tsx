@@ -8,6 +8,7 @@ import {
   deletePayflowWorkflow,
   getPayflowWorkflow,
   listPayflowWorkflows,
+  getLatestPayflowWorkflowRevision,
   rejectAndRegeneratePayflowWorkflow,
   rejectPayflowWorkflow,
   savePayflowWorkflowDraft,
@@ -284,10 +285,8 @@ export function PayFlowWorkflowDetailPage() {
   }
 
   /**
-   * Reject writes history on this workflow, then regenerates a new AI Proposed version
-   * from those remarks. Active → Under Review (same id, runs stopped); other statuses
-   * reset to AI Proposed / Draft before regenerate. Regen uses one BE call to avoid
-   * proxy timeouts that the browser reports as CORS.
+   * Reject writes history on this workflow immediately; AI regenerate runs in the
+   * background (avoids nginx 504). Active → Under Review on the same id.
    */
   async function runReject(note: string) {
     if (!strategy) return;
@@ -300,22 +299,43 @@ export function PayFlowWorkflowDetailPage() {
     }
     setBusy(true);
     setError("");
+    const parentId = strategy.id;
     try {
       setRejectNote("");
       if (shouldRegen) {
-        const regenerated = ensureStepLinks(
-          await rejectAndRegeneratePayflowWorkflow(strategy.id, { remarks: note.trim() }),
+        const rejected = ensureStepLinks(
+          await rejectAndRegeneratePayflowWorkflow(parentId, { remarks: note.trim() }),
         );
+        setStrategy(rejected);
+        setPendingSteps(null);
+        setBusy(false);
+        setNoteAction(null);
         setNotice(
           rejectingActive
-            ? "Rejected to Under Review (history kept). Regenerated a new AI Proposed workflow from your remarks."
-            : "Regeneration requested. PayFlow will propose a revised strategy.",
+            ? "Rejected to Under Review (history kept). Regenerating a new AI Proposed workflow…"
+            : "Rejected. Regenerating a new AI Proposed workflow…",
         );
-        navigate(`/payflow/workflows/${regenerated.id}`);
+        // Poll for the background regenerate child (proxy no longer waits on Groq).
+        const deadline = Date.now() + 180_000;
+        while (Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 2500));
+          try {
+            const child = ensureStepLinks(await getLatestPayflowWorkflowRevision(parentId));
+            setNotice("Regeneration ready. Opening the new AI Proposed workflow.");
+            navigate(`/payflow/workflows/${child.id}`);
+            return;
+          } catch (pollErr) {
+            if (pollErr instanceof ApiError && pollErr.status === 404) continue;
+            if (pollErr instanceof ApiError && pollErr.status === 401) throw pollErr;
+          }
+        }
+        setNotice(
+          "Rejected and history saved. Regeneration is still running — refresh workflows in a minute, or open this workflow and try again.",
+        );
         return;
       }
       const rejected = ensureStepLinks(
-        await rejectPayflowWorkflow(strategy.id, { note: note || undefined }),
+        await rejectPayflowWorkflow(parentId, { note: note || undefined }),
       );
       setStrategy(rejected);
       setPendingSteps(null);
@@ -324,10 +344,10 @@ export function PayFlowWorkflowDetailPage() {
       const detail =
         err instanceof ApiError
           ? err.detail
-          : "Reject / regenerate failed (network or timeout). If the workflow was rejected, open it and try Regenerate again.";
+          : "Reject / regenerate failed (network or timeout). If the workflow was rejected, refresh and check status.";
       setError(detail);
       try {
-        const refreshed = ensureStepLinks(await getPayflowWorkflow(strategy.id));
+        const refreshed = ensureStepLinks(await getPayflowWorkflow(parentId));
         setStrategy(refreshed);
         setPendingSteps(null);
       } catch {

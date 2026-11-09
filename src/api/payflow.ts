@@ -882,7 +882,10 @@ export async function regeneratePayflowWorkflow(
   });
 }
 
-/** Reject (history on same workflow) + regenerate in one call — avoids proxy/CORS drops on a long second request. */
+/**
+ * Reject immediately (history on same workflow) and queue AI regenerate in the background.
+ * Response is the rejected workflow with regeneration_pending; poll latest-revision for the child.
+ */
 export async function rejectAndRegeneratePayflowWorkflow(
   strategyId: number,
   payload: { remarks: string },
@@ -891,6 +894,14 @@ export async function rejectAndRegeneratePayflowWorkflow(
     method: "POST",
     body: payload,
   });
+}
+
+/** Newest workflow regenerated from strategyId, or throws ApiError 404 while still pending. */
+export async function getLatestPayflowWorkflowRevision(strategyId: number) {
+  return apiRequest<PayflowStrategy>(
+    `/payflow/workflows/${strategyId}/latest-revision`,
+    { method: "GET" },
+  );
 }
 
 /** AI writes / rewrites email & SMS step text. Status & origin stay unchanged. */
