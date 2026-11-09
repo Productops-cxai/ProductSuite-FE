@@ -882,6 +882,17 @@ export async function regeneratePayflowWorkflow(
   });
 }
 
+/** Reject (history on same workflow) + regenerate in one call — avoids proxy/CORS drops on a long second request. */
+export async function rejectAndRegeneratePayflowWorkflow(
+  strategyId: number,
+  payload: { remarks: string },
+) {
+  return apiRequest<PayflowStrategy>(`/payflow/workflows/${strategyId}/reject-regenerate`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
 /** AI writes / rewrites email & SMS step text. Status & origin stay unchanged. */
 export async function writePayflowWorkflowMessages(
   strategyId: number,
