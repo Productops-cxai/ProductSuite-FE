@@ -8,8 +8,7 @@ import {
   deletePayflowWorkflow,
   getPayflowWorkflow,
   listPayflowWorkflows,
-  getLatestPayflowWorkflowRevision,
-  rejectAndRegeneratePayflowWorkflow,
+  regeneratePayflowWorkflow,
   rejectPayflowWorkflow,
   savePayflowWorkflowDraft,
   submitPayflowWorkflowReview,
@@ -284,13 +283,9 @@ export function PayFlowWorkflowDetailPage() {
     }
   }
 
-  /**
-   * Reject writes history on this workflow immediately; AI regenerate runs in the
-   * background (avoids nginx 504). Active → Under Review on the same id.
-   */
+  /** Reject / regenerate using the sidebar note (Lovable: panel note feeds this action). */
   async function runReject(note: string) {
     if (!strategy) return;
-    const rejectingActive = strategy.status === "Active";
     const shouldRegen = regeneratesOnReject(strategy);
     if (shouldRegen && note.trim().length < 3) {
       setError("Remarks of at least 3 characters are required to regenerate.");
@@ -299,60 +294,23 @@ export function PayFlowWorkflowDetailPage() {
     }
     setBusy(true);
     setError("");
-    const parentId = strategy.id;
     try {
+      await rejectPayflowWorkflow(strategy.id, { note: note || undefined });
       setRejectNote("");
       if (shouldRegen) {
-        const rejected = ensureStepLinks(
-          await rejectAndRegeneratePayflowWorkflow(parentId, { remarks: note.trim() }),
+        const regenerated = ensureStepLinks(
+          await regeneratePayflowWorkflow(strategy.id, { remarks: note.trim() }),
         );
-        setStrategy(rejected);
-        setPendingSteps(null);
-        setBusy(false);
-        setNoteAction(null);
-        setNotice(
-          rejectingActive
-            ? "Rejected to Under Review (history kept). Regenerating a new AI Proposed workflow…"
-            : "Rejected. Regenerating a new AI Proposed workflow…",
-        );
-        // Poll for the background regenerate child (proxy no longer waits on Groq).
-        const deadline = Date.now() + 180_000;
-        while (Date.now() < deadline) {
-          await new Promise((r) => setTimeout(r, 2500));
-          try {
-            const child = ensureStepLinks(await getLatestPayflowWorkflowRevision(parentId));
-            setNotice("Regeneration ready. Opening the new AI Proposed workflow.");
-            navigate(`/payflow/workflows/${child.id}`);
-            return;
-          } catch (pollErr) {
-            if (pollErr instanceof ApiError && pollErr.status === 404) continue;
-            if (pollErr instanceof ApiError && pollErr.status === 401) throw pollErr;
-          }
-        }
-        setNotice(
-          "Rejected and history saved. Regeneration is still running — refresh workflows in a minute, or open this workflow and try again.",
-        );
+        setNotice("Regeneration requested. PayFlow will propose a revised strategy.");
+        navigate(`/payflow/workflows/${regenerated.id}`);
         return;
       }
-      const rejected = ensureStepLinks(
-        await rejectPayflowWorkflow(parentId, { note: note || undefined }),
-      );
-      setStrategy(rejected);
+      const refreshed = ensureStepLinks(await getPayflowWorkflow(strategy.id));
+      setStrategy(refreshed);
       setPendingSteps(null);
       setNotice("Returned for changes. Status reset; history is retained.");
     } catch (err) {
-      const detail =
-        err instanceof ApiError
-          ? err.detail
-          : "Reject / regenerate failed (network or timeout). If the workflow was rejected, refresh and check status.";
-      setError(detail);
-      try {
-        const refreshed = ensureStepLinks(await getPayflowWorkflow(parentId));
-        setStrategy(refreshed);
-        setPendingSteps(null);
-      } catch {
-        /* ignore refresh failure */
-      }
+      setError(err instanceof ApiError ? err.detail : "Reject / regenerate failed");
     } finally {
       setBusy(false);
       setNoteAction(null);
@@ -587,7 +545,7 @@ export function PayFlowWorkflowDetailPage() {
                   variant="danger"
                   disabled={busy}
                   onClick={() => {
-                    // Sidebar note feeds Reject / regeneration (Active → Under Review + new version).
+                    // Sidebar "Note for PayFlow" feeds Reject / regeneration.
                     if (isAiGenerated && rejectNote.trim().length >= 3) {
                       void runReject(rejectNote);
                       return;
@@ -964,11 +922,7 @@ export function PayFlowWorkflowDetailPage() {
             <Panel title="Request regeneration">
               <Field
                 label="Note for PayFlow"
-                hint={
-                  isActive
-                    ? "Required (≥3 chars). Active workflow stays Under Review with history; AI regenerates a new proposed version."
-                    : "Optional. Explain what should change, then use Reject / Request Regeneration."
-                }
+                hint="Optional. Explain what should change, then use Reject / Request Regeneration."
               >
                 <TextArea
                   value={rejectNote}
@@ -1060,11 +1014,9 @@ export function PayFlowWorkflowDetailPage() {
         open={noteAction === "reject"}
         title={isAiGenerated ? "Reject & regenerate" : "Reject workflow"}
         description={
-          isActive
-            ? "This Active workflow returns to Under Review (execution stops, history kept). Your remarks regenerate a new AI Proposed workflow."
-            : isAiGenerated
-              ? "Your remarks are sent to PayFlow AI to regenerate a new AI Proposed workflow."
-              : "Explain what should change. Status will return to Draft."
+          isAiGenerated
+            ? "Your remarks are sent to PayFlow AI to regenerate a new AI Proposed workflow."
+            : "Explain what should change. Status will return to Draft."
         }
         confirmLabel={isAiGenerated ? "Reject & regenerate" : "Reject"}
         busy={busy}
