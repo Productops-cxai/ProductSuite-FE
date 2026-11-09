@@ -17,17 +17,9 @@ import type {
 } from "../../types";
 import { resolveAvatarUrl } from "../../components/ui/UserAvatar";
 
-type PortalStep =
-  | "options"
-  | "full"
-  | "partial"
-  | "plan-frequency"
-  | "plan-schedule"
-  | "plan-amount"
-  | "next"
-  | "review";
+type PortalStep = "options" | "full" | "partial" | "plan" | "next" | "review";
 
-type PlanFrequency = "daily" | "weekly" | "monthly";
+type PlanFrequency = "weekly" | "bi_weekly" | "monthly";
 
 const PLAN_FREQUENCIES: Array<{
   id: PlanFrequency;
@@ -35,12 +27,17 @@ const PLAN_FREQUENCIES: Array<{
   description: string;
   every: string;
 }> = [
-  { id: "daily", title: "Daily", description: "Small amounts, paid each day", every: "every day" },
   {
     id: "weekly",
     title: "Weekly",
     description: "Sync with a weekly pay cycle",
     every: "every week",
+  },
+  {
+    id: "bi_weekly",
+    title: "Bi-Weekly",
+    description: "Matches a fortnightly pay cycle",
+    every: "every two weeks",
   },
   {
     id: "monthly",
@@ -298,9 +295,7 @@ export function CustomerPaymentPortalPage() {
   const [partialAmount, setPartialAmount] = useState("");
   const [initiating, setInitiating] = useState(false);
   const [actionError, setActionError] = useState("");
-  const [planFrequency, setPlanFrequency] = useState<PlanFrequency>("weekly");
-  const [planStartMode, setPlanStartMode] = useState<"today" | "custom">("today");
-  const [planStartDate, setPlanStartDate] = useState(todayISO());
+  const [planFrequency, setPlanFrequency] = useState<PlanFrequency>("monthly");
   const [planAmountInput, setPlanAmountInput] = useState("");
   const [planQuote, setPlanQuote] = useState<PayflowPlanQuote | null>(null);
   const [planQuoteError, setPlanQuoteError] = useState("");
@@ -414,8 +409,20 @@ export function CustomerPaymentPortalPage() {
 
   const remainingAfterPartial = Math.max(outstanding - partialValue, 0);
 
-  const effectiveStartDate = planStartMode === "today" ? todayISO() : planStartDate;
-  const freqMeta = PLAN_FREQUENCIES.find((f) => f.id === planFrequency) || PLAN_FREQUENCIES[1];
+  const effectiveStartDate = todayISO();
+  const freqMeta =
+    PLAN_FREQUENCIES.find((f) => f.id === planFrequency) || PLAN_FREQUENCIES[2]!;
+  const planAmountNum = Number(planAmountInput);
+  const planMin = planQuote?.min_installment ?? 0;
+  const cycleValid =
+    planAmountInput.trim() !== "" &&
+    Number.isFinite(planAmountNum) &&
+    planAmountNum > 0 &&
+    (planMin <= 0 || planAmountNum + 1e-9 >= planMin) &&
+    Boolean(planQuote) &&
+    !planQuoteError &&
+    !quoting &&
+    Math.abs((planQuote?.installment_amount ?? 0) - planAmountNum) < 0.009;
 
   const chargeAmount = useMemo(() => {
     if (!selected || !portal) return null;
@@ -440,11 +447,11 @@ export function CustomerPaymentPortalPage() {
   const outlineBtn =
     "w-full rounded-lg border border-border-strong bg-card px-4 py-3 text-[14px] font-medium text-foreground transition-colors hover:bg-surface";
 
-  // Seed suggested amount once when landing on plan-amount — never overwrite while typing.
+  // Seed min/suggested when entering plan or changing frequency — do not overwrite typed amount.
   useEffect(() => {
-    if (step !== "plan-amount" || !token || !planOpt) return;
-    if (planAmountInput.trim() !== "") return;
+    if (step !== "plan" || !token || !planOpt) return;
     let cancelled = false;
+    setQuoting(true);
     quotePaymentPlan(token, {
       frequency: planFrequency,
       start_date: effectiveStartDate,
@@ -452,12 +459,17 @@ export function CustomerPaymentPortalPage() {
       .then((q) => {
         if (cancelled) return;
         setPlanQuote(q);
-        setPlanAmountInput(String(q.suggested_installment));
         setPlanQuoteError("");
+        if (planAmountInput.trim() === "") {
+          setPlanAmountInput(String(q.min_installment ?? q.suggested_installment));
+        }
       })
       .catch((err) => {
         if (cancelled) return;
         setPlanQuoteError(err instanceof ApiError ? err.detail : "Unable to calculate plan");
+      })
+      .finally(() => {
+        if (!cancelled) setQuoting(false);
       });
     return () => {
       cancelled = true;
@@ -466,14 +478,11 @@ export function CustomerPaymentPortalPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, token, planOpt, planFrequency, effectiveStartDate]);
 
-  // Live quote from whatever amount the user typed (no clamp to suggested).
+  // Live quote from whatever amount the user typed.
   useEffect(() => {
-    if (step !== "plan-amount" || !token || !planOpt) return;
+    if (step !== "plan" || !token || !planOpt) return;
     const amountNum = Number(planAmountInput);
     if (!Number.isFinite(amountNum) || amountNum <= 0 || planAmountInput.trim() === "") {
-      setPlanQuote(null);
-      setPlanQuoteError("");
-      setQuoting(false);
       return;
     }
     let cancelled = false;
@@ -491,7 +500,7 @@ export function CustomerPaymentPortalPage() {
         })
         .catch((err) => {
           if (cancelled) return;
-          setPlanQuote(null);
+          // Keep prior quote so min_installment / summary stay available while amount is invalid.
           setPlanQuoteError(err instanceof ApiError ? err.detail : "Unable to calculate plan");
         })
         .finally(() => {
@@ -514,14 +523,12 @@ export function CustomerPaymentPortalPage() {
   function startPlanFlow() {
     if (!planOpt) return;
     setSelectedId(planOpt.id);
-    setPlanFrequency("weekly");
-    setPlanStartMode("today");
-    setPlanStartDate(todayISO());
+    setPlanFrequency("monthly");
     setPlanAmountInput("");
     setPlanQuote(null);
     setPlanQuoteError("");
     setActionError("");
-    setStep("plan-frequency");
+    setStep("plan");
   }
 
   async function handleConfirmPay() {
@@ -789,133 +796,122 @@ export function CustomerPaymentPortalPage() {
         </StepCard>
       )}
 
-      {step === "plan-frequency" && planOpt && (
-        <StepCard title="Select how often you would like to pay" onBack={() => setStep("options")}>
-          <p className="text-[13px] leading-relaxed text-muted-foreground">
-            Tip: sync your payment plan to your pay cycle to stay on top of your balance.
-          </p>
-          <div className="space-y-2.5">
-            {PLAN_FREQUENCIES.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                onClick={() => {
-                  setPlanFrequency(option.id);
-                  setPlanAmountInput("");
-                  setPlanQuote(null);
-                  setStep("plan-schedule");
-                }}
-                className={cn(
-                  "w-full rounded-lg border px-4 py-3 text-left transition-colors",
-                  planFrequency === option.id
-                    ? "border-foreground bg-card"
-                    : "border-border bg-card hover:bg-surface",
-                )}
-              >
-                <p className="text-[14px] font-semibold text-foreground">{option.title}</p>
-                <p className="mt-0.5 text-[13px] text-muted-foreground">{option.description}</p>
-              </button>
-            ))}
-          </div>
-          <p className="text-[12px] leading-relaxed text-muted-foreground">{PLAN_NOTE}</p>
-        </StepCard>
-      )}
-
-      {step === "plan-schedule" && planOpt && (
-        <StepCard title="Schedule your payment plan" onBack={() => setStep("plan-frequency")}>
-          <p className="text-[13px] leading-relaxed text-muted-foreground">
-            Select when you would like your {freqMeta.title.toLowerCase()} payments to start.
-          </p>
-          <button
-            type="button"
-            className={accentBtn}
-            onClick={() => {
-              setPlanStartMode("today");
-              setPlanStartDate(todayISO());
-              setStep("plan-amount");
-            }}
-          >
-            Start today
-          </button>
-          <div className="space-y-2">
-            <label htmlFor="plan-start" className="block text-[13px] font-medium text-foreground">
-              Or pick a custom start date
-            </label>
-            <input
-              id="plan-start"
-              type="date"
-              value={planStartDate}
-              min={todayISO()}
-              onChange={(e) => {
-                setPlanStartDate(e.target.value || todayISO());
-                setPlanStartMode("custom");
-              }}
-              className="w-full rounded-lg border border-border-strong bg-card px-3 py-2.5 text-[15px] text-foreground outline-none"
-            />
-            <button
-              type="button"
-              className={outlineBtn}
-              onClick={() => {
-                setPlanStartMode("custom");
-                setStep("plan-amount");
-              }}
-            >
-              Continue with {formatDateLabel(planStartDate)}
-            </button>
-          </div>
-        </StepCard>
-      )}
-
-      {step === "plan-amount" && planOpt && (
-        <StepCard title="Set the instalment amount" onBack={() => setStep("plan-schedule")}>
+      {step === "plan" && planOpt && (
+        <StepCard title="Set up a payment plan" onBack={() => setStep("options")}>
           <Row label="Outstanding Balance" value={formatMoney(outstanding, currency)} />
           <div>
+            <p className="mb-1.5 text-[13px] font-medium text-foreground">
+              How often would you like to pay?
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              {PLAN_FREQUENCIES.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  aria-pressed={planFrequency === option.id}
+                  onClick={() => {
+                    if (option.id === planFrequency) return;
+                    setPlanFrequency(option.id);
+                    setPlanAmountInput("");
+                    setPlanQuote(null);
+                    setPlanQuoteError("");
+                  }}
+                  className={cn(
+                    "rounded-lg border px-3 py-2.5 text-[14px] font-semibold transition-colors",
+                    planFrequency === option.id
+                      ? "border-foreground bg-card text-foreground ring-1 ring-foreground/15"
+                      : "border-border bg-card text-muted-foreground hover:bg-surface",
+                  )}
+                >
+                  {option.title}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
             <label
-              htmlFor="installment-amount"
+              htmlFor="plan-cycle"
               className="mb-1.5 block text-[13px] font-medium text-foreground"
             >
-              Enter the regular amount you would like to pay {freqMeta.every}
+              Amount you would like to pay {freqMeta.every}
             </label>
             <div className="flex items-center gap-2 rounded-lg border border-border-strong bg-card px-3 py-2.5">
               <span className="text-[15px] text-muted-foreground">$</span>
               <input
-                id="installment-amount"
+                id="plan-cycle"
                 inputMode="decimal"
                 value={planAmountInput}
                 onChange={(e) => setPlanAmountInput(e.target.value.replace(/[^0-9.]/g, ""))}
-                placeholder={
-                  planQuote ? String(planQuote.suggested_installment) : "0.00"
-                }
+                placeholder={planMin > 0 ? String(planMin) : "0.00"}
                 className="tabular w-full bg-transparent text-[15px] text-foreground outline-none"
               />
             </div>
-            <p className="mt-1.5 text-[12px] text-muted-foreground">
-              Suggested:{" "}
-              {formatMoney(planQuote?.suggested_installment || 0, currency)} {freqMeta.every}
+            <p
+              className={cn(
+                "mt-1.5 text-[12px]",
+                planAmountInput && !cycleValid ? "text-warning" : "text-muted-foreground",
+              )}
+            >
+              Minimum {formatMoney(planMin || 0, currency)} {freqMeta.every} for this balance.
             </p>
+            {planQuoteError ? (
+              <p className="mt-1 text-[12px] text-destructive">{planQuoteError}</p>
+            ) : null}
           </div>
-          {planQuoteError ? (
-            <p className="text-[12px] text-destructive">{planQuoteError}</p>
+          {cycleValid && planQuote ? (
+            <div className="rounded-lg border border-border bg-card px-4 py-3">
+              <p className="text-[13px] font-semibold text-foreground">Your plan</p>
+              <div className="mt-2 space-y-1.5 text-[13px]">
+                <div className="flex justify-between gap-3">
+                  <span className="text-muted-foreground">Payment</span>
+                  <span className="tabular font-semibold text-foreground">
+                    {formatMoney(planQuote.installment_amount, currency)} {freqMeta.every}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-muted-foreground">Number of payments</span>
+                  <span className="tabular font-semibold text-foreground">
+                    {quoting ? "…" : planQuote.installments_total}
+                  </span>
+                </div>
+                {planQuote.final_installment_amount != null &&
+                Math.abs(planQuote.final_installment_amount - planQuote.installment_amount) >
+                  0.009 ? (
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">Final payment amount</span>
+                    <span className="tabular font-semibold text-foreground">
+                      {formatMoney(planQuote.final_installment_amount, currency)}
+                    </span>
+                  </div>
+                ) : null}
+                <div className="flex justify-between gap-3">
+                  <span className="text-muted-foreground">First payment</span>
+                  <span className="tabular text-foreground">
+                    {formatDateLabel(planQuote.first_payment_date)}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-muted-foreground">Final payment</span>
+                  <span className="tabular text-foreground">
+                    {formatDateLabel(planQuote.final_payment_date)}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-3 border-t border-border pt-1.5">
+                  <span className="text-muted-foreground">Plan total</span>
+                  <span className="tabular font-semibold text-foreground">
+                    {formatMoney(planQuote.total_payable ?? outstanding, currency)}
+                  </span>
+                </div>
+              </div>
+            </div>
           ) : null}
-          <Row
-            label="Number of Payments"
-            value={quoting ? "…" : String(planQuote?.installments_total ?? "—")}
-          />
-          <Row
-            label="First Payment"
-            value={quoting ? "…" : formatDateLabel(planQuote?.first_payment_date)}
-          />
-          <Row
-            label="Final Payment"
-            value={quoting ? "…" : formatDateLabel(planQuote?.final_payment_date)}
-          />
           <button
             type="button"
-            className={accentBtn}
-            disabled={!planQuote || Boolean(planQuoteError)}
+            className={cn(accentBtn, !cycleValid && "pointer-events-none opacity-50")}
+            disabled={!cycleValid}
             onClick={() => goReview(planOpt)}
           >
-            Continue
+            Continue with this plan
           </button>
           <p className="text-[12px] leading-relaxed text-muted-foreground">{PLAN_NOTE}</p>
         </StepCard>
@@ -942,7 +938,7 @@ export function CustomerPaymentPortalPage() {
           title={selected.type === "payment_plan" ? "Payment Plan Review" : "Payment Summary"}
           onBack={() => {
             if (selected.type === "partial") setStep("partial");
-            else if (selected.type === "payment_plan") setStep("plan-amount");
+            else if (selected.type === "payment_plan") setStep("plan");
             else if (selected.type === "pay_next_instalment") setStep("next");
             else setStep("full");
           }}

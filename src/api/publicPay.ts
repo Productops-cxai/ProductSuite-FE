@@ -16,8 +16,12 @@ export function resolvePaymentPortal(token: string, opts?: { preview?: boolean }
 export type PayflowPlanQuote = {
   frequency: string;
   suggested_installment: number;
+  min_installment?: number;
+  max_term_months?: number;
+  max_installments?: number;
   installment_amount: number;
   installments_total: number;
+  final_installment_amount?: number;
   total_payable: number;
   currency_code: string;
   start_date: string;

@@ -4,7 +4,16 @@ import { ApiError } from "../../api/client";
 import { getPayflowDashboard } from "../../api/payflow";
 import { PageHeader, Panel, KpiCard, KpiGrid, FilterBar, FilterSelect } from "../../components/payflow-ui";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
-import type { PayflowDashboardResponse } from "../../types";
+import { cn } from "../../lib/utils";
+import type { PayflowDashboardFunnelStep, PayflowDashboardResponse } from "../../types";
+
+function formatNumber(n: number) {
+  return new Intl.NumberFormat("en-US").format(n);
+}
+
+function funnelValue(funnel: PayflowDashboardFunnelStep[], label: string) {
+  return funnel.find((s) => s.label === label)?.value ?? 0;
+}
 
 const pillTone: Record<string, string> = {
   peach:
@@ -54,6 +63,7 @@ export function PayFlowDashboardPage() {
   const [funnelDate, setFunnelDate] = useState("today");
   const [funnelChannel, setFunnelChannel] = useState("all");
   const [funnelWorkflow, setFunnelWorkflow] = useState("all");
+  const [funnelExpanded, setFunnelExpanded] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -100,6 +110,10 @@ export function PayFlowDashboardPage() {
   useEffect(() => {
     setFunnelChannel(channel);
   }, [channel]);
+
+  useEffect(() => {
+    setFunnelExpanded(null);
+  }, [funnelClientId, funnelDate, funnelChannel, funnelWorkflow]);
 
   const clientOptions = [
     { value: "all", label: "All Clients" },
@@ -224,7 +238,7 @@ export function PayFlowDashboardPage() {
 
       <Panel
         title="Communication to Payment Performance"
-        description="Conversion from outreach to completed payment."
+        description="Conversion from outreach to completed payment, with address validity and inbox placement"
       >
         <FilterBar className="mb-3">
           <FilterSelect
@@ -265,73 +279,205 @@ export function PayFlowDashboardPage() {
             No communication activity for this filter scope.
           </p>
         ) : (
-          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-3 xl:grid-cols-6">
-            {data.funnel.map((step) => {
-              const body = (
-                <>
-                  <div className="flex min-w-0 items-center gap-1">
-                    <span className="tabular shrink-0 text-[10px] font-semibold text-slate-400">
-                      {step.step}
-                    </span>
-                    <span
-                      className={`truncate text-[11px] font-semibold sm:text-[11.5px] ${
-                        step.paid ? "text-emerald-600" : "text-slate-800 dark:text-slate-100"
-                      }`}
-                    >
-                      {step.label}
-                    </span>
-                  </div>
-                  <p className="tabular mt-1.5 text-[17px] font-bold leading-none tracking-tight text-slate-900 sm:mt-2 sm:text-[19px] dark:text-slate-50">
-                    {step.display}
-                  </p>
-                  <div className="mt-2 h-1 overflow-hidden rounded-full bg-slate-100 sm:mt-2.5 sm:h-1.5 dark:bg-slate-800">
-                    <span
-                      className={`block h-full rounded-full ${
-                        step.paid
+          (() => {
+            const bd = data.funnel_breakdown;
+            const sent = bd?.sent ?? funnelValue(data.funnel, "Sent");
+            const delivered = bd?.delivered ?? funnelValue(data.funnel, "Delivered");
+            const valid = bd?.valid_addresses ?? sent;
+            const invalid = bd?.invalid_addresses ?? 0;
+            const totalRecords = valid + invalid;
+            const showPlacement =
+              (bd?.placement_available ?? true) &&
+              (funnelChannel === "all" || funnelChannel.toLowerCase() === "email");
+            const placement = bd?.placement?.length
+              ? bd.placement
+              : [
+                  { label: "Inbox", volume: delivered },
+                  { label: "Spam", volume: 0 },
+                  { label: "Promotions", volume: 0 },
+                ];
+
+            const main = [
+              {
+                key: "records",
+                label: "Total Records",
+                volume: totalRecords,
+                sub: "records received",
+                href: null as string | null,
+                paid: false,
+              },
+              ...data.funnel
+                .filter((s) => s.label !== "Sent")
+                .map((s) => ({
+                  key: s.label,
+                  label: s.label,
+                  volume: s.value,
+                  sub: "",
+                  href: s.href || null,
+                  paid: Boolean(s.paid),
+                })),
+            ];
+            const pct = (n: number, d: number) => (d ? `${((n / d) * 100).toFixed(1)}%` : "0%");
+            const breakdown =
+              funnelExpanded === "records"
+                ? [
+                    {
+                      label: "Valid Addresses",
+                      volume: valid,
+                      of: totalRecords,
+                      tone: "bg-primary",
+                    },
+                    {
+                      label: "Invalid Addresses",
+                      volume: invalid,
+                      of: totalRecords,
+                      tone: "bg-amber-500",
+                    },
+                    {
+                      label: "Sent",
+                      volume: sent,
+                      of: valid || 1,
+                      tone: "bg-slate-800 dark:bg-slate-300",
+                    },
+                  ]
+                : funnelExpanded === "Delivered" && showPlacement
+                  ? placement.map((p) => ({
+                      label: p.label,
+                      volume: p.volume,
+                      of: delivered,
+                      tone:
+                        p.label === "Inbox"
                           ? "bg-teal-500"
-                          : step.bar >= 100
-                            ? "bg-slate-800 dark:bg-slate-300"
-                            : "bg-primary"
-                      }`}
-                      style={{ width: `${step.bar}%` }}
-                    />
-                  </div>
-                  <div className="mt-1.5 flex items-baseline justify-between gap-1 sm:mt-2 sm:gap-2">
-                    {step.rate ? (
+                          : p.label === "Spam"
+                            ? "bg-amber-500"
+                            : "bg-primary",
+                    }))
+                  : null;
+
+            return (
+              <>
+                <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-700 sm:grid-cols-3 lg:grid-cols-6">
+                  {main.map((m, i) => {
+                    const expandable =
+                      m.key === "records" || (m.key === "Delivered" && showPlacement);
+                    const isOpen = funnelExpanded === m.key;
+                    const prev = i > 0 ? main[i - 1]!.volume : 0;
+                    const barBase = totalRecords || main[0]?.volume || 1;
+                    const body = (
                       <>
-                        <span className="tabular text-[11px] font-semibold text-primary sm:text-[11.5px]">
-                          {step.rate}
-                        </span>
-                        <span className="tabular text-[10px] text-slate-400 sm:text-[10.5px]">
-                          {step.drop}
-                        </span>
+                        <div className="flex items-center justify-between gap-1.5">
+                          <span
+                            className={cn(
+                              "truncate text-[11px] font-semibold sm:text-[11.5px]",
+                              m.paid
+                                ? "text-emerald-600"
+                                : "text-slate-800 dark:text-slate-100",
+                            )}
+                          >
+                            {m.label}
+                          </span>
+                          {expandable ? (
+                            <span className="shrink-0 text-[10.5px] text-slate-400">
+                              {isOpen ? "▴" : "▾"}
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className="tabular mt-1.5 text-[17px] font-bold leading-none tracking-tight text-slate-900 sm:mt-2 sm:text-[19px] dark:text-slate-50">
+                          {formatNumber(m.volume)}
+                        </p>
+                        <div className="mt-2 h-1 overflow-hidden rounded-full bg-slate-100 sm:mt-2.5 sm:h-1.5 dark:bg-slate-800">
+                          <span
+                            className={cn(
+                              "block h-full rounded-full",
+                              m.paid
+                                ? "bg-teal-500"
+                                : i === 0
+                                  ? "bg-slate-800 dark:bg-slate-300"
+                                  : "bg-primary",
+                            )}
+                            style={{
+                              width: `${Math.max(5, (m.volume / barBase) * 100)}%`,
+                            }}
+                          />
+                        </div>
+                        <p className="tabular mt-1.5 text-[10px] text-slate-400 sm:mt-2 sm:text-[10.5px]">
+                          {i === 0 ? m.sub : `${pct(m.volume, prev)} of previous`}
+                        </p>
                       </>
+                    );
+                    const cls = cn(
+                      "block bg-white px-3 py-2.5 text-left transition hover:bg-slate-50 sm:px-4 sm:py-3.5 dark:bg-slate-900 dark:hover:bg-slate-800",
+                      isOpen && "bg-slate-50 ring-1 ring-inset ring-primary/40 dark:bg-slate-800",
+                    );
+                    if (expandable) {
+                      return (
+                        <button
+                          key={m.key}
+                          type="button"
+                          className={cls}
+                          onClick={() => setFunnelExpanded(isOpen ? null : m.key)}
+                        >
+                          {body}
+                        </button>
+                      );
+                    }
+                    return m.href ? (
+                      <Link key={m.key} to={m.href} className={cls}>
+                        {body}
+                      </Link>
                     ) : (
-                      <span className="tabular text-[11px] font-semibold text-primary sm:text-[11.5px]">
-                        Start
-                      </span>
-                    )}
-                  </div>
-                </>
-              );
-              return step.href ? (
-                <Link
-                  key={step.label}
-                  to={step.href}
-                  className="block bg-white px-3 py-2.5 transition hover:bg-slate-50 sm:px-4 sm:py-3.5 dark:bg-slate-900 dark:hover:bg-slate-800"
-                >
-                  {body}
-                </Link>
-              ) : (
-                <div
-                  className="bg-white px-3 py-2.5 sm:px-4 sm:py-3.5 dark:bg-slate-900"
-                  key={step.label}
-                >
-                  {body}
+                      <div key={m.key} className={cls}>
+                        {body}
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
-          </div>
+                {breakdown ? (
+                  <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-950/60">
+                    <p className="mb-2.5 text-[11.5px] font-semibold text-slate-800 dark:text-slate-100">
+                      {funnelExpanded === "records"
+                        ? "Total Records breakdown"
+                        : "Delivered where (email)"}
+                    </p>
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      {breakdown.map((b) => (
+                        <div
+                          key={b.label}
+                          className="rounded-md border border-slate-200 bg-white px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900"
+                        >
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="text-[11.5px] text-slate-500 dark:text-slate-400">
+                              {b.label}
+                            </span>
+                            <span className="tabular text-[10.5px] text-slate-400">
+                              {pct(b.volume, b.of)}
+                            </span>
+                          </div>
+                          <p className="tabular mt-1 text-[16px] font-bold text-slate-900 dark:text-slate-50">
+                            {formatNumber(b.volume)}
+                          </p>
+                          <div className="mt-2 h-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                            <div
+                              className={cn("h-full rounded-full", b.tone)}
+                              style={{
+                                width: `${b.of ? (b.volume / b.of) * 100 : 0}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {funnelExpanded === "Delivered" ? (
+                      <p className="mt-2 text-[10.5px] text-slate-400">
+                        Placement uses open/click signals when available; otherwise delivered volume
+                        is shown under Inbox.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </>
+            );
+          })()
         )}
       </Panel>
 

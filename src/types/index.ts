@@ -576,6 +576,12 @@ export interface PayflowClientDetail extends PayflowClient {
     min_plan_amount?: number;
     stripe_payments_enabled?: boolean;
     accepted_currencies?: string[] | string;
+    plan_limits?: Array<{
+      id?: string;
+      min_balance?: number;
+      max_balance?: number | null;
+      max_term_months?: number;
+    }>;
   } | null;
   mappings: PayflowClientMapping[];
   mapping_summary: PayflowClientMappingSummary;
@@ -1691,6 +1697,20 @@ export interface PayflowDashboardFunnelStep {
   href?: string | null;
 }
 
+export interface PayflowDashboardFunnelPlacement {
+  label: string;
+  volume: number;
+}
+
+export interface PayflowDashboardFunnelBreakdown {
+  valid_addresses: number;
+  invalid_addresses: number;
+  sent: number;
+  delivered: number;
+  placement_available: boolean;
+  placement: PayflowDashboardFunnelPlacement[];
+}
+
 export interface PayflowDashboardOutcome {
   id: string;
   label: string;
@@ -1739,6 +1759,7 @@ export interface PayflowDashboardResponse {
   kpis: PayflowDashboardKpi[];
   attention: PayflowDashboardAttention[];
   funnel: PayflowDashboardFunnelStep[];
+  funnel_breakdown?: PayflowDashboardFunnelBreakdown | null;
   outcomes: PayflowDashboardOutcome[];
   clients_attention: PayflowDashboardClientAttention[];
   activity: PayflowDashboardActivity[];
