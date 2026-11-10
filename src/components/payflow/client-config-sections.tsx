@@ -863,26 +863,23 @@ export function ProfileSection({ draft, patch, patchConfig, readOnly }: SectionP
             />
           </Field>
           <Field label="Phone *">
-           <TextInput
-             value={`+1${draft.config.contactPhone || ""}`}
-             onChange={(v) => {
-             const digits = v.replace(/\D/g, "").replace(/^1/, "").slice(0, 15);
-             patchConfig({ contactPhone: digits });
-            }}
-            placeholder="+112345679123456"
-            disabled={readOnly}
-           />
+  <TextInput
+    value={`+1${draft.config.contactPhone || ""}`}
+    placeholder="+1 123-456-7799"
+    onChange={(v) => {
+      const digits = v.replace(/\D/g, "").replace(/^1/, "").slice(0, 10);
+      patchConfig({ contactPhone: digits });
+    }}
+    
+    disabled={readOnly}
+  />
 
-           <div className="text-[11px] text-muted-foreground">
-            Enter exactly 15 digits after the +1 country code.
-           </div>
-
-           {draft.config.contactPhone?.length !== 15 && (
-            <div className="text-[11px] text-red-500">
-            Phone number must contain exactly 15 digits after +1.
-           </div>
-           )}
-         </Field>
+    {draft.config.contactPhone?.length !== 10 && (
+    <div className="text-[11px] text-red-500">
+      Phone number must contain exactly 10 digits after +1.
+    </div>
+  )}
+</Field>
         </div>
       </div>
 

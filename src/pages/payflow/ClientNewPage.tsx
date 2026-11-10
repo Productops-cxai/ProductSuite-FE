@@ -109,7 +109,7 @@ export function PayFlowClientNewPage() {
 
   async function ensureDraftSaved(): Promise<number> {
     const payload = draftToUpdatePayload(draft);
-    if(!payload.name || !payload.code || !payload.client_type || !payload.contact_name || !payload.contact_email || !payload.contact_phone || !payload.correspondence_language || !payload.country || !payload.currency_code ) {
+    if(!payload.name || !payload.code || !payload.client_type || !payload.contact_name || !payload.contact_email || !payload.contact_phone?.length>9 || !payload.correspondence_language || !payload.country || !payload.currency_code ) {
       throw new ApiError(400, "Please enter all the mandatory fields before proceeding");
     }
     if (!payload.name || !payload.code) {
