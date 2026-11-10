@@ -63,16 +63,17 @@ export function PayFlowClientNewPage() {
   const [activatedName, setActivatedName] = useState<string | null>(null);
 
   useEffect(() => {
-    void Promise.all([
-      listPayflowUsers(),
-      getPayflowClientMappingCatalog(),
-    ])
-      .then(([users, catalog]) => {
-        setSupervisors(
-          (users.users || []).filter((u) => u.role_scope === "client_scoped"),
-        );
-        setGovernanceRules(catalog.governance_rules || []);
-      })
+    // Loaded separately: someone who may create clients but not manage users gets
+    // a 403 on the user list, and that must not also empty the governance rules.
+    listPayflowUsers()
+      .then((users) =>
+        setSupervisors((users.users || []).filter((u) => u.role_scope === "client_scoped")),
+      )
+      .catch(() => {
+        /* no user list: the creator is assigned to the client by the API */
+      });
+    getPayflowClientMappingCatalog()
+      .then((catalog) => setGovernanceRules(catalog.governance_rules || []))
       .catch(() => {
         /* non-blocking for initial render */
       });

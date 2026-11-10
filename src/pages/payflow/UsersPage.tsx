@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   createPayflowRole,
@@ -653,12 +653,21 @@ function RolePermissionsInline({
   onError: (msg: string | null) => void;
 }) {
   const role = roles.find((r) => r.id === roleId);
+  // What the user has ticked so far. Each click builds on this (not on the last
+  // server answer), and saves go out one after another: two quick clicks used to
+  // start from the same stale list, so the second save undid the first.
+  const [ticked, setTicked] = useState<string[] | null>(null);
+  const saves = useRef<Promise<unknown>>(Promise.resolve());
+  useEffect(() => {
+    setTicked(null);
+  }, [roleId]);
   if (!role) return null;
 
   // Only Ops Admin may edit; platform-wide is always view-only.
   const editable = canEdit && role.scope === "client_scoped";
   const allCodes = groups.flatMap((g) => g.permissions.map((p) => p.code));
-  const selected = role.scope === "platform_wide" ? allCodes : role.permission_codes || [];
+  const selected =
+    role.scope === "platform_wide" ? allCodes : (ticked ?? role.permission_codes ?? []);
 
   return (
     <div className="mt-4 rounded-lg border border-border bg-surface px-3.5 py-3">
@@ -690,9 +699,12 @@ function RolePermissionsInline({
             return;
           }
           onError(null);
-          updatePayflowRole(role.id, { permission_codes: next })
+          setTicked(next);
+          saves.current = saves.current
+            .then(() => updatePayflowRole(role.id, { permission_codes: next }))
             .then((res) => onRolesChanged(res.roles))
             .catch((err: unknown) => {
+              setTicked(null); // show what the server really has
               onError(err instanceof Error ? err.message : "Failed to update role");
             });
         }}

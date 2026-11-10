@@ -6,7 +6,11 @@ import { AuthShell } from "../components/auth/AuthShell";
 import { Button } from "../components/ui/Button";
 import { PasswordInput } from "../components/ui/PasswordInput";
 import { useAuth } from "../context/AuthContext";
-import { pathForNextStep, resolvePostAuthDestination } from "../lib/productRouting";
+import {
+  pathForNextStep,
+  resolvePostAuthDestination,
+  takeReturnPath,
+} from "../lib/productRouting";
 import { ui } from "../lib/ui";
 
 export function LoginPage() {
@@ -39,7 +43,10 @@ export function LoginPage() {
       const data = await login(email.trim(), password);
       void keepSignedIn;
       const dest = await resolvePostAuthDestination(data.next_step, data.products);
-      navigate(dest, { replace: true });
+      // Signed out in the middle of something (session expired): go back to that
+      // page. Its own guards still decide whether this account may see it.
+      const back = dest === "/no-access" ? null : takeReturnPath();
+      navigate(back || dest, { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Unable to sign in");
     } finally {

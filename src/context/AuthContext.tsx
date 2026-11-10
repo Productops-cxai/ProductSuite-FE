@@ -10,6 +10,7 @@ import {
 import * as authApi from "../api/auth";
 import { ApiError, clearTokens } from "../api/client";
 import { invalidateCache } from "../lib/dedupeAsync";
+import { rememberReturnPath } from "../lib/productRouting";
 import type { LoginNextStep, LoginResponse, MeResponse, PersonBrief, ProductBrief } from "../types";
 
 type AuthState = {
@@ -75,8 +76,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         !window.location.pathname.startsWith("/login") &&
         !window.location.pathname.startsWith("/activate") &&
         !window.location.pathname.startsWith("/reset-password") &&
-        !window.location.pathname.startsWith("/pay/")
+        !window.location.pathname.startsWith("/pay/") &&
+        // Customers arrive here from the unsubscribe link in an email: no staff session.
+        !window.location.pathname.startsWith("/email-preferences/")
       ) {
+        rememberReturnPath(window.location.pathname + window.location.search);
         window.location.assign("/login");
       }
     };

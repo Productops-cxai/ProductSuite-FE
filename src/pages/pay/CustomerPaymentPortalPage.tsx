@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import {
@@ -65,6 +65,27 @@ function formatMoney(amount: number, currency: string) {
   } catch {
     return `${amount.toFixed(2)} ${currency}`;
   }
+}
+
+/** "$", "CA$", "€" … for the amount box, in the account's own currency. */
+function currencySymbol(currency: string) {
+  try {
+    const parts = new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: currency || "USD",
+    }).formatToParts(0);
+    return parts.find((p) => p.type === "currency")?.value || currency;
+  } catch {
+    return currency;
+  }
+}
+
+/** Typed amount: digits, one decimal point, at most two decimals (cents). */
+function cleanAmountInput(raw: string) {
+  const digits = raw.replace(/[^0-9.]/g, "");
+  const dot = digits.indexOf(".");
+  if (dot === -1) return digits;
+  return digits.slice(0, dot + 1) + digits.slice(dot + 1).replace(/\./g, "").slice(0, 2);
 }
 
 function formatDateLabel(value?: string | null) {
@@ -294,6 +315,9 @@ export function CustomerPaymentPortalPage() {
   const [selectedId, setSelectedId] = useState<string>("");
   const [partialAmount, setPartialAmount] = useState("");
   const [initiating, setInitiating] = useState(false);
+  // One id per visit to this page. The same choice sent twice (double click, retry
+  // after a slow response) carries the same key, so the server starts one payment.
+  const visitId = useRef(Math.random().toString(36).slice(2, 10));
   const [actionError, setActionError] = useState("");
   const [planFrequency, setPlanFrequency] = useState<PlanFrequency>("monthly");
   const [planAmountInput, setPlanAmountInput] = useState("");
@@ -545,6 +569,10 @@ export function CustomerPaymentPortalPage() {
     }
     setInitiating(true);
     setActionError("");
+    let leavingForCheckout = false;
+    const choice = isCustomPlan
+      ? `${planFrequency}-${planQuote!.installment_amount}-${planQuote!.start_date}`
+      : String(chargeAmount ?? "");
     try {
       const attempt = await initiatePaymentPortal(token, {
         option_id: selected.id,
@@ -552,9 +580,10 @@ export function CustomerPaymentPortalPage() {
         frequency: isCustomPlan ? planFrequency : undefined,
         installment_amount: isCustomPlan ? planQuote!.installment_amount : undefined,
         start_date: isCustomPlan ? planQuote!.start_date : undefined,
-        idempotency_key: `portal-${token.slice(0, 12)}-${selected.id}-${Date.now()}`,
+        idempotency_key: `portal-${token.slice(0, 12)}-${selected.id}-${choice}-${visitId.current}`,
       });
       if (attempt.checkout_url) {
+        leavingForCheckout = true; // keep the button disabled while the browser leaves
         window.location.assign(attempt.checkout_url);
         return;
       }
@@ -562,7 +591,7 @@ export function CustomerPaymentPortalPage() {
     } catch (err) {
       setActionError(err instanceof ApiError ? err.detail : "Failed to start payment");
     } finally {
-      setInitiating(false);
+      if (!leavingForCheckout) setInitiating(false);
     }
   }
 
@@ -762,12 +791,14 @@ export function CustomerPaymentPortalPage() {
                 partialError ? "border-destructive" : "border-border-strong",
               )}
             >
-              <span className="text-[15px] text-muted-foreground">$</span>
+              <span className="text-[15px] text-muted-foreground">
+                {currencySymbol(currency)}
+              </span>
               <input
                 id="partial-amount"
                 inputMode="decimal"
                 value={partialAmount}
-                onChange={(e) => setPartialAmount(e.target.value.replace(/[^0-9.]/g, ""))}
+                onChange={(e) => setPartialAmount(cleanAmountInput(e.target.value))}
                 placeholder="0.00"
                 aria-invalid={Boolean(partialError)}
                 className="tabular w-full bg-transparent text-[15px] text-foreground outline-none"
@@ -836,12 +867,14 @@ export function CustomerPaymentPortalPage() {
               Amount you would like to pay {freqMeta.every}
             </label>
             <div className="flex items-center gap-2 rounded-lg border border-border-strong bg-card px-3 py-2.5">
-              <span className="text-[15px] text-muted-foreground">$</span>
+              <span className="text-[15px] text-muted-foreground">
+                {currencySymbol(currency)}
+              </span>
               <input
                 id="plan-cycle"
                 inputMode="decimal"
                 value={planAmountInput}
-                onChange={(e) => setPlanAmountInput(e.target.value.replace(/[^0-9.]/g, ""))}
+                onChange={(e) => setPlanAmountInput(cleanAmountInput(e.target.value))}
                 placeholder={planMin > 0 ? String(planMin) : "0.00"}
                 className="tabular w-full bg-transparent text-[15px] text-foreground outline-none"
               />
@@ -1150,17 +1183,22 @@ export function CustomerPaymentResultPage() {
     }
     let cancelled = false;
     let tries = 0;
+    let brandKnown = false;
 
     async function tick() {
       try {
-        const [att, portal] = await Promise.all([
-          getPaymentAttempt(token, attemptId),
-          resolvePaymentPortal(token).catch(() => null),
-        ]);
+        const att = await getPaymentAttempt(token, attemptId);
         if (cancelled) return;
         setAttempt(att);
-        if (att.brand) setBrand(att.brand);
-        else if (portal) setBrand(portal.brand);
+        if (att.brand) {
+          setBrand(att.brand);
+          brandKnown = true;
+        } else if (!brandKnown) {
+          // Once is enough: every lookup counts as a visit to the payment link.
+          brandKnown = true;
+          const portal = await resolvePaymentPortal(token).catch(() => null);
+          if (!cancelled && portal) setBrand(portal.brand);
+        }
 
         if (outcomeHint === "cancel" && att.status === "Processing") {
           await cancelPaymentAttempt(token, attemptId).catch(() => null);
@@ -1389,9 +1427,10 @@ export function CustomerPaymentResultPage() {
   const cancelled = status === "Cancelled";
   const expired = status === "Expired";
 
+  const stillProcessing = !failed && !cancelled && !expired;
   let title = "Still processing";
   let body =
-    "We have not received a confirmed result yet. If you completed payment, it may take a moment to appear.";
+    "We have not received a confirmed result yet. If you completed payment, please do not pay again: it can take a few minutes to appear, and you will see the updated balance when you return.";
   if (failed) {
     title = "Payment Could Not Be Completed";
     body =
@@ -1415,9 +1454,18 @@ export function CustomerPaymentResultPage() {
         </div>
         {error ? <p className="text-[13px] text-destructive">{error}</p> : null}
         <div className="space-y-2.5">
-          <Link to={`/pay/${token}`} className={accentBtn + " inline-flex items-center justify-center"}>
-            {failed ? "Try Again" : "Return to payment portal"}
-          </Link>
+          {stillProcessing ? (
+            <button type="button" className={accentBtn} onClick={() => window.location.reload()}>
+              Check again
+            </button>
+          ) : (
+            <Link
+              to={`/pay/${token}`}
+              className={accentBtn + " inline-flex items-center justify-center"}
+            >
+              {failed ? "Try Again" : "Return to payment portal"}
+            </Link>
+          )}
           {failed ? (
             <Link
               to={`/pay/${token}`}

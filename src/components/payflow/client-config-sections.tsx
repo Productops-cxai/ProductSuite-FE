@@ -177,18 +177,49 @@ export interface SectionProps {
 
 /** Canadian postal code: A1A 1A1 */
 export const CLIENT_POSTAL_CODE_PATTERN = /^[A-Z]\d[A-Z] \d[A-Z]\d$/;
+const US_ZIP_PATTERN = /^\d{5}(-\d{4})?$/;
+const GENERIC_POSTAL_PATTERN = /^[A-Z0-9][A-Z0-9 -]{1,10}[A-Z0-9]$/;
 
-export function isValidClientPostalCode(value: string): boolean {
+type PostalRegion = "canada" | "us" | "other";
+
+/** Same rule as the API (app/shared/postal.py): no country chosen means Canada. */
+function postalRegion(country?: string | null): PostalRegion {
+  const key = (country || "").trim().toUpperCase().replace(/\s+/g, " ");
+  if (["", "CA", "CAN", "CANADA"].includes(key)) return "canada";
+  if (["US", "USA", "UNITED STATES", "UNITED STATES OF AMERICA"].includes(key)) return "us";
+  return "other";
+}
+
+/** Postal / ZIP code checked for the client's country (it used to be Canada-only). */
+export function isValidClientPostalCode(value: string, country?: string | null): boolean {
   const cleaned = value.trim().toUpperCase();
   if (!cleaned) return true;
-  return CLIENT_POSTAL_CODE_PATTERN.test(cleaned);
+  const region = postalRegion(country);
+  if (region === "canada") return CLIENT_POSTAL_CODE_PATTERN.test(cleaned);
+  if (region === "us") return US_ZIP_PATTERN.test(cleaned);
+  return GENERIC_POSTAL_PATTERN.test(cleaned);
+}
+
+export function postalCodeHint(country?: string | null): { format: string; error: string } {
+  const region = postalRegion(country);
+  if (region === "canada") {
+    return {
+      format: "A1A 1A1",
+      error: "Use format A1A 1A1 (letter-number-letter space number-letter-number)",
+    };
+  }
+  if (region === "us") {
+    return { format: "12345 or 12345-6789", error: "Use a 5-digit ZIP code, or ZIP+4 (12345-6789)" };
+  }
+  return {
+    format: "Letters, numbers, spaces and hyphens",
+    error: "Use only letters, numbers, spaces and hyphens (3 to 12 characters)",
+  };
 }
 
 export function postalCodeConfigIssues(draft: ClientDraft): string[] {
-  if (isValidClientPostalCode(draft.config.postalCode)) return [];
-  return [
-    "Postal code must match format A1A 1A1 (letter-number-letter space number-letter-number)",
-  ];
+  if (isValidClientPostalCode(draft.config.postalCode, draft.config.country)) return [];
+  return [`Postal code: ${postalCodeHint(draft.config.country).error}`];
 }
 
 /** General tab issues — required profile/contact/address fields + postal format. */
@@ -398,17 +429,19 @@ export function draftToUpdatePayload(draft: ClientDraft) {
     data_source_type: "file",
     connection_status: "Connected",
     crm_client_number: draft.config.crmClientNumber.trim() || undefined,
-    contact_name: draft.config.contactName.trim() || undefined,
-    contact_title: draft.config.contactTitle.trim() || undefined,
-    contact_email: draft.config.contactEmail.trim() || undefined,
-    contact_phone: draft.config.contactPhone.trim() || undefined,
-    address_line1: draft.config.addressLine1.trim() || undefined,
-    address_line2: draft.config.addressLine2.trim() || undefined,
-    city: draft.config.city.trim() || undefined,
-    province_state: draft.config.provinceState.trim() || undefined,
-    country: draft.config.country.trim() || undefined,
-    postal_code: draft.config.postalCode.trim().toUpperCase() || undefined,
-    correspondence_language: draft.config.correspondenceLanguage.trim() || undefined,
+    // Empty text is sent as "": the API clears the stored value on "" and ignores a
+    // missing key, so leaving these out meant a cleared box was never saved.
+    contact_name: draft.config.contactName.trim(),
+    contact_title: draft.config.contactTitle.trim(),
+    contact_email: draft.config.contactEmail.trim(),
+    contact_phone: draft.config.contactPhone.trim(),
+    address_line1: draft.config.addressLine1.trim(),
+    address_line2: draft.config.addressLine2.trim(),
+    city: draft.config.city.trim(),
+    province_state: draft.config.provinceState.trim(),
+    country: draft.config.country.trim(),
+    postal_code: draft.config.postalCode.trim().toUpperCase(),
+    correspondence_language: draft.config.correspondenceLanguage.trim(),
     currency_code: draft.config.currencyCode.trim() || undefined,
     integration_ref: draft.config.crmClientNumber.trim() || undefined,
     environment: draft.config.environment,
@@ -977,27 +1010,27 @@ export function ProfileSection({ draft, patch, patchConfig, readOnly }: SectionP
             label="Postal code"
             hint={
               draft.config.postalCode.trim() &&
-              !isValidClientPostalCode(draft.config.postalCode)
+              !isValidClientPostalCode(draft.config.postalCode, draft.config.country)
                 ? undefined
-                : "Format: A1A 1A1"
+                : `Format: ${postalCodeHint(draft.config.country).format}`
             }
           >
             <TextInput
               value={draft.config.postalCode}
               onChange={(v) => patchConfig({ postalCode: v.toUpperCase() })}
-              placeholder="A1A 1A1"
+              placeholder={postalCodeHint(draft.config.country).format}
               disabled={readOnly}
               className={
                 draft.config.postalCode.trim() &&
-                !isValidClientPostalCode(draft.config.postalCode)
+                !isValidClientPostalCode(draft.config.postalCode, draft.config.country)
                   ? "border-destructive focus:border-destructive focus:ring-destructive/15"
                   : undefined
               }
             />
             {draft.config.postalCode.trim() &&
-            !isValidClientPostalCode(draft.config.postalCode) ? (
+            !isValidClientPostalCode(draft.config.postalCode, draft.config.country) ? (
               <span className="mt-1 block text-[11px] text-destructive">
-                Use format A1A 1A1 (letter-number-letter space number-letter-number)
+                {postalCodeHint(draft.config.country).error}
               </span>
             ) : null}
           </Field>
