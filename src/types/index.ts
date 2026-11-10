@@ -1171,8 +1171,13 @@ export interface PayflowStrategyStepConfig {
   template_id?: string | null;
   /** AI / reviewer-written email subject. Empty → template is sent. */
   subject?: string | null;
-  /** AI / reviewer-written message body. Empty → template is sent. */
+  /** AI / reviewer-written email (or fixed-SMS) body. Empty → template is sent. */
   body?: string | null;
+  /**
+   * AI contact step SMS copy (channel unset / Email + SMS).
+   * Worker sends this when SMS is chosen for the customer.
+   */
+  sms_body?: string | null;
   /** Display-only tone chosen for the message (Friendly, Firm, …). */
   tone?: string | null;
 }

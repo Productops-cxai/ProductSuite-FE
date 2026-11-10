@@ -2,7 +2,9 @@ import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as R
 import { StatusPill } from "./lovable/payflow-ui";
 import { cn } from "../../lib/utils";
 import {
+  CONTACT_CHANNEL,
   conditionLabel,
+  displayChannel,
   ensureStepLinks,
   entryNodeId,
   stepConfig,
@@ -31,6 +33,14 @@ function NodeIcon({ kind, channel }: { kind: string; channel?: string | null }) 
     return (
       <svg viewBox="0 0 24 24" className={cls} fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+      </svg>
+    );
+  }
+  if (kind === "Communication" && channel === CONTACT_CHANNEL) {
+    return (
+      <svg viewBox="0 0 24 24" className={cls} fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+        <rect x="2.5" y="5" width="11" height="9" rx="1.5" />
+        <path d="M15 11h5a1.5 1.5 0 0 1 1.5 1.5V18l-3-2h-3.5A1.5 1.5 0 0 1 13.5 14.5V12.5" />
       </svg>
     );
   }
@@ -169,7 +179,7 @@ function NodeCard({
   const cfg = stepConfig(node);
   const timing = timingLabel(node);
   const condition = conditionLabel(node);
-  const channel = cfg.channel || node.channel;
+  const channel = node.kind === "Communication" ? displayChannel(node) : cfg.channel || node.channel;
   const purpose = cfg.purpose || node.purpose;
 
   return (

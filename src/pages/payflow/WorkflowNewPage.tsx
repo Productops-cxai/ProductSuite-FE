@@ -20,6 +20,7 @@ import {
 } from "../../components/payflow/lovable/payflow-ui";
 import {
   CHANNELS,
+  CONTACT_CHANNEL,
   MESSAGE_PURPOSES,
   TIME_UNITS,
   aiSuggestionsForSegment,
@@ -27,6 +28,7 @@ import {
   buildStepsFromDraft,
   communicationSnippet,
   draftStepTitle,
+  isContactStep,
   makeDraftStep,
   suggestFromPrompt,
   type DraftStep,
@@ -162,7 +164,10 @@ export function PayFlowWorkflowNewPage() {
       ? catalog.tenure_bands || catalog.tenures || TENURES
       : TENURES;
   const timeUnits = catalog?.time_units?.length ? catalog.time_units : TIME_UNITS;
-  const channels = catalog?.channels?.length ? catalog.channels : CHANNELS;
+  const channels = (() => {
+    const raw = catalog?.channels?.length ? catalog.channels : CHANNELS;
+    return raw.includes(CONTACT_CHANNEL) ? raw : [CONTACT_CHANNEL, ...raw];
+  })();
   const purposes = catalog?.message_purposes?.length
     ? catalog.message_purposes
     : MESSAGE_PURPOSES;
@@ -263,10 +268,14 @@ export function PayFlowWorkflowNewPage() {
         steps: built.length,
         branches: built.filter((s) => s.kind === "Condition").length,
         emails: built.filter(
-          (s) => s.kind === "Communication" && (s.config?.channel || s.channel) === "Email",
+          (s) =>
+            s.kind === "Communication" &&
+            (isContactStep(s) || (s.config?.channel || s.channel) === "Email"),
         ).length,
         sms: built.filter(
-          (s) => s.kind === "Communication" && (s.config?.channel || s.channel) === "SMS",
+          (s) =>
+            s.kind === "Communication" &&
+            (isContactStep(s) || (s.config?.channel || s.channel) === "SMS"),
         ).length,
       },
       ai_context: [],
@@ -543,7 +552,7 @@ export function PayFlowWorkflowNewPage() {
                       <div className="mt-2 grid gap-2 sm:grid-cols-3">
                         <Field label="Channel">
                           <SelectInput
-                            value={step.channel || "Email"}
+                            value={step.channel || CONTACT_CHANNEL}
                             options={channels}
                             onChange={(v) => patchStep(step.id, { channel: v })}
                           />

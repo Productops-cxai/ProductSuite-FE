@@ -10,7 +10,23 @@ export const STRATEGY_STATUSES = [
   "Inactive",
 ] as const;
 
-export const CHANNELS = ["Email", "SMS"];
+/** Fixed channels plus AI contact mode (worker picks Email or SMS per customer). */
+export const CONTACT_CHANNEL = "Email + SMS";
+export const CHANNELS = [CONTACT_CHANNEL, "Email", "SMS"];
+
+/** AI / contact Communication step: no fixed channel (worker picks per customer). */
+export function isContactStep(step: PayflowStrategyStep | PayflowStrategyStepConfig) {
+  const cfg = "kind" in step ? stepConfig(step as PayflowStrategyStep) : (step as PayflowStrategyStepConfig);
+  const channel = (cfg.channel || "").trim();
+  return !channel || channel === CONTACT_CHANNEL;
+}
+
+/** Value shown in Channel select / canvas pill. */
+export function displayChannel(step: PayflowStrategyStep) {
+  const cfg = stepConfig(step);
+  if (isContactStep(step)) return CONTACT_CHANNEL;
+  return cfg.channel || step.channel || "Email";
+}
 export const MESSAGE_PURPOSES = [
   "Payment Reminder",
   "Firm Reminder",
@@ -30,6 +46,15 @@ export const REFERENCE_EVENTS = [
   "Broken Promise-to-Pay",
   "Last Customer Response",
 ];
+/** After a contact step the worker already chose Email/SMS — time from Previous Action. */
+export const CHANNEL_EVENTS = ["Previous Email", "Previous SMS"] as const;
+
+export function referenceEventsForStep(step: PayflowStrategyStep, allEvents: string[] = REFERENCE_EVENTS) {
+  if (step.kind === "Communication" && isContactStep(step)) {
+    return allEvents.filter((event) => !(CHANNEL_EVENTS as readonly string[]).includes(event));
+  }
+  return allEvents;
+}
 export const TIME_UNITS = ["Hours", "Days", "Weeks"];
 export const TIME_DIRECTIONS = ["After", "Before"];
 export const CONDITION_ATTRIBUTES = [
@@ -220,7 +245,7 @@ export function makeDraftStep(kind: DraftStepKind): DraftStep {
     return {
       id: uid(),
       kind,
-      channel: "Email",
+      channel: CONTACT_CHANNEL,
       purpose: MESSAGE_PURPOSES[0],
       amount: 0,
       unit: "Days",
@@ -268,12 +293,16 @@ export function makeDraftStep(kind: DraftStepKind): DraftStep {
 
 export function draftStepTitle(step: DraftStep): string {
   switch (step.kind) {
-    case "Communication":
-      return `Send ${step.channel || "Email"} — ${step.purpose || MESSAGE_PURPOSES[0]}`;
+    case "Communication": {
+      const purpose = step.purpose || MESSAGE_PURPOSES[0];
+      const channel = step.channel || CONTACT_CHANNEL;
+      if (channel === CONTACT_CHANNEL) return `Contact — ${purpose}`;
+      return `Send ${channel} — ${purpose}`;
+    }
     case "Wait":
       return "Wait / observe";
     case "Condition":
-      return "Payment received?";
+      return "Any payment or plan?";
     case "AI Reassessment":
       return "AI reassessment";
     case "Case Action":
@@ -286,6 +315,13 @@ export function draftStepTitle(step: DraftStep): string {
       return step.kind;
   }
 }
+
+/** Stop-when-paid check aligned with AI / worker Payment Status catalog. */
+export const PAID_OR_PLAN_CHECK = {
+  attribute: "Payment Status",
+  operator: "Not Equals",
+  value: "Unpaid",
+} as const;
 
 /** Turn ordered draft steps into a linked BE step graph (Trigger + YES/NO for conditions). */
 export function buildStepsFromDraft(steps: DraftStep[]): PayflowStrategyStep[] {
@@ -313,7 +349,7 @@ export function buildStepsFromDraft(steps: DraftStep[]): PayflowStrategyStep[] {
       result.push({
         id: outcomeId,
         kind: "Outcome",
-        title: "Case closed — paid",
+        title: "Paid or on a plan",
         origin: "Human Created",
         config: { outcome: "Paid In Full" },
         next: null,
@@ -321,13 +357,9 @@ export function buildStepsFromDraft(steps: DraftStep[]): PayflowStrategyStep[] {
       result.push({
         id: step.id,
         kind: "Condition",
-        title: draftStepTitle(step),
+        title: draftStepTitle(step) === "Payment received?" ? "Any payment or plan?" : draftStepTitle(step),
         origin: "Human Created",
-        config: {
-          attribute: "Payment Status",
-          operator: "Equals",
-          value: "Paid In Full",
-        },
+        config: { ...PAID_OR_PLAN_CHECK },
         next: null,
         yes: outcomeId,
         no: nextId,
@@ -341,15 +373,21 @@ export function buildStepsFromDraft(steps: DraftStep[]): PayflowStrategyStep[] {
       direction: "After",
     };
     if (step.kind === "Communication") {
-      config.channel = step.channel || "Email";
+      const channel = step.channel || CONTACT_CHANNEL;
+      if (channel === CONTACT_CHANNEL) {
+        config.channel = null;
+      } else {
+        config.channel = channel;
+      }
       config.purpose = step.purpose || MESSAGE_PURPOSES[0];
     }
     if (step.kind === "Payment Action" || step.kind === "Case Action") {
       config.action = step.action;
     }
     if (step.kind === "Human Review") {
-      config.note = step.note;
-      config.review_reason = REVIEW_REASONS[2]; // Payment arrangement exception
+      config.note = step.note || "Supervisor review required before continuing";
+      // Persist an explicit catalog reason (do not rely on a UI-only default).
+      config.review_reason = REVIEW_REASONS[2];
     }
     result.push({
       id: step.id,
@@ -357,7 +395,7 @@ export function buildStepsFromDraft(steps: DraftStep[]): PayflowStrategyStep[] {
       title: draftStepTitle(step),
       origin: "Human Created",
       config,
-      channel: config.channel,
+      channel: config.channel ?? null,
       purpose: config.purpose,
       next: nextId,
     });
@@ -366,7 +404,7 @@ export function buildStepsFromDraft(steps: DraftStep[]): PayflowStrategyStep[] {
   return result;
 }
 
-/** Attach the best catalog template id for each Communication step (channel + purpose). */
+/** Attach the best catalog template id for each fixed-channel Communication step. */
 export function assignDraftTemplates(
   steps: PayflowStrategyStep[],
   templates: { id: string; channel: string; purpose: string }[],
@@ -375,6 +413,11 @@ export function assignDraftTemplates(
   return steps.map((step) => {
     if (step.kind !== "Communication") return step;
     const cfg = step.config || {};
+    // Contact steps (no channel): worker picks Email/SMS templates by purpose at send time.
+    if (isContactStep(step)) {
+      const { template_id: _drop, ...rest } = cfg;
+      return { ...step, config: { ...rest, channel: null, template_id: null } };
+    }
     const exact = templates.filter(
       (t) => t.channel === (cfg.channel || "") && t.purpose === (cfg.purpose || ""),
     );
@@ -395,7 +438,7 @@ export function aiSuggestionsForSegment(segment: {
   tips.push(
     segment.balance_band === "$5,000 and over"
       ? "Larger balances respond better to a payment plan offer early in the flow."
-      : "Start with the cheapest contactable channel and confirm delivery before adding contact.",
+      : "Use contact steps (Email + SMS) so PayFlow can reach each customer on the channel that works.",
   );
   if (segment.delinquency === "90+ days past due") {
     tips.push("At 90+ days past due, confirm contactability first — reach is the main constraint.");
@@ -421,13 +464,12 @@ export function suggestFromPrompt(
   const p = prompt.toLowerCase();
   const gentle = /gentle|soft|early|gradual|remind/.test(p);
   const urgent = /urgent|fast|aggressive|escalat|final|late|overdue/.test(p);
-  const smsFirst = /sms|text|mobile/.test(p);
   const wantsPlan = /plan|installment|instalment|arrangement|afford/.test(p);
   const wantsReview = /review|supervisor|approval|sensitive/.test(p);
   const lateSegment = (segment?.delinquency || "").includes("90");
 
   const first = makeDraftStep("Communication");
-  first.channel = smsFirst ? "SMS" : "Email";
+  first.channel = CONTACT_CHANNEL;
   first.purpose = MESSAGE_PURPOSES[0];
   first.amount = urgent ? 0 : 1;
   first.referenceEvent = "Previous Action";
@@ -439,7 +481,7 @@ export function suggestFromPrompt(
   const check = makeDraftStep("Condition");
 
   const second = makeDraftStep("Communication");
-  second.channel = smsFirst ? "Email" : "SMS";
+  second.channel = CONTACT_CHANNEL;
   second.purpose = wantsPlan
     ? MESSAGE_PURPOSES.find((m) => /plan|arrangement/i.test(m)) || MESSAGE_PURPOSES[0]!
     : MESSAGE_PURPOSES[1] || MESSAGE_PURPOSES[0]!;
@@ -449,7 +491,7 @@ export function suggestFromPrompt(
   const steps: DraftStep[] = [first, wait, check, second, makeDraftStep("AI Reassessment")];
   if (lateSegment || urgent) {
     const finalNotice = makeDraftStep("Communication");
-    finalNotice.channel = "Email";
+    finalNotice.channel = CONTACT_CHANNEL;
     finalNotice.purpose =
       MESSAGE_PURPOSES.find((m) => /final|firm|notice/i.test(m)) || MESSAGE_PURPOSES[0]!;
     finalNotice.amount = 5;
@@ -508,17 +550,17 @@ function defaultStepForKind(kind: AddableStepKind): PayflowStrategyStep {
     return {
       id,
       kind,
-      title: `Send Email — ${MESSAGE_PURPOSES[0]}`,
+      title: `Contact — ${MESSAGE_PURPOSES[0]}`,
       origin: "Human Modified",
       config: {
-        channel: "Email",
+        channel: null,
         purpose: MESSAGE_PURPOSES[0],
         reference_event: "Previous Action",
-        amount: 2,
+        amount: 0,
         unit: "Days",
         direction: "After",
       },
-      channel: "Email",
+      channel: null,
       purpose: MESSAGE_PURPOSES[0],
       next: null,
     };
@@ -527,13 +569,9 @@ function defaultStepForKind(kind: AddableStepKind): PayflowStrategyStep {
     return {
       id,
       kind,
-      title: "Payment received?",
+      title: "Any payment or plan?",
       origin: "Human Modified",
-      config: {
-        attribute: "Payment Status",
-        operator: "Equals",
-        value: "Paid In Full",
-      },
+      config: { ...PAID_OR_PLAN_CHECK },
       next: null,
       yes: null,
       no: null,
@@ -637,7 +675,7 @@ export function addStepAfter(
     const outcome: PayflowStrategyStep = {
       id: outcomeId,
       kind: "Outcome",
-      title: "Case closed — paid",
+      title: "Paid or on a plan",
       origin: "Human Modified",
       config: { outcome: "Paid In Full" },
       next: null,
@@ -736,6 +774,16 @@ export function communicationSnippet(
   maxLen = 120,
 ) {
   const cfg = stepConfig(step);
+  if (isContactStep(step)) {
+    const email = (cfg.body || "").trim();
+    const sms = (cfg.sms_body || "").trim();
+    if (email && sms) {
+      const half = Math.max(40, Math.floor((maxLen - 7) / 2));
+      return `Email: ${email.slice(0, half)} · SMS: ${sms.slice(0, half)}`.slice(0, maxLen);
+    }
+    if (email) return email.slice(0, maxLen);
+    if (sms) return sms.slice(0, maxLen);
+  }
   const own = (cfg.body || "").trim();
   if (own) return own.slice(0, maxLen);
   const tpl = templateById(templates, cfg.template_id);

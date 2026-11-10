@@ -15,6 +15,7 @@ import {
   CONDITION_ATTRIBUTES,
   CONDITION_OPERATORS,
   CONDITION_VALUES,
+  CONTACT_CHANNEL,
   MESSAGE_PURPOSES,
   OUTCOMES,
   PAYMENT_ACTIONS,
@@ -22,6 +23,9 @@ import {
   REVIEW_REASONS,
   TIME_DIRECTIONS,
   TIME_UNITS,
+  displayChannel,
+  isContactStep,
+  referenceEventsForStep,
   renderMessagePreview,
   stepConfig,
   templateById,
@@ -38,6 +42,7 @@ import type {
 
 const SUBJECT_MAX = 255;
 const BODY_MAX = 5000;
+const SMS_BODY_MAX = 1000;
 const REMARKS_MAX = 2000;
 
 function AiSparklesIcon({ className }: { className?: string }) {
@@ -53,12 +58,24 @@ function AiSparklesIcon({ className }: { className?: string }) {
 function clearMessageTextPatch(
   patch: Partial<PayflowStrategyStepConfig>,
 ): Partial<PayflowStrategyStepConfig> {
-  return { ...patch, subject: null, body: null, tone: null };
+  return { ...patch, subject: null, body: null, sms_body: null, tone: null };
+}
+
+/** Persist contact mode as no channel (matches AI / worker contract). */
+function channelPatch(channelLabel: string): Partial<PayflowStrategyStepConfig> {
+  if (channelLabel === CONTACT_CHANNEL) {
+    return clearMessageTextPatch({ channel: null, template_id: null });
+  }
+  return clearMessageTextPatch({ channel: channelLabel, template_id: "" });
 }
 
 function catalogLists(catalog?: PayflowStrategyCatalog | null) {
+  const rawChannels = catalog?.channels?.length ? catalog.channels : CHANNELS;
+  const channels = rawChannels.includes(CONTACT_CHANNEL)
+    ? rawChannels
+    : [CONTACT_CHANNEL, ...rawChannels];
   return {
-    channels: catalog?.channels?.length ? catalog.channels : CHANNELS,
+    channels,
     purposes: catalog?.message_purposes?.length ? catalog.message_purposes : MESSAGE_PURPOSES,
     referenceEvents: catalog?.reference_events?.length
       ? catalog.reference_events
@@ -149,12 +166,22 @@ export function StepConfigForm({
   const [rewriteRemarks, setRewriteRemarks] = useState("");
   const lists = catalogLists(catalog);
   const cfg = stepConfig(step);
-  const templates = templatesForChannelPurpose(lists.templates, cfg.channel, cfg.purpose);
+  const contactStep = isContactStep(step);
+  const channelLabel = displayChannel(step);
+  const templates = templatesForChannelPurpose(
+    lists.templates,
+    contactStep ? "Email" : cfg.channel,
+    cfg.purpose,
+  );
+  const smsTemplates = templatesForChannelPurpose(lists.templates, "SMS", cfg.purpose);
   const activeTemplate = templateById(lists.templates, cfg.template_id) || templates[0];
-  const isEmail = (cfg.channel || "Email") === "Email";
-  const hasOwnText = !!(cfg.subject || cfg.body);
+  const activeSmsTemplate = smsTemplates[0];
+  const isEmail = !contactStep && channelLabel === "Email";
+  const isSms = !contactStep && channelLabel === "SMS";
+  const hasOwnText = !!(cfg.subject || cfg.body || cfg.sms_body);
   const previewSubject = renderMessagePreview(cfg.subject);
   const previewBody = renderMessagePreview(cfg.body);
+  const previewSms = renderMessagePreview(cfg.sms_body);
   const conditionValueOptions =
     lists.conditionValues[cfg.attribute || ""] ||
     CONDITION_VALUES[cfg.attribute || ""] ||
@@ -178,14 +205,23 @@ export function StepConfigForm({
       {step.kind === "Communication" && (
         <>
           <div className="grid grid-cols-2 gap-2">
-            <Field label="Channel">
+            <Field
+              label="Channel"
+              hint={
+                contactStep
+                  ? "Worker picks Email or SMS per customer, and switches if one fails."
+                  : undefined
+              }
+            >
               <SelectInput
-                value={cfg.channel ?? "Email"}
-                options={lists.channels}
-                disabled={!canEdit}
-                onChange={(v) =>
-                  onChange(clearMessageTextPatch({ channel: v, template_id: "" }))
+                value={channelLabel}
+                options={
+                  lists.channels.includes(CONTACT_CHANNEL)
+                    ? lists.channels
+                    : [CONTACT_CHANNEL, ...lists.channels]
                 }
+                disabled={!canEdit}
+                onChange={(v) => onChange(channelPatch(v))}
               />
             </Field>
             <Field label="Message Purpose">
@@ -204,6 +240,7 @@ export function StepConfigForm({
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex flex-wrap items-center gap-2">
                 <p className="text-[12.5px] font-semibold text-foreground">Message text</p>
+                {contactStep ? <StatusPill tone="ai">{CONTACT_CHANNEL}</StatusPill> : null}
                 {cfg.tone ? <StatusPill tone="ai">{cfg.tone}</StatusPill> : null}
               </div>
               {canWriteMessages && onRewriteMessage ? (
@@ -225,8 +262,9 @@ export function StepConfigForm({
               ) : null}
             </div>
             <p className="text-[11.5px] text-muted-foreground">
-              Leave blank to send the template below. Edited text is saved with the step and
-              becomes Human Modified.
+              {contactStep
+                ? "Write both versions. The worker sends Email or SMS for each customer (and failovers)."
+                : "Leave blank to send the template below. Edited text is saved with the step and becomes Human Modified."}
             </p>
             {canWriteMessages && onRewriteMessage ? (
               <Field
@@ -241,8 +279,8 @@ export function StepConfigForm({
                 />
               </Field>
             ) : null}
-            {isEmail ? (
-              <Field label="Subject" hint={`Max ${SUBJECT_MAX} characters.`}>
+            {(contactStep || isEmail) ? (
+              <Field label={contactStep ? "Email subject" : "Subject"} hint={`Max ${SUBJECT_MAX} characters.`}>
                 <TextInput
                   value={cfg.subject ?? ""}
                   disabled={!canEdit}
@@ -252,32 +290,75 @@ export function StepConfigForm({
                 />
               </Field>
             ) : null}
-            <Field label="Body" hint={`Max ${BODY_MAX} characters. Use {{first_name}}, {{outstanding_balance}}, {{payment_link}}, {{brand_name}}, …`}>
-              <TextArea
-                value={cfg.body ?? ""}
-                disabled={!canEdit}
-                onChange={(v) => onChange({ body: v.slice(0, BODY_MAX) || null })}
-              />
-            </Field>
+            {(contactStep || isEmail) ? (
+              <Field
+                label={contactStep ? "Email body" : "Body"}
+                hint={`Max ${BODY_MAX} characters. Use {{first_name}}, {{outstanding_balance}}, {{payment_link}}, {{brand_name}}, …`}
+              >
+                <TextArea
+                  value={cfg.body ?? ""}
+                  disabled={!canEdit}
+                  onChange={(v) => onChange({ body: v.slice(0, BODY_MAX) || null })}
+                />
+              </Field>
+            ) : null}
+            {contactStep ? (
+              <Field
+                label="SMS body"
+                hint={`Max ${SMS_BODY_MAX} characters. Start with {{brand_name}}: and end with Reply STOP to opt out.`}
+              >
+                <TextArea
+                  value={cfg.sms_body ?? ""}
+                  disabled={!canEdit}
+                  onChange={(v) =>
+                    onChange({ sms_body: v.slice(0, SMS_BODY_MAX) || null })
+                  }
+                />
+              </Field>
+            ) : null}
+            {isSms ? (
+              <Field
+                label="Body"
+                hint={`Max ${SMS_BODY_MAX} characters. Start with {{brand_name}}: and end with Reply STOP to opt out.`}
+              >
+                <TextArea
+                  value={cfg.body ?? ""}
+                  disabled={!canEdit}
+                  onChange={(v) => onChange({ body: v.slice(0, SMS_BODY_MAX) || null })}
+                />
+              </Field>
+            ) : null}
             {hasOwnText ? (
               <div className="rounded-lg border border-border/70 bg-card p-3">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Preview (sample values)
                 </p>
-                {isEmail && previewSubject ? (
+                {(contactStep || isEmail) && previewSubject ? (
                   <p className="mt-2 text-[12.5px] text-foreground">
                     <span className="text-muted-foreground">Subject: </span>
                     {previewSubject}
                   </p>
                 ) : null}
-                <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap font-sans text-[11.5px] leading-relaxed text-muted-foreground">
-                  {previewBody || "(empty body)"}
-                </pre>
+                {(contactStep || isEmail) ? (
+                  <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap font-sans text-[11.5px] leading-relaxed text-muted-foreground">
+                    {previewBody || "(empty email body)"}
+                  </pre>
+                ) : null}
+                {contactStep ? (
+                  <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap font-sans text-[11.5px] leading-relaxed text-muted-foreground">
+                    {previewSms || "(empty SMS body)"}
+                  </pre>
+                ) : null}
+                {isSms ? (
+                  <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap font-sans text-[11.5px] leading-relaxed text-muted-foreground">
+                    {previewBody || "(empty body)"}
+                  </pre>
+                ) : null}
               </div>
             ) : null}
           </div>
 
-          {templates.length > 0 && (
+          {!contactStep && templates.length > 0 && (
             <>
               <Field
                 label="Fallback template"
@@ -296,6 +377,15 @@ export function StepConfigForm({
               {!hasOwnText ? <TemplatePreview template={activeTemplate} /> : null}
             </>
           )}
+          {contactStep && !hasOwnText ? (
+            <div className="space-y-2">
+              <p className="text-[11.5px] text-muted-foreground">
+                No own text yet — worker will use purpose templates for Email and SMS.
+              </p>
+              <TemplatePreview template={activeTemplate} />
+              {activeSmsTemplate ? <TemplatePreview template={activeSmsTemplate} /> : null}
+            </div>
+          ) : null}
         </>
       )}
 
@@ -336,17 +426,21 @@ export function StepConfigForm({
         <>
           <Field
             label="Review Reason"
-            hint="Shown in the Human Review queue Reason column."
+            hint="Shown in the Human Review queue Reason column. Save after choosing so it persists."
           >
             <SelectInput
               value={
                 cfg.review_reason && REVIEW_REASONS.includes(cfg.review_reason)
                   ? cfg.review_reason
-                  : REVIEW_REASONS[2]!
+                  : "Select a reason…"
               }
-              options={REVIEW_REASONS}
+              options={["Select a reason…", ...REVIEW_REASONS]}
               disabled={!canEdit}
-              onChange={(v) => onChange({ review_reason: v })}
+              onChange={(v) =>
+                onChange({
+                  review_reason: v === "Select a reason…" ? null : v,
+                })
+              }
             />
           </Field>
           <Field label="Review Note" hint="Shown to the supervisor who picks up the review.">
@@ -426,10 +520,23 @@ export function StepConfigForm({
         step.kind !== "Condition" &&
         step.kind !== "Outcome" && (
           <>
-            <Field label="Timing Reference">
+            <Field
+              label="Timing Reference"
+              hint={
+                contactStep
+                  ? "Contact steps time from Previous Action — Email/SMS delivery is handled by the worker."
+                  : undefined
+              }
+            >
               <SelectInput
-                value={cfg.reference_event ?? lists.referenceEvents[0]!}
-                options={lists.referenceEvents}
+                value={
+                  referenceEventsForStep(step, lists.referenceEvents).includes(
+                    cfg.reference_event || "",
+                  )
+                    ? (cfg.reference_event as string)
+                    : referenceEventsForStep(step, lists.referenceEvents)[0]!
+                }
+                options={referenceEventsForStep(step, lists.referenceEvents)}
                 disabled={!canEdit}
                 onChange={(v) => onChange({ reference_event: v })}
               />
