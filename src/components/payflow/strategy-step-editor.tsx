@@ -40,6 +40,15 @@ const SUBJECT_MAX = 255;
 const BODY_MAX = 5000;
 const REMARKS_MAX = 2000;
 
+function AiSparklesIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden>
+      <path d="M12 2.5 13.6 8.4 19.5 10 13.6 11.6 12 17.5 10.4 11.6 4.5 10 10.4 8.4 12 2.5Z" />
+      <path d="M18.2 14.2 19 16.8 21.6 17.6 19 18.4 18.2 21 17.4 18.4 14.8 17.6 17.4 16.8 18.2 14.2Z" />
+    </svg>
+  );
+}
+
 /** Clear AI/reviewer text when channel or purpose changes so email copy does not stick on SMS. */
 function clearMessageTextPatch(
   patch: Partial<PayflowStrategyStepConfig>,
@@ -193,13 +202,45 @@ export function StepConfigForm({
 
           <div className="space-y-2 rounded-lg border border-border/70 bg-surface/60 p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-[12.5px] font-semibold text-foreground">Message text</p>
-              {cfg.tone ? <StatusPill tone="ai">{cfg.tone}</StatusPill> : null}
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-[12.5px] font-semibold text-foreground">Message text</p>
+                {cfg.tone ? <StatusPill tone="ai">{cfg.tone}</StatusPill> : null}
+              </div>
+              {canWriteMessages && onRewriteMessage ? (
+                <button
+                  type="button"
+                  disabled={!canEdit || writingMessages}
+                  onClick={() =>
+                    onRewriteMessage(rewriteRemarks.trim() || undefined)
+                  }
+                  className="inline-flex items-center gap-1.5 rounded-full border border-ai/30 bg-ai/15 px-2.5 py-[5px] text-[11px] font-medium text-ai transition-colors hover:bg-ai/25 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <AiSparklesIcon className="size-3" />
+                  {writingMessages
+                    ? "Writing…"
+                    : hasOwnText
+                      ? "Rewrite with AI"
+                      : "Write with AI"}
+                </button>
+              ) : null}
             </div>
             <p className="text-[11.5px] text-muted-foreground">
               Leave blank to send the template below. Edited text is saved with the step and
               becomes Human Modified.
             </p>
+            {canWriteMessages && onRewriteMessage ? (
+              <Field
+                label="Note for AI (optional)"
+                hint="Guides wording only — tone badge stays as set for this step."
+              >
+                <TextArea
+                  value={rewriteRemarks}
+                  disabled={!canEdit || writingMessages}
+                  onChange={(v) => setRewriteRemarks(v.slice(0, REMARKS_MAX))}
+                  placeholder="e.g. shorter, mention the payment plan"
+                />
+              </Field>
+            ) : null}
             {isEmail ? (
               <Field label="Subject" hint={`Max ${SUBJECT_MAX} characters.`}>
                 <TextInput
@@ -232,29 +273,6 @@ export function StepConfigForm({
                 <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap font-sans text-[11.5px] leading-relaxed text-muted-foreground">
                   {previewBody || "(empty body)"}
                 </pre>
-              </div>
-            ) : null}
-            {canWriteMessages && onRewriteMessage ? (
-              <div className="space-y-2 border-t border-border/60 pt-3">
-                <Field
-                  label="Rewrite with AI"
-                  hint="Optional remarks for this message only. Takes a few seconds."
-                >
-                  <TextArea
-                    value={rewriteRemarks}
-                    disabled={!canEdit || writingMessages}
-                    onChange={(v) => setRewriteRemarks(v.slice(0, REMARKS_MAX))}
-                    placeholder="e.g. softer tone, mention the payment plan"
-                  />
-                </Field>
-                <Btn
-                  disabled={!canEdit || writingMessages}
-                  onClick={() =>
-                    onRewriteMessage(rewriteRemarks.trim() || undefined)
-                  }
-                >
-                  {writingMessages ? "Writing…" : "Rewrite with AI"}
-                </Btn>
               </div>
             ) : null}
           </div>

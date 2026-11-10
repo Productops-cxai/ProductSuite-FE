@@ -19,12 +19,18 @@ import {
   downloadPayflowAccountImportTemplate,
   downloadPayflowClientsBulkTemplate,
   listPayflowImports,
-  uploadPayflowAccountImport,
-  uploadPayflowClientsBulk,
-  validatePayflowAccountImport,
-  validatePayflowClientsBulk,
+  pollPayflowImportJob,
+  startPayflowAccountImportUpload,
+  startPayflowAccountImportValidate,
+  startPayflowClientsBulkUpload,
+  startPayflowClientsBulkValidate,
 } from "../../api/payflow";
-import type { PayflowBulkUploadResult, PayflowImportPreviewResponse } from "../../types";
+import type {
+  PayflowBulkUploadResult,
+  PayflowImportJob,
+  PayflowImportPreviewResponse,
+  PayflowImportRun,
+} from "../../types";
 import {
   acceptedTypes,
   actionTone,
@@ -200,23 +206,49 @@ export function FileDropzone({
   );
 }
 
-function ProgressPanel({ title, done, total, unit }: { title: string; done: number; total: number; unit: string }) {
-  const pct = total ? Math.round((done / total) * 100) : 0;
+function ProgressPanel({
+  title,
+  done,
+  total,
+  unit,
+}: {
+  title: string;
+  done: number;
+  total: number;
+  unit: string;
+}) {
+  const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+  const hasTotal = total > 0;
   return (
     <Panel>
       <div className="flex flex-col items-center px-2 py-10 text-center">
         <LoaderIcon className="mb-3 size-8 animate-spin text-primary" />
         <h2 className="font-display text-[18px] font-semibold text-foreground">{title}</h2>
         <p className="tabular mt-1 text-[13px] text-muted-foreground">
-          {total ? `${formatNumber(done)} of ${formatNumber(total)} ${unit} processed` : "Please keep this page open."}
+          {hasTotal
+            ? `${formatNumber(done)} of ${formatNumber(total)} ${unit} processed`
+            : "Preparing file… please keep this page open."}
         </p>
         <div className="mt-5 h-2 w-full max-w-md overflow-hidden rounded-full bg-muted">
-          <div className="h-full rounded-full bg-primary transition-[width] duration-200" style={{ width: `${total ? pct : 40}%` }} />
+          {hasTotal ? (
+            <div
+              className="h-full rounded-full bg-primary transition-[width] duration-200"
+              style={{ width: `${pct}%` }}
+            />
+          ) : (
+            <div className="h-full w-1/3 animate-pulse rounded-full bg-primary/70" />
+          )}
         </div>
-        {total > 0 && <p className="tabular mt-2 text-[11.5px] text-muted-foreground">{pct}%</p>}
+        {hasTotal && <p className="tabular mt-2 text-[11.5px] font-medium text-foreground">{pct}%</p>}
       </div>
     </Panel>
   );
+}
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
 }
 
 const stageLabels = ["Upload", "Validate & Preview", "Process", "Results"];
@@ -926,6 +958,9 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
   const [previewMessage, setPreviewMessage] = useState<string | null>(null);
 
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [progressDone, setProgressDone] = useState(0);
+  const [progressTotal, setProgressTotal] = useState(0);
+  const pollAbortRef = useRef<AbortController | null>(null);
 
   const isClient = kind === "client";
   const backTo = isClient ? "/payflow/clients" : "/payflow/cases";
@@ -933,6 +968,7 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
   const canProcess =
     !!previewSummary &&
     previewSummary.created + previewSummary.updated + previewSummary.unchanged > 0;
+  const progressUnit = isClient ? "records" : "accounts";
 
   const onFile = (f: File | null) => {
     setFileError(null);
@@ -945,14 +981,44 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
     setFile(f);
   };
 
+  function applyJobProgress(job: PayflowImportJob) {
+    setProgressDone(job.processed_count || 0);
+    setProgressTotal(job.total_count || 0);
+  }
+
+  async function runImportJob(
+    start: () => Promise<PayflowImportJob>,
+  ): Promise<PayflowImportJob> {
+    pollAbortRef.current?.abort();
+    const ac = new AbortController();
+    pollAbortRef.current = ac;
+    setProgressDone(0);
+    setProgressTotal(0);
+    const started = await start();
+    applyJobProgress(started);
+    // Brief pause so the first poll doesn't race the background worker start.
+    await sleep(150);
+    return pollPayflowImportJob(started.id, applyJobProgress, {
+      intervalMs: 400,
+      signal: ac.signal,
+    });
+  }
+
   async function validateFile() {
     if (!file) return;
     setSubmitError(null);
     setStage("validating");
     try {
-      const preview = isClient
-        ? await validatePayflowClientsBulk(file)
-        : await validatePayflowAccountImport(file);
+      const job = await runImportJob(() =>
+        isClient ? startPayflowClientsBulkValidate(file) : startPayflowAccountImportValidate(file),
+      );
+      if (job.status === "failed") {
+        throw new Error(job.error_message || "Validation failed");
+      }
+      const preview = job.result as PayflowImportPreviewResponse | null;
+      if (!preview) {
+        throw new Error("Validation finished without a result");
+      }
       if (!preview.ok) {
         const failed = failedRunFromPreview(kind, preview, user?.full_name || "You");
         addImport(failed);
@@ -968,7 +1034,8 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
       setPreviewMessage(preview.message?.trim() || null);
       setStage("preview");
     } catch (err) {
-      setSubmitError(err instanceof ApiError ? err.detail : "Validation failed");
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      setSubmitError(err instanceof ApiError ? err.detail : err instanceof Error ? err.message : "Validation failed");
       setStage("upload");
     }
   }
@@ -978,25 +1045,41 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
     setSubmitError(null);
     setStage("processing");
     try {
+      const job = await runImportJob(() =>
+        isClient ? startPayflowClientsBulkUpload(file) : startPayflowAccountImportUpload(file),
+      );
+      if (job.status === "failed") {
+        throw new Error(job.error_message || "Import failed");
+      }
       if (isClient) {
-        const result = await uploadPayflowClientsBulk(file);
+        const result = job.result as PayflowBulkUploadResult | null;
+        if (!result) throw new Error("Import finished without a result");
         const mapped = bulkUploadToRun(file, result, user?.full_name || "You");
         addImport(mapped);
         setRun(mapped);
       } else {
-        const result = await uploadPayflowAccountImport(file);
+        const result = job.result as PayflowImportRun | null;
+        if (!result) throw new Error("Import finished without a result");
         const mapped = mapApiImportRun(result);
         addImport(mapped);
         setRun(mapped);
       }
       setStage("done");
     } catch (err) {
-      setSubmitError(err instanceof ApiError ? err.detail : "Import failed");
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      setSubmitError(err instanceof ApiError ? err.detail : err instanceof Error ? err.message : "Import failed");
       setStage("preview");
     }
   }
 
+  useEffect(() => {
+    return () => {
+      pollAbortRef.current?.abort();
+    };
+  }, []);
+
   const reset = () => {
+    pollAbortRef.current?.abort();
     setStage("upload");
     setFile(null);
     setRun(null);
@@ -1006,6 +1089,8 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
     setPreviewMessage(null);
     setSubmitError(null);
     setFileError(null);
+    setProgressDone(0);
+    setProgressTotal(0);
   };
 
   const returnBtn = (
@@ -1076,7 +1161,9 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
         </div>
       )}
 
-      {stage === "validating" && <ProgressPanel title="Validating file" done={0} total={0} unit="" />}
+      {stage === "validating" && (
+        <ProgressPanel title="Validating file" done={progressDone} total={progressTotal} unit={progressUnit} />
+      )}
 
       {stage === "preview" && (
         <div className="space-y-5">
@@ -1146,9 +1233,9 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
       {stage === "processing" && (
         <ProgressPanel
           title={isClient ? "Processing Client Import" : "Processing Daily CRM Data"}
-          done={0}
-          total={0}
-          unit={isClient ? "records" : "accounts"}
+          done={progressDone}
+          total={progressTotal}
+          unit={progressUnit}
         />
       )}
 

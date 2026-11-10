@@ -238,7 +238,7 @@ export function PayFlowCommsPage() {
         description="Monitor customer collection communications across Clients and channels."
       />
 
-      <KpiGrid className="mb-4 lg:grid-cols-5">
+      <KpiGrid className="mb-4 grid-cols-2 lg:grid-cols-5 [&>*:last-child]:col-span-2 lg:[&>*:last-child]:col-span-1">
         <KpiCard label="Sent Today" value={String(summary.sent_today)} />
         <KpiCard label="Delivered" value={String(summary.delivered)} />
         <KpiCard label="Engaged" value={String(summary.engaged)} />
@@ -246,15 +246,22 @@ export function PayFlowCommsPage() {
         <KpiCard label="Failed" value={String(summary.failed)} />
       </KpiGrid>
 
-      <div className="mb-5 flex flex-wrap items-center gap-2">
-        <span className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+      <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start">
+        <span className="shrink-0 pt-0.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
           Drop-off
         </span>
-        {segments.map((segment) => (
-          <StatusPill key={segment}>
-            {segment} · {dropOff[segment] ?? 0}
-          </StatusPill>
-        ))}
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5 sm:flex-row sm:flex-wrap">
+          {segments.map((segment) => (
+            <span
+              key={segment}
+              className="inline-flex max-w-full rounded-full border border-border/70 bg-card px-2.5 py-1 text-[11px] leading-snug font-medium text-foreground"
+            >
+              <span className="min-w-0 break-words">
+                {segment} · {dropOff[segment] ?? 0}
+              </span>
+            </span>
+          ))}
+        </div>
       </div>
 
       <Panel
@@ -287,7 +294,7 @@ export function PayFlowCommsPage() {
             options={["All Channels", ...(channels.length ? channels : ["Email", "SMS"])]}
           />
           <span
-            className="flex h-9 w-full min-w-0 cursor-not-allowed items-center gap-2 rounded-md border border-border bg-surface px-2.5 opacity-60 xl:w-auto"
+            className="hidden h-9 w-full min-w-0 cursor-not-allowed items-center gap-2 rounded-md border border-border bg-surface px-2.5 opacity-60 md:flex xl:w-auto"
             title="WhatsApp is coming later"
           >
             <span className="shrink-0 text-[11px] font-medium text-muted-foreground">Channel</span>

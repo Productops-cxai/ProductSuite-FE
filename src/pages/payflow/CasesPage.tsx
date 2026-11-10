@@ -204,14 +204,14 @@ export function PayFlowCasesPage() {
         description="Customer accounts under collection across all clients in your access scope."
         actions={
           canImport ? (
-            <>
+            <div className="flex flex-wrap items-center gap-2">
               <Link to="/payflow/imports?type=account">
                 <Btn variant="ghost">Import History</Btn>
               </Link>
               <Link to="/payflow/cases/import">
                 <Btn variant="primary">Upload Daily CRM File</Btn>
               </Link>
-            </>
+            </div>
           ) : undefined
         }
       />

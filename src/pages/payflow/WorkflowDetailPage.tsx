@@ -50,7 +50,7 @@ import type {
   PayflowStrategyStepConfig,
 } from "../../types";
 
-type NoteAction = "update" | "approve" | "activate" | "reject" | "write_all";
+type NoteAction = "update" | "approve" | "activate" | "reject";
 
 function findStep(strategy: PayflowStrategy, id: string | null): PayflowStrategyStep | null {
   if (!id) return null;
@@ -333,6 +333,7 @@ export function PayFlowWorkflowDetailPage() {
     setWritingMessages(true);
     setBusy(true);
     setError("");
+    setNotice("");
     try {
       const updated = ensureStepLinks(
         await writePayflowWorkflowMessages(strategy.id, {
@@ -356,6 +357,7 @@ export function PayFlowWorkflowDetailPage() {
           : "Message text written by AI for all email / SMS steps.",
       );
     } catch (err) {
+      setNotice("");
       setError(err instanceof ApiError ? err.detail : "Failed to write messages");
     } finally {
       setWritingMessages(false);
@@ -368,10 +370,6 @@ export function PayFlowWorkflowDetailPage() {
     if (!strategy || !noteAction) return;
     if (noteAction === "update") {
       await persistSteps(note);
-      return;
-    }
-    if (noteAction === "write_all") {
-      await writeMessages({ remarks: note.trim() || undefined });
       return;
     }
     if (noteAction === "approve") {
@@ -503,110 +501,106 @@ export function PayFlowWorkflowDetailPage() {
         title={strategy.name}
         description={strategy.summary || undefined}
         actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusPill tone={strategyStatusTone(strategy.status)} dot>
-              {strategy.status}
-            </StatusPill>
-            <StatusPill>v{strategy.version}</StatusPill>
-            {(strategy.human_modified || strategy.origin === "Human Modified") && (
-              <StatusPill tone="info">Human Modified</StatusPill>
-            )}
-            {canSubmitReview && (
-              <Btn
-                disabled={busy}
-                onClick={() =>
-                  void runAction(
-                    () => submitPayflowWorkflowReview(strategy.id),
-                    "Submitted for review.",
-                  )
-                }
-              >
-                Submit for review
-              </Btn>
-            )}
-            {canSaveDraft && (
-              <Btn
-                disabled={busy}
-                onClick={() =>
-                  void runAction(() => savePayflowWorkflowDraft(strategy.id), "Draft saved.")
-                }
-              >
-                Save Draft
-              </Btn>
-            )}
-            {allowWriteMessages && (
-              <Btn
-                disabled={busy || writingMessages}
-                onClick={() => setNoteAction("write_all")}
-              >
-                {writingMessages ? "Writing messages…" : "Write all messages with AI"}
-              </Btn>
-            )}
-            {showDelete && (
-              <Btn variant="danger" disabled={busy} onClick={() => setConfirmDelete(true)}>
-                Delete
-              </Btn>
-            )}
-            {showReject && (
-              <Btn
-                variant="danger"
-                disabled={busy}
-                onClick={() => {
-                  // Sidebar "Note for PayFlow" feeds Reject / regeneration.
-                  if (isAiGenerated && rejectNote.trim().length >= 3) {
-                    void runReject(rejectNote);
-                    return;
-                  }
-                  setNoteAction("reject");
-                }}
-              >
-                Reject / Request Regeneration
-              </Btn>
-            )}
-            {showPrimaryAction && (
-              <Btn
-                variant="primary"
-                disabled={busy}
-                onClick={() => {
-                  // After approve → same primary button becomes Activate (AC1).
-                  if (primaryIsActivate) {
-                    setNoteAction("activate");
-                    return;
-                  }
-                  if (isAiProposed || isUnderReview) {
-                    setNoteAction("approve");
-                    return;
-                  }
-                  if (isDraft && isHumanCreated) {
+          <>
+            <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
+              <StatusPill tone={strategyStatusTone(strategy.status)} dot>
+                {strategy.status}
+              </StatusPill>
+              <StatusPill>v{strategy.version}</StatusPill>
+              {(strategy.human_modified || strategy.origin === "Human Modified") && (
+                <StatusPill tone="info">Human Modified</StatusPill>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+              {canSubmitReview && (
+                <Btn
+                  disabled={busy}
+                  onClick={() =>
                     void runAction(
                       () => submitPayflowWorkflowReview(strategy.id),
                       "Submitted for review.",
-                    );
-                    return;
+                    )
                   }
-                  setNotice(
-                    "Approve is available once the workflow is AI Proposed or Under Review.",
-                  );
-                  setError("");
-                }}
-              >
-                {primaryIsActivate ? "Activate" : "Approve Strategy"}
-              </Btn>
-            )}
-            {canDeactivate && (
-              <Btn
-                disabled={busy}
-                onClick={() =>
-                  void runAction(
-                    () => deactivatePayflowWorkflow(strategy.id),
-                    "Workflow deactivated. History and prior executions are retained.",
-                  )
-                }
-              >
-                Deactivate
-              </Btn>
-            )}
-          </div>
+                >
+                  Submit for review
+                </Btn>
+              )}
+              {canSaveDraft && (
+                <Btn
+                  disabled={busy}
+                  onClick={() =>
+                    void runAction(() => savePayflowWorkflowDraft(strategy.id), "Draft saved.")
+                  }
+                >
+                  Save Draft
+                </Btn>
+              )}
+              {showDelete && (
+                <Btn variant="danger" disabled={busy} onClick={() => setConfirmDelete(true)}>
+                  Delete
+                </Btn>
+              )}
+              {showReject && (
+                <Btn
+                  variant="danger"
+                  disabled={busy}
+                  onClick={() => {
+                    // Sidebar "Note for PayFlow" feeds Reject / regeneration.
+                    if (isAiGenerated && rejectNote.trim().length >= 3) {
+                      void runReject(rejectNote);
+                      return;
+                    }
+                    setNoteAction("reject");
+                  }}
+                >
+                  Reject / Regenerate
+                </Btn>
+              )}
+              {showPrimaryAction && (
+                <Btn
+                  variant="primary"
+                  disabled={busy}
+                  onClick={() => {
+                    // After approve → same primary button becomes Activate (AC1).
+                    if (primaryIsActivate) {
+                      setNoteAction("activate");
+                      return;
+                    }
+                    if (isAiProposed || isUnderReview) {
+                      setNoteAction("approve");
+                      return;
+                    }
+                    if (isDraft && isHumanCreated) {
+                      void runAction(
+                        () => submitPayflowWorkflowReview(strategy.id),
+                        "Submitted for review.",
+                      );
+                      return;
+                    }
+                    setNotice(
+                      "Approve is available once the workflow is AI Proposed or Under Review.",
+                    );
+                    setError("");
+                  }}
+                >
+                  {primaryIsActivate ? "Activate" : "Approve Strategy"}
+                </Btn>
+              )}
+              {canDeactivate && (
+                <Btn
+                  disabled={busy}
+                  onClick={() =>
+                    void runAction(
+                      () => deactivatePayflowWorkflow(strategy.id),
+                      "Workflow deactivated. History and prior executions are retained.",
+                    )
+                  }
+                >
+                  Deactivate
+                </Btn>
+              )}
+            </div>
+          </>
         }
       />
 
@@ -997,17 +991,6 @@ export function PayFlowWorkflowDetailPage() {
         onConfirm={(note) => void onNoteConfirm(note)}
       />
       <WorkflowActionNoteModal
-        open={noteAction === "write_all"}
-        title="Write all messages with AI"
-        description="PayFlow will write (or improve) the text of every email and SMS step. Optional remarks guide the tone. Status and origin stay unchanged. Takes about 5–20 seconds."
-        confirmLabel={writingMessages ? "Writing…" : "Write messages"}
-        busy={busy || writingMessages}
-        required={false}
-        placeholder="e.g. shorter, firmer, mention payment plans"
-        onClose={() => setNoteAction(null)}
-        onConfirm={(note) => void onNoteConfirm(note)}
-      />
-      <WorkflowActionNoteModal
         open={noteAction === "approve"}
         title="Approve strategy"
         description="Optional note for the approval record and AI reassessment history."
@@ -1029,9 +1012,7 @@ export function PayFlowWorkflowDetailPage() {
       />
       <WorkflowActionNoteModal
         open={noteAction === "reject"}
-        title={
-          isAiGenerated ? "Reject & regenerate" : "Reject workflow"
-        }
+        title={isAiGenerated ? "Reject & regenerate" : "Reject workflow"}
         description={
           isAiGenerated
             ? "Your remarks are sent to PayFlow AI to regenerate a new AI Proposed workflow."

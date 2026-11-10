@@ -650,8 +650,8 @@ function PayFlowShell() {
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col bg-[#f5f7fb] dark:bg-[#0b1220]">
-        <header className="sticky top-0 z-20 flex h-[68px] items-center justify-between gap-4 border-b border-slate-200/80 bg-white/90 px-5 shadow-card backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 lg:px-9">
-          <div className="flex min-w-0 items-center gap-3">
+        <header className="sticky top-0 z-20 flex h-[68px] items-center justify-between gap-2 overflow-visible border-b border-slate-200/80 bg-white/90 px-3 shadow-card backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 sm:gap-3 sm:px-5 lg:px-9">
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
             <button
               type="button"
               className="grid size-8 shrink-0 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
@@ -661,10 +661,11 @@ function PayFlowShell() {
             >
               <SidebarToggleIcon />
             </button>
+            {/* Mark only on small screens — full wordmark overlaps ProductSwitcher. */}
             <img
-              src="/assets/payflow-logo-transparent.png"
+              src="/assets/payflow-mark.png"
               alt="PayFlow"
-              className="block h-8 w-auto max-w-[140px] object-contain object-left md:hidden"
+              className="size-8 shrink-0 object-contain md:hidden"
             />
             <span className="hidden truncate text-[12px] text-slate-400 lg:inline">
               Collections operations ·{" "}
@@ -674,14 +675,14 @@ function PayFlowShell() {
               in view
             </span>
           </div>
-          <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
+          <div className="relative z-30 flex shrink-0 items-center gap-1 overflow-visible sm:gap-2.5">
             <ProductSwitcher current="PAYFLOW" variant="product" />
             <NotificationBell />
             <span className="mx-1 hidden h-7 w-px bg-slate-200 dark:bg-slate-700 lg:block" aria-hidden />
             <div className="relative" ref={headerAccountRef}>
               <button
                 type="button"
-                className="flex items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800"
+                className="flex items-center gap-2 rounded-lg px-1 py-1.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800 sm:gap-2.5 sm:px-1.5"
                 aria-haspopup="menu"
                 aria-expanded={headerAccountOpen}
                 onClick={() => setHeaderAccountOpen((open) => !open)}

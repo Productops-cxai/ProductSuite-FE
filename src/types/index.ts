@@ -576,6 +576,12 @@ export interface PayflowClientDetail extends PayflowClient {
     min_plan_amount?: number;
     stripe_payments_enabled?: boolean;
     accepted_currencies?: string[] | string;
+    plan_limits?: Array<{
+      id?: string;
+      min_balance?: number;
+      max_balance?: number | null;
+      max_term_months?: number;
+    }>;
   } | null;
   mappings: PayflowClientMapping[];
   mapping_summary: PayflowClientMappingSummary;
@@ -822,6 +828,7 @@ export interface PayflowImportErrorItem {
 
 export interface PayflowImportCounts {
   total: number;
+  processed?: number;
   created: number;
   updated: number;
   unchanged: number;
@@ -839,6 +846,20 @@ export interface PayflowImportRun {
   status: string;
   counts: PayflowImportCounts;
   errors: PayflowImportErrorItem[];
+}
+
+export interface PayflowImportJob {
+  id: number;
+  job_type: string;
+  status: "queued" | "running" | "completed" | "failed" | string;
+  file_name: string;
+  processed_count: number;
+  total_count: number;
+  import_run_id?: number | null;
+  error_message?: string | null;
+  result?: unknown;
+  created_at?: string | null;
+  completed_at?: string | null;
 }
 
 export interface PayflowImportListResponse {
@@ -1676,6 +1697,20 @@ export interface PayflowDashboardFunnelStep {
   href?: string | null;
 }
 
+export interface PayflowDashboardFunnelPlacement {
+  label: string;
+  volume: number;
+}
+
+export interface PayflowDashboardFunnelBreakdown {
+  valid_addresses: number;
+  invalid_addresses: number;
+  sent: number;
+  delivered: number;
+  placement_available: boolean;
+  placement: PayflowDashboardFunnelPlacement[];
+}
+
 export interface PayflowDashboardOutcome {
   id: string;
   label: string;
@@ -1724,6 +1759,7 @@ export interface PayflowDashboardResponse {
   kpis: PayflowDashboardKpi[];
   attention: PayflowDashboardAttention[];
   funnel: PayflowDashboardFunnelStep[];
+  funnel_breakdown?: PayflowDashboardFunnelBreakdown | null;
   outcomes: PayflowDashboardOutcome[];
   clients_attention: PayflowDashboardClientAttention[];
   activity: PayflowDashboardActivity[];
