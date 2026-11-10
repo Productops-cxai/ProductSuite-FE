@@ -26,6 +26,9 @@ const PAGE_SIZE = 10;
 
 type ReconRow = Record<string, string | number | null | undefined>;
 
+/** The on-screen preview stops here (API default); the CSV export does not. */
+const PREVIEW_ROW_LIMIT = 500;
+
 type Preview = {
   generated_at?: string;
   export_reference?: string;
@@ -322,7 +325,7 @@ export function PayFlowPaymentReconciliationPage() {
       const q = new URLSearchParams();
       if (f.client_id) q.set("client_id", String(f.client_id));
       if (f.portfolio_id) q.set("portfolio_id", String(f.portfolio_id));
-      if (f.date_from) q.set("date_from", new Date(f.date_from).toISOString());
+      if (f.date_from) q.set("date_from", new Date(`${f.date_from}T00:00:00`).toISOString());
       if (f.date_to) q.set("date_to", new Date(`${f.date_to}T23:59:59`).toISOString());
       if (f.status) q.set("status", f.status);
       const qs = q.toString();
@@ -436,6 +439,13 @@ export function PayFlowPaymentReconciliationPage() {
 
       {preview ? (
         <>
+          {(preview.rows?.length ?? 0) >= PREVIEW_ROW_LIMIT ? (
+            <p className="mb-3 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-[13px] text-foreground">
+              Showing the first {PREVIEW_ROW_LIMIT} transactions. The totals on this screen cover
+              only these. Download the CSV for the complete list; the file carries its own export
+              reference.
+            </p>
+          ) : null}
           <div className="mb-4 grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
             <KpiCard label="Transactions" value={String(totals?.transaction_count ?? 0)} />
             <KpiCard label="Payments total" value={money(totals?.payment_amount_total)} />

@@ -282,6 +282,12 @@ export function PayFlowClientDetailPage() {
         } = full;
         payload = rest;
       }
+      // Payment options are saved from their own section only. Sending them with
+      // every other section wrote this form's defaults over the client's settings.
+      if (configSection !== "Payment Options") {
+        const { payment_settings: _payments, ...rest } = payload as typeof full;
+        payload = rest;
+      }
       // Fine-grained modify_* without edit_client: send only fields for this section.
       if (!canEdit) {
         const scoped: Record<string, unknown> = {};

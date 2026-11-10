@@ -1220,6 +1220,7 @@ export function PayFlowCaseDetailPage() {
       <div className="mt-5 space-y-5">
         <WorkflowFlowPanel
           clientId={account.client_id}
+          strategyId={execution?.strategy_id ?? null}
           workflowName={execution?.strategy_name || account.current_workflow}
           title="Workflow Map"
           description="The live visual strategy for this case. Click any step to review or adjust it."

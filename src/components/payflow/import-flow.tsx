@@ -39,8 +39,6 @@ import {
   formatFileSize,
   formatNumber,
   importStatusTone,
-  lastImport,
-  lastSuccessfulImport,
   isOptionalPortfolioSetupIssue,
   mapApiImportRun,
   mapImportErrorStatus,
@@ -243,6 +241,38 @@ function ProgressPanel({
       </div>
     </Panel>
   );
+}
+
+/**
+ * The upload in progress, so a page refresh can pick it up again. Only the job id
+ * and file name are kept (never file contents or rows), and only for this tab.
+ */
+type RememberedUpload = { jobId: number; fileName: string };
+
+function rememberedUploadKey(kind: ImportKind) {
+  return `payflow-import-upload-${kind}`;
+}
+
+function readRememberedUpload(kind: ImportKind): RememberedUpload | null {
+  try {
+    const raw = window.sessionStorage.getItem(rememberedUploadKey(kind));
+    const parsed = raw ? (JSON.parse(raw) as RememberedUpload) : null;
+    return parsed && Number.isFinite(parsed.jobId) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function rememberUpload(kind: ImportKind, upload: RememberedUpload | null) {
+  try {
+    if (upload) {
+      window.sessionStorage.setItem(rememberedUploadKey(kind), JSON.stringify(upload));
+    } else {
+      window.sessionStorage.removeItem(rememberedUploadKey(kind));
+    }
+  } catch {
+    /* storage unavailable: refresh simply will not resume */
+  }
 }
 
 function sleep(ms: number) {
@@ -473,9 +503,12 @@ export function ImportResult({
         {run.errors.length > 0 && (
           <Btn onClick={() => setShowErrors((s) => !s)}>{showErrors ? "Hide Errors" : "View Errors"}</Btn>
         )}
-        <Link to={`/payflow/imports/${run.id}`}>
-          <Btn>View Import Details</Btn>
-        </Link>
+        {/* A file refused at validation was never stored: there is no details page for it. */}
+        {String(run.id).startsWith("preview-") ? null : (
+          <Link to={`/payflow/imports/${run.id}`}>
+            <Btn>View Import Details</Btn>
+          </Link>
+        )}
         {returnTo}
       </div>
       {showErrors && <ImportErrorTable errors={run.errors} />}
@@ -901,7 +934,11 @@ function mapClientImportApiError(
   };
 }
 
-function bulkUploadToRun(file: File, result: PayflowBulkUploadResult, uploadedBy: string): ImportRun {
+function bulkUploadToRun(
+  file: { name: string },
+  result: PayflowBulkUploadResult,
+  uploadedBy: string,
+): ImportRun {
   const summary = result.summary;
   const created = summary?.created ?? result.created_count ?? 0;
   const updated = summary?.updated ?? 0;
@@ -988,6 +1025,7 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
 
   async function runImportJob(
     start: () => Promise<PayflowImportJob>,
+    opts?: { remember?: string },
   ): Promise<PayflowImportJob> {
     pollAbortRef.current?.abort();
     const ac = new AbortController();
@@ -995,6 +1033,7 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
     setProgressDone(0);
     setProgressTotal(0);
     const started = await start();
+    if (opts?.remember) rememberUpload(kind, { jobId: started.id, fileName: opts.remember });
     applyJobProgress(started);
     // Brief pause so the first poll doesn't race the background worker start.
     await sleep(150);
@@ -1045,32 +1084,65 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
     setSubmitError(null);
     setStage("processing");
     try {
-      const job = await runImportJob(() =>
-        isClient ? startPayflowClientsBulkUpload(file) : startPayflowAccountImportUpload(file),
+      const job = await runImportJob(
+        () =>
+          isClient ? startPayflowClientsBulkUpload(file) : startPayflowAccountImportUpload(file),
+        { remember: file.name },
       );
-      if (job.status === "failed") {
-        throw new Error(job.error_message || "Import failed");
-      }
-      if (isClient) {
-        const result = job.result as PayflowBulkUploadResult | null;
-        if (!result) throw new Error("Import finished without a result");
-        const mapped = bulkUploadToRun(file, result, user?.full_name || "You");
-        addImport(mapped);
-        setRun(mapped);
-      } else {
-        const result = job.result as PayflowImportRun | null;
-        if (!result) throw new Error("Import finished without a result");
-        const mapped = mapApiImportRun(result);
-        addImport(mapped);
-        setRun(mapped);
-      }
-      setStage("done");
+      showUploadResult(job, file.name);
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
+      rememberUpload(kind, null);
       setSubmitError(err instanceof ApiError ? err.detail : err instanceof Error ? err.message : "Import failed");
       setStage("preview");
     }
   }
+
+  /** Turn a finished upload job into the result screen. */
+  function showUploadResult(job: PayflowImportJob, fileName: string) {
+    rememberUpload(kind, null);
+    if (job.status === "failed") {
+      throw new Error(job.error_message || "Import failed");
+    }
+    if (isClient) {
+      const result = job.result as PayflowBulkUploadResult | null;
+      if (!result) throw new Error("Import finished without a result");
+      const mapped = bulkUploadToRun({ name: fileName }, result, user?.full_name || "You");
+      addImport(mapped);
+      setRun(mapped);
+    } else {
+      const result = job.result as PayflowImportRun | null;
+      if (!result) throw new Error("Import finished without a result");
+      const mapped = mapApiImportRun(result);
+      addImport(mapped);
+      setRun(mapped);
+    }
+    setStage("done");
+  }
+
+  // Page refreshed (or reopened in this tab) while an upload was running: the server
+  // is still processing it, so show its progress again instead of an empty form.
+  useEffect(() => {
+    const remembered = readRememberedUpload(kind);
+    if (!remembered) return;
+    const ac = new AbortController();
+    pollAbortRef.current = ac;
+    setStage("processing");
+    pollPayflowImportJob(remembered.jobId, applyJobProgress, {
+      intervalMs: 400,
+      signal: ac.signal,
+    })
+      .then((job) => showUploadResult(job, remembered.fileName))
+      .catch((err) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        rememberUpload(kind, null);
+        setSubmitError(
+          err instanceof ApiError ? err.detail : err instanceof Error ? err.message : "Import failed",
+        );
+        setStage("upload");
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind]);
 
   useEffect(() => {
     return () => {
@@ -1269,9 +1341,11 @@ function PreviousImportPanel() {
         setOk(mapped.find((r) => r.status !== "Failed" && r.status !== "Processing") ?? null);
       })
       .catch(() => {
+        // History could not be loaded: say nothing rather than show another session's
+        // (or sample) import as this user's previous one.
         if (!cancelled) {
-          setLast(lastImport("account") ?? null);
-          setOk(lastSuccessfulImport("account") ?? null);
+          setLast(null);
+          setOk(null);
         }
       });
     return () => {

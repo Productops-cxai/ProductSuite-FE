@@ -1,4 +1,4 @@
-import { apiRequest, apiRequestBlob, apiRequestMultipart } from "./client";
+import { ApiError, apiRequest, apiRequestBlob, apiRequestMultipart } from "./client";
 import { cachedAsync, invalidateCache } from "../lib/dedupeAsync";
 import { deletionSource } from "../lib/deletionSource";
 import type {
@@ -541,14 +541,28 @@ export async function pollPayflowImportJob(
   opts?: { intervalMs?: number; signal?: AbortSignal },
 ): Promise<PayflowImportJob> {
   const intervalMs = opts?.intervalMs ?? 500;
+  let misses = 0;
   for (;;) {
     if (opts?.signal?.aborted) {
       throw new DOMException("Import polling aborted", "AbortError");
     }
-    const job = await getPayflowImportJob(jobId);
-    onProgress?.(job);
-    if (job.status === "completed" || job.status === "failed") {
-      return job;
+    let job: PayflowImportJob | null = null;
+    try {
+      job = await getPayflowImportJob(jobId);
+      misses = 0;
+    } catch (err) {
+      // The import runs on the server whether or not this poll gets through. One
+      // dropped request must not be reported as "Import failed": keep asking, and
+      // give up only on a real answer (not found / not allowed) or a long outage.
+      const answered = err instanceof ApiError && err.status >= 400 && err.status < 500;
+      misses += 1;
+      if (answered || misses >= 20) throw err;
+    }
+    if (job) {
+      onProgress?.(job);
+      if (job.status === "completed" || job.status === "failed") {
+        return job;
+      }
     }
     await new Promise<void>((resolve, reject) => {
       const t = window.setTimeout(() => resolve(), intervalMs);
@@ -893,6 +907,29 @@ export async function writePayflowWorkflowMessages(
   });
 }
 
+/** One background AI-suggest run (started by an import or an activation). */
+export interface PayflowAiSuggestJob {
+  id: number;
+  client_id: number;
+  portfolio_id: number | null;
+  trigger: string;
+  /** pending | running | done | skipped | failed */
+  status: string;
+  skip_reason?: string | null;
+  error_message?: string | null;
+  workflows_created: number;
+  started_at?: string | null;
+  finished_at?: string | null;
+  created_at: string;
+}
+
+/** Latest AI-suggest runs for a client / portfolio, newest first. */
+export function listPayflowAiSuggestJobs(clientId: number, portfolioId?: number | null) {
+  const q = new URLSearchParams({ client_id: String(clientId) });
+  if (portfolioId != null) q.set("portfolio_id", String(portfolioId));
+  return apiRequest<PayflowAiSuggestJob[]>(`/payflow/ai-suggest-jobs?${q.toString()}`);
+}
+
 export function previewPayflowPortfolioSegments(clientId: number, portfolioId: number) {
   return apiRequest<{
     client_id: number;
@@ -1163,7 +1200,9 @@ export function previewPaymentReconciliation(params?: {
       "date_from",
       params.date_from.includes("T")
         ? params.date_from
-        : new Date(params.date_from).toISOString(),
+        : // Start of that day where the user is. (A bare date parses as UTC midnight,
+          // which moved the start of the range by the user's UTC offset.)
+          new Date(`${params.date_from}T00:00:00`).toISOString(),
     );
   }
   if (params?.date_to) {

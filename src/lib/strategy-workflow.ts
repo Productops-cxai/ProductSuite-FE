@@ -171,6 +171,61 @@ export function stepConfig(step: PayflowStrategyStep): PayflowStrategyStepConfig
   return step.config || {};
 }
 
+/**
+ * Top-level `channel` of a step, derived from its config.
+ *
+ * It must follow the config: keeping the previous value ("Email") after the
+ * reviewer switches to Email + SMS made the server restore the old channel.
+ */
+export function stepChannelFor(
+  kind: string,
+  cfg: PayflowStrategyStepConfig,
+  previous?: string | null,
+): string | null {
+  if (kind !== "Communication") return cfg.channel ?? previous ?? null;
+  return isContactStep(cfg) ? CONTACT_CHANNEL : (cfg.channel as string);
+}
+
+/**
+ * Steps in the shape the API saves.
+ *
+ * A contact step is sent with the explicit "Email + SMS" label: the API drops
+ * empty values, so "no channel" would otherwise be read as "channel unchanged".
+ */
+export function toStepPayload(steps: PayflowStrategyStep[]): PayflowStrategyStep[] {
+  return steps.map((s, i) => {
+    const cfg: PayflowStrategyStepConfig = { ...(s.config || {}) };
+    const isComm = s.kind === "Communication";
+    const channel = isComm ? stepChannelFor(s.kind, cfg, s.channel) : (s.channel ?? null);
+    if (isComm) cfg.channel = channel;
+    return {
+      id: s.id || `s${i + 1}`,
+      kind: s.kind,
+      title: s.title,
+      origin: s.origin || undefined,
+      disabled: s.disabled,
+      config: s.config || isComm ? cfg : undefined,
+      next: s.next ?? null,
+      yes: s.yes ?? null,
+      no: s.no ?? null,
+      channel,
+      purpose: s.purpose ?? null,
+      timing: s.timing ?? null,
+      detail: s.detail ?? null,
+    };
+  });
+}
+
+/** Approved / Active workflows leave that state as soon as an edit is saved. */
+export function editDemotesWorkflow(status?: string | null): boolean {
+  return status === "Active" || status === "Approved";
+}
+
+export const EDIT_DEMOTES_WARNING =
+  "This workflow is approved for collections. Saving changes moves it to Under Review: " +
+  "accounts already in progress finish on the approved version, and no new accounts start " +
+  "until it is approved and activated again.\n\nSave the changes?";
+
 export function timingLabel(step: PayflowStrategyStep): string | undefined {
   if (step.timing) return step.timing;
   const cfg = stepConfig(step);

@@ -1055,11 +1055,15 @@ function HoldPanel({
         Collection activity respects the hold until the review resumes.
       </p>
       <div className="mt-3 space-y-3">
-        <Field label="Hold until (date / time)">
+        <Field
+          label="Hold until (date / time)"
+          hint="The review returns to the queue on its own when this time arrives."
+        >
+          {/* A picked date, not free text: PayFlow can only end a hold it can read. */}
           <TextInput
+            type="datetime-local"
             value={until}
             onChange={setUntil}
-            placeholder="14 Sep 2026 · 09:00"
             disabled={furtherReview || busy}
           />
         </Field>

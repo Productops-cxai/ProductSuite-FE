@@ -199,13 +199,6 @@ export const sampleAccountErrors: ImportError[] = [
 
 const STORAGE_KEY = "payflow-import-runs";
 
-const seedRuns: ImportRun[] = [
-  { id: "imp-1042", kind: "account", fileName: "CRM_ACCOUNTS_20261004.csv", dateTime: "04 Oct 2026, 09:12", uploadedBy: "Daniya", status: "Completed with Errors", counts: { total: 11870, created: 512, updated: 10940, unchanged: 377, failed: 41 }, errors: sampleAccountErrors },
-  { id: "imp-1041", kind: "account", fileName: "CRM_ACCOUNTS_20261003.csv", dateTime: "03 Oct 2026, 09:05", uploadedBy: "Daniya", status: "Completed", counts: { total: 11790, created: 430, updated: 10980, unchanged: 380, failed: 0 }, errors: [] },
-  { id: "imp-1040", kind: "account", fileName: "CRM_ACCOUNTS_20261002.xlsx", dateTime: "02 Oct 2026, 09:20", uploadedBy: "Ahmed", status: "Failed", counts: { total: 0, created: 0, updated: 0, unchanged: 0, failed: 0 }, errors: [{ recordId: "File", client: "—", subClient: "—", field: "File structure", error: "The file does not match the agreed CRM layout, so no records were processed.", status: "Rejected" }] },
-  { id: "imp-1038", kind: "client", fileName: "CRM_CLIENTS_Q3.csv", dateTime: "28 Sep 2026, 14:40", uploadedBy: "Daniya", status: "Completed", counts: { total: 940, created: 96, updated: 820, unchanged: 24, failed: 0 }, errors: [] },
-];
-
 /** Drop any legacy localStorage import history (could contain PII in error rows). */
 function purgeLegacyImportStorage() {
   if (typeof window === "undefined") return;
@@ -219,7 +212,9 @@ function purgeLegacyImportStorage() {
 purgeLegacyImportStorage();
 
 // In-memory only — never write import error payloads to browser storage.
-let runs: ImportRun[] = [...seedRuns];
+// Starts empty: history comes from the API. (It used to start with sample runs,
+// which showed up as a real "previous import" whenever the API call failed.)
+let runs: ImportRun[] = [];
 
 export function listImports(kind?: ImportKind) {
   return kind ? runs.filter((r) => r.kind === kind) : runs;
@@ -231,7 +226,7 @@ export function addImport(run: ImportRun) {
   runs = [run, ...runs];
 }
 export function clearImportRuns() {
-  runs = [...seedRuns];
+  runs = [];
   purgeLegacyImportStorage();
 }
 export function lastImport(kind: ImportKind) {
