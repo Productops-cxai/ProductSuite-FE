@@ -26,7 +26,7 @@ import { Modal } from "../../components/ui/Modal";
 import { Pagination } from "../../components/ui/Pagination";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useClientPagedList } from "../../hooks/useOffsetPagination";
-import type { ComplianceRule } from "../../types";
+import type { ComplianceRule, ComplianceRulesListResponse } from "../../types";
 
 const PAGE_SIZE = 10;
 const ALL = "All";
@@ -78,12 +78,11 @@ export function PayFlowComplianceRulesPage() {
   const isMobile = useIsMobile();
   const navigate = useNavigate();
   const [rules, setRules] = useState<ComplianceRule[]>([]);
-  const [summary, setSummary] = useState({
+  const [summary, setSummary] = useState<ComplianceRulesListResponse["summary"]>({
     total: 0,
     active: 0,
     needs_review: 0,
     countries: 0,
-    clients_affected: undefined as number | undefined,
   });
   const [canCreate, setCanCreate] = useState(false);
   const [canManage, setCanManage] = useState(false);

@@ -16,7 +16,6 @@ import { useAuth } from "../../context/AuthContext";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { ApiError } from "../../api/client";
-import { applyComplianceImportSelections } from "../../api/compliance";
 import { ClientComplianceRulesPanel } from "./ClientComplianceRules";
 import {
   downloadPayflowAccountImportTemplate,
@@ -1032,7 +1031,7 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
   const [previewMessage, setPreviewMessage] = useState<string | null>(null);
   const [complianceClients, setComplianceClients] = useState<ImportComplianceClient[]>([]);
   const [complianceClientCode, setComplianceClientCode] = useState("");
-  const [complianceSelections, setComplianceSelections] = useState<Record<string, number[] | null>>({});
+  const [, setComplianceSelections] = useState<Record<string, number[] | null>>({});
   const [complianceNotice, setComplianceNotice] = useState("");
 
   const [submitError, setSubmitError] = useState<string | null>(null);
