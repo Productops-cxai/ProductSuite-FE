@@ -67,6 +67,9 @@ function isHumanCreatedWorkflow(row: PayflowStrategy) {
 }
 
 /** AI / Human Modified / Human Created workflows regenerate on reject with remarks. */
+/** Statuses the API regenerates directly (REGENERATE_STATUSES in workflow_suggestion/service.py). */
+const REGENERATES_AS_IS = new Set(["Draft", "AI Proposed", "Under Review", "Approved"]);
+
 function regeneratesOnReject(row: PayflowStrategy) {
   return (
     row.source === "AI Generated" ||
@@ -317,10 +320,12 @@ export function PayFlowWorkflowDetailPage() {
     }
     setBusy(true);
     setError("");
-    // The AI can fail (it is a long call). While the workflow is still being reviewed,
-    // ask for the new version FIRST, so a failure leaves the original untouched.
-    const regenerateFirst =
-      shouldRegen && (strategy.status === "AI Proposed" || strategy.status === "Under Review");
+    // The AI can fail (it is a long call). Wherever the server regenerates a workflow
+    // as it stands (Draft, AI Proposed, Under Review, Approved), ask for the new version
+    // FIRST: a failure then leaves the original untouched, and an Approved workflow does
+    // not lose its approval for nothing. Active / Inactive must be rejected first: the
+    // server refuses to regenerate them, and rejecting an Active one stops its runs.
+    const regenerateFirst = shouldRegen && REGENERATES_AS_IS.has(strategy.status);
     let rejected = false;
     try {
       if (regenerateFirst) {
@@ -994,7 +999,15 @@ export function PayFlowWorkflowDetailPage() {
                         <span className="text-[12.5px] font-semibold text-foreground">
                           v{v.version}
                           {v.status ? (
-                            <span className="ml-2 text-[11px] font-normal text-muted-foreground">
+                            <span
+                              className={
+                                // "Rejected" is a history-only status (written when a
+                                // workflow is regenerated): make it stand out.
+                                v.status === "Rejected"
+                                  ? "ml-2 text-[11px] font-semibold text-destructive"
+                                  : "ml-2 text-[11px] font-normal text-muted-foreground"
+                              }
+                            >
                               {v.status}
                             </span>
                           ) : null}
