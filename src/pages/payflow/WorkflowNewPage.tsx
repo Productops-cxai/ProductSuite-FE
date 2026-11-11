@@ -361,7 +361,7 @@ export function PayFlowWorkflowNewPage() {
           { label: "Create workflow" },
         ]}
         title="Create a workflow"
-        description="Describe what you want and let PayFlow AI suggest a starting flow, or add the steps yourself and drag them into the order you want."
+        description="Describe what you want to get a starter flow, or add the steps yourself and drag them into the order you want."
       />
 
       <div className="grid gap-4 xl:grid-cols-[360px_1fr]">
@@ -457,7 +457,7 @@ export function PayFlowWorkflowNewPage() {
           </Panel>
 
           <Panel
-            title="Ask PayFlow AI"
+            title="Starter flow"
             description="Describe the outcome you want. AI suggests the steps; you stay in control."
             action={<StatusPill tone="ai">AI</StatusPill>}
           >
@@ -511,7 +511,7 @@ export function PayFlowWorkflowNewPage() {
           >
             {steps.length === 0 ? (
               <p className="text-[12.5px] leading-relaxed text-muted-foreground">
-                No steps yet. Describe what you want in “Ask PayFlow AI”, or add steps here and drag
+                No steps yet. Describe what you want in “Starter flow”, or add steps here and drag
                 them into order.
               </p>
             ) : (
@@ -646,7 +646,7 @@ export function PayFlowWorkflowNewPage() {
               <div className="rounded-xl border border-dashed border-border-strong bg-surface px-6 py-14 text-center">
                 <p className="text-[13px] font-semibold text-foreground">No steps yet</p>
                 <p className="mx-auto mt-1 max-w-sm text-[12px] leading-relaxed text-muted-foreground">
-                  Add steps or ask PayFlow AI for a suggestion, and the flow will appear here.
+                  Add steps or build a starter flow, and the flow will appear here.
                 </p>
               </div>
             )}

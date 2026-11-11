@@ -36,11 +36,15 @@ import {
   addStepAfter,
   canWriteWorkflowMessages,
   communicationSnippet,
+  EDIT_DEMOTES_WARNING,
+  editDemotesWorkflow,
   ensureStepLinks,
   messagesNotWrittenContext,
   originTone,
   removeStep,
+  stepChannelFor,
   strategyStatusTone,
+  toStepPayload,
   type AddableStepKind,
 } from "../../lib/strategy-workflow";
 import type {
@@ -188,7 +192,7 @@ export function PayFlowWorkflowDetailPage() {
       ...draftStep,
       title: title !== undefined ? title : draftStep.title,
       config: nextCfg,
-      channel: nextCfg.channel ?? draftStep.channel,
+      channel: stepChannelFor(draftStep.kind, nextCfg, draftStep.channel),
       purpose: nextCfg.purpose ?? draftStep.purpose,
       origin: "Human Modified",
     };
@@ -200,8 +204,31 @@ export function PayFlowWorkflowDetailPage() {
     applyLocalSteps(steps, updated.id);
   }
 
+  /** True when the reviewer changed steps or the segment and has not saved yet. */
+  function hasUnsavedEdits() {
+    return !!pendingSteps || segmentDirty;
+  }
+
+  /**
+   * Approve / Activate / Submit act on what is saved on the server. Running them
+   * with unsaved edits silently threw the edits away, so they are refused instead.
+   */
+  function refuseWithUnsavedEdits(actionLabel: string) {
+    if (!hasUnsavedEdits()) return false;
+    setNotice("");
+    setError(
+      `You have unsaved changes. Save them first (Save Draft), then ${actionLabel} — otherwise the saved version would be used and your changes lost.`,
+    );
+    setNoteAction(null);
+    return true;
+  }
+
   async function persistSteps(note?: string) {
     if (!strategy) return;
+    if (editDemotesWorkflow(strategy.status) && !window.confirm(EDIT_DEMOTES_WARNING)) {
+      setNoteAction(null);
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -215,28 +242,14 @@ export function PayFlowWorkflowDetailPage() {
           ...draftStep,
           id,
           config: cfg,
-          channel: cfg.channel ?? draftStep.channel,
+          channel: stepChannelFor(draftStep.kind, cfg, draftStep.channel),
           purpose: cfg.purpose ?? draftStep.purpose,
           origin: "Human Modified",
         };
       });
       const updated = ensureStepLinks(
         await updatePayflowWorkflow(strategy.id, {
-          steps: steps.map((s) => ({
-            id: s.id || undefined,
-            kind: s.kind,
-            title: s.title,
-            origin: s.origin || undefined,
-            disabled: s.disabled,
-            config: s.config || undefined,
-            next: s.next ?? null,
-            yes: s.yes ?? null,
-            no: s.no ?? null,
-            channel: s.channel ?? null,
-            purpose: s.purpose ?? null,
-            timing: s.timing ?? null,
-            detail: s.detail ?? null,
-          })),
+          steps: toStepPayload(steps),
           entry_node_id: strategy.entry_node_id || undefined,
           segment: segmentDirty ? segmentDraft : undefined,
           note: note || undefined,
@@ -292,10 +305,39 @@ export function PayFlowWorkflowDetailPage() {
       setNoteAction(null);
       return;
     }
+    // Rejecting a workflow that is in use stops collections for its accounts.
+    if (
+      strategy.status === "Active" &&
+      !window.confirm(
+        "This workflow is Active. Rejecting it stops collection activity for every account currently on it.\n\nReject it?",
+      )
+    ) {
+      setNoteAction(null);
+      return;
+    }
     setBusy(true);
     setError("");
+    // The AI can fail (it is a long call). While the workflow is still being reviewed,
+    // ask for the new version FIRST, so a failure leaves the original untouched.
+    const regenerateFirst =
+      shouldRegen && (strategy.status === "AI Proposed" || strategy.status === "Under Review");
+    let rejected = false;
     try {
+      if (regenerateFirst) {
+        const regenerated = ensureStepLinks(
+          await regeneratePayflowWorkflow(strategy.id, { remarks: note.trim() }),
+        );
+        try {
+          await rejectPayflowWorkflow(strategy.id, { note: note || undefined });
+        } catch {
+          // The new version exists; the original simply stays open for the reviewer.
+        }
+        setRejectNote("");
+        navigate(`/payflow/workflows/${regenerated.id}`);
+        return;
+      }
       await rejectPayflowWorkflow(strategy.id, { note: note || undefined });
+      rejected = true;
       setRejectNote("");
       if (shouldRegen) {
         const regenerated = ensureStepLinks(
@@ -310,7 +352,26 @@ export function PayFlowWorkflowDetailPage() {
       setPendingSteps(null);
       setNotice("Returned for changes. Status reset; history is retained.");
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Reject / regenerate failed");
+      const detail = err instanceof ApiError ? err.detail : "Reject / regenerate failed";
+      if (rejected) {
+        // Rejected, but no new version: show the page as it really is now.
+        try {
+          setStrategy(ensureStepLinks(await getPayflowWorkflow(strategy.id)));
+          setPendingSteps(null);
+        } catch {
+          /* keep what is on screen */
+        }
+        setNotice("");
+        setError(
+          `The workflow was rejected, but the AI could not produce a new version: ${detail} Use Reject / Regenerate again to retry.`,
+        );
+      } else {
+        setError(
+          regenerateFirst
+            ? `The AI could not produce a new version, so nothing was changed: ${detail}`
+            : detail,
+        );
+      }
     } finally {
       setBusy(false);
       setNoteAction(null);
@@ -373,6 +434,7 @@ export function PayFlowWorkflowDetailPage() {
       return;
     }
     if (noteAction === "approve") {
+      if (refuseWithUnsavedEdits("approve")) return;
       await runAction(
         () => approvePayflowWorkflow(strategy.id, { note: note || undefined }),
         (row) =>
@@ -381,6 +443,7 @@ export function PayFlowWorkflowDetailPage() {
       return;
     }
     if (noteAction === "activate") {
+      if (refuseWithUnsavedEdits("activate")) return;
       await runAction(
         () => activatePayflowWorkflow(strategy.id, { note: note || undefined }),
         "Workflow is now Active for collection execution.",
@@ -449,6 +512,11 @@ export function PayFlowWorkflowDetailPage() {
     }))
     .filter((row) => !!row.value);
   const hasSegment = !!strategy.segment && Object.keys(strategy.segment).length > 0;
+  const aiOriginalSteps: PayflowStrategyStep[] = Array.isArray(
+    strategy.ai_proposal_snapshot?.steps,
+  )
+    ? (strategy.ai_proposal_snapshot?.steps as PayflowStrategyStep[])
+    : [];
   // Lovable: step edits always available to reviewers (BE demotes Active → Under Review).
   const canMutateGraph = canEdit;
   // Lovable: Save Draft + Approve always for reviewers; Approve→Activate after approval (AC1).
@@ -515,12 +583,13 @@ export function PayFlowWorkflowDetailPage() {
               {canSubmitReview && (
                 <Btn
                   disabled={busy}
-                  onClick={() =>
+                  onClick={() => {
+                    if (refuseWithUnsavedEdits("submit for review")) return;
                     void runAction(
                       () => submitPayflowWorkflowReview(strategy.id),
                       "Submitted for review.",
-                    )
-                  }
+                    );
+                  }}
                 >
                   Submit for review
                 </Btn>
@@ -528,9 +597,22 @@ export function PayFlowWorkflowDetailPage() {
               {canSaveDraft && (
                 <Btn
                   disabled={busy}
-                  onClick={() =>
-                    void runAction(() => savePayflowWorkflowDraft(strategy.id), "Draft saved.")
-                  }
+                  onClick={() => {
+                    // With edits on screen, "Save Draft" must save them. It used to
+                    // call the server without them and then drop them.
+                    if (hasUnsavedEdits()) {
+                      void persistSteps();
+                      return;
+                    }
+                    if (editDemotesWorkflow(strategy.status)) {
+                      setError("");
+                      setNotice(
+                        "Nothing to save. This workflow is approved for collections — it stays as it is until you change a step.",
+                      );
+                      return;
+                    }
+                    void runAction(() => savePayflowWorkflowDraft(strategy.id), "Draft saved.");
+                  }}
                 >
                   Save Draft
                 </Btn>
@@ -562,6 +644,9 @@ export function PayFlowWorkflowDetailPage() {
                   disabled={busy}
                   onClick={() => {
                     // After approve → same primary button becomes Activate (AC1).
+                    if (refuseWithUnsavedEdits(primaryIsActivate ? "activate" : "approve")) {
+                      return;
+                    }
                     if (primaryIsActivate) {
                       setNoteAction("activate");
                       return;
@@ -864,11 +949,33 @@ export function PayFlowWorkflowDetailPage() {
                   {showAiSnapshot ? "Hide original AI proposal" : "Original AI proposal"}
                 </Btn>
                 {showAiSnapshot && (
-                  <p className="mt-2 text-[11.5px] leading-relaxed text-muted-foreground">
-                    Original AI steps were captured before the first human edit and are retained
-                    for traceability. Prior approved configurations are archived into version
-                    history rather than overwritten.
-                  </p>
+                  <div className="mt-2 space-y-2">
+                    <p className="text-[11.5px] leading-relaxed text-muted-foreground">
+                      The steps as the AI first proposed them, kept unchanged for comparison
+                      with the current workflow.
+                    </p>
+                    {aiOriginalSteps.length === 0 ? (
+                      <p className="text-[11.5px] text-muted-foreground">
+                        No steps were stored with the original proposal.
+                      </p>
+                    ) : (
+                      <ol className="space-y-1.5">
+                        {aiOriginalSteps.map((s, i) => (
+                          <li
+                            key={`${s.id || i}`}
+                            className="rounded-lg border border-border/60 bg-surface px-3 py-2 text-[12px]"
+                          >
+                            <span className="font-medium text-foreground">
+                              {i + 1}. {s.title || s.kind}
+                            </span>
+                            <span className="ml-2 text-muted-foreground">
+                              {[s.kind, s.timing].filter(Boolean).join(" · ")}
+                            </span>
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                  </div>
                 )}
               </div>
             )}

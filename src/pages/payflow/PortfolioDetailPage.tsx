@@ -5,8 +5,10 @@ import {
   getPayflowClientPortfolio,
   updatePayflowClientPortfolio,
   deletePayflowClientPortfolio,
+  listPayflowAiSuggestJobs,
   previewPayflowPortfolioSegments,
   suggestPayflowWorkflows,
+  type PayflowAiSuggestJob,
 } from "../../api/payflow";
 import {
   Btn,
@@ -95,7 +97,11 @@ export function PayFlowPortfolioDetailPage() {
   const [code, setCode] = useState("");
   const [status, setStatus] = useState("Onboarding");
   const [description, setDescription] = useState("");
-  const aiBusy = previewBusy || suggestBusy;
+  const [aiJob, setAiJob] = useState<PayflowAiSuggestJob | null>(null);
+  const aiJobRunning = aiJob?.status === "pending" || aiJob?.status === "running";
+  // While the AI is already working on this portfolio (import / activation), a second
+  // run would only produce a duplicate set of workflows.
+  const aiBusy = previewBusy || suggestBusy || aiJobRunning;
 
   async function load(opts?: { quiet?: boolean }) {
     if (!Number.isFinite(cid) || !Number.isFinite(pid)) return;
@@ -119,6 +125,38 @@ export function PayFlowPortfolioDetailPage() {
   useEffect(() => {
     void load();
   }, [cid, pid]);
+
+  /** Background AI-suggest for this portfolio (an import starts one on its own). */
+  async function loadAiJob(): Promise<PayflowAiSuggestJob | null> {
+    if (!Number.isFinite(cid) || !Number.isFinite(pid)) return null;
+    try {
+      const jobs = await listPayflowAiSuggestJobs(cid, pid);
+      const latest = jobs[0] || null;
+      setAiJob(latest);
+      return latest;
+    } catch {
+      return null; // status is a nicety: never break the page over it
+    }
+  }
+
+  useEffect(() => {
+    void loadAiJob();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cid, pid]);
+
+  // Poll while the AI is running, then show the workflows it produced.
+  useEffect(() => {
+    if (!aiJobRunning) return;
+    const timer = window.setInterval(() => {
+      void loadAiJob().then((latest) => {
+        if (latest && latest.status !== "pending" && latest.status !== "running") {
+          void load({ quiet: true });
+        }
+      });
+    }, 10000);
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiJobRunning, cid, pid]);
 
   async function previewSegments() {
     if (!Number.isFinite(cid) || !Number.isFinite(pid) || aiBusy) return;
@@ -162,12 +200,18 @@ export function PayFlowPortfolioDetailPage() {
       );
       await load({ quiet: true });
     } catch (err) {
-      setError(
-        err instanceof ApiError
-          ? err.detail
-          : "AI suggest failed. Nothing was saved — you can try again.",
-      );
       setInfo("");
+      if (err instanceof ApiError) {
+        // The server answered: it saves all workflows or none, so nothing was saved.
+        setError(err.detail);
+      } else {
+        // No answer (timeout / dropped connection). The server may still be working
+        // and may yet save the workflows, so do not invite an immediate retry.
+        setError(
+          "The connection was lost before the AI finished. It may still be working: wait a few minutes and refresh this page before trying again, or you may get the same workflows twice.",
+        );
+        window.setTimeout(() => void load({ quiet: true }), 60000);
+      }
     } finally {
       setSuggestBusy(false);
     }
@@ -280,6 +324,22 @@ export function PayFlowPortfolioDetailPage() {
       {info ? (
         <p className="mb-3 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-[13px] text-success">
           {info}
+        </p>
+      ) : null}
+      {aiJobRunning ? (
+        <p className="mb-3 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-[13px] text-primary">
+          PayFlow AI is designing workflows for this portfolio. This takes a few minutes; they
+          will appear below as AI Proposed.
+        </p>
+      ) : aiJob?.status === "failed" ? (
+        <p className="mb-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-[13px] text-destructive">
+          The last automatic AI suggestion for this portfolio failed
+          {aiJob.error_message ? `: ${aiJob.error_message}` : "."} You can run Suggest with AI
+          again.
+        </p>
+      ) : aiJob?.status === "skipped" && aiJob.skip_reason ? (
+        <p className="mb-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-[13px] text-muted-foreground">
+          Automatic AI suggestion was skipped: {aiJob.skip_reason}
         </p>
       ) : null}
 

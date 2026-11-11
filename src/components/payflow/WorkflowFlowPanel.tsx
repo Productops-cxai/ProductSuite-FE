@@ -6,15 +6,18 @@ import {
   listPayflowWorkflows,
   updatePayflowWorkflow,
   writePayflowWorkflowMessages,
-  type PayflowWorkflowStepPayload,
 } from "../../api/payflow";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import {
   addStepAfter,
   canWriteWorkflowMessages,
   communicationSnippet,
+  EDIT_DEMOTES_WARNING,
+  editDemotesWorkflow,
   ensureStepLinks,
+  stepChannelFor,
   strategyStatusTone,
+  toStepPayload,
   type AddableStepKind,
 } from "../../lib/strategy-workflow";
 import type {
@@ -35,47 +38,28 @@ function tokens(value: string) {
     .filter(Boolean);
 }
 
+/**
+ * The workflow with this name, or nothing.
+ *
+ * It used to fall back to the closest-sounding workflow, or simply the client's
+ * first one, so a case could show (and let a reviewer edit) a workflow it is
+ * not on. A wrong map is worse than no map.
+ */
 export function resolveWorkflowByName(
   strategies: PayflowStrategy[],
   workflowName?: string | null,
 ): PayflowStrategy | undefined {
-  if (!strategies.length) return undefined;
-  if (!workflowName) return strategies[0];
-  const wanted = tokens(workflowName);
-  let best = strategies[0];
-  let bestScore = -1;
-  for (const s of strategies) {
-    const have = tokens(`${s.name} ${s.summary || ""}`);
-    const score = wanted.filter((t) => have.includes(t)).length;
-    if (score > bestScore) {
-      best = s;
-      bestScore = score;
-    }
-  }
-  return best;
+  const wanted = tokens(workflowName || "").join(" ");
+  if (!wanted) return undefined;
+  const matches = strategies.filter((s) => tokens(s.name).join(" ") === wanted);
+  if (matches.length <= 1) return matches[0];
+  // Same name more than once: the one in use wins.
+  return matches.find((s) => s.status === "Active") || matches[0];
 }
 
 function findStep(strategy: PayflowStrategy, id: string | null): PayflowStrategyStep | null {
   if (!id) return null;
   return (strategy.steps || []).find((s, i) => (s.id || `s${i + 1}`) === id) || null;
-}
-
-function toStepPayload(steps: PayflowStrategyStep[]): PayflowWorkflowStepPayload[] {
-  return steps.map((s, i) => ({
-    id: s.id || `s${i + 1}`,
-    kind: s.kind,
-    title: s.title,
-    origin: s.origin || undefined,
-    disabled: s.disabled,
-    config: s.config || undefined,
-    next: s.next ?? null,
-    yes: s.yes ?? null,
-    no: s.no ?? null,
-    channel: s.channel ?? null,
-    purpose: s.purpose ?? null,
-    timing: s.timing ?? null,
-    detail: s.detail ?? null,
-  }));
 }
 
 /**
@@ -186,7 +170,7 @@ export function WorkflowFlowPanel({
       ...selectedStep,
       title: nextTitle !== undefined ? nextTitle : selectedStep.title,
       config: nextCfg,
-      channel: nextCfg.channel ?? selectedStep.channel,
+      channel: stepChannelFor(selectedStep.kind, nextCfg, selectedStep.channel),
       purpose: nextCfg.purpose ?? selectedStep.purpose,
       origin: "Human Modified",
     };
@@ -219,6 +203,10 @@ export function WorkflowFlowPanel({
     if (!dirty || !strategy || !canEdit) {
       setDialogOpen(false);
       setSaveError("");
+      return;
+    }
+    // Closing saves. On an approved workflow that takes it out of service, so ask.
+    if (editDemotesWorkflow(strategy.status) && !window.confirm(EDIT_DEMOTES_WARNING)) {
       return;
     }
     setBusy(true);

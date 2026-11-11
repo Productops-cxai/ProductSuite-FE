@@ -778,15 +778,19 @@ export function TextInput({
   placeholder,
   disabled,
   className,
+  type,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string | undefined;
   disabled?: boolean | undefined;
   className?: string | undefined;
+  /** Native input type, e.g. "datetime-local". Default: text. */
+  type?: string | undefined;
 }) {
   return (
     <input
+      type={type}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
