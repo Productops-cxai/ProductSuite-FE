@@ -8,6 +8,7 @@ import {
   listPayflowRules,
   listPayflowWorkflows,
 } from "../../api/payflow";
+import { ClientComplianceRulesPanel } from "./ClientComplianceRules";
 import { MobileRecordCard, MobileRecordCards } from "../ui/MobileRecordCards";
 import { Pagination } from "../ui/Pagination";
 import { useIsMobile } from "../../hooks/useIsMobile";
@@ -411,9 +412,21 @@ export function ClientCommunicationsTab({
 export function ClientRulesTab({
   clientId,
   clientName,
+  country,
+  provinceState,
+  city,
+  postalCode,
+  canEditOptional,
+  canEditMandatory,
 }: {
   clientId: number;
   clientName: string;
+  country: string;
+  provinceState: string;
+  city: string;
+  postalCode: string;
+  canEditOptional: boolean;
+  canEditMandatory: boolean;
 }) {
   const isMobile = useIsMobile();
   const [rows, setRows] = useState<PayflowRule[]>([]);
@@ -446,15 +459,31 @@ export function ClientRulesTab({
   }, [clientId, clientName]);
 
   return (
-    <Panel
-      title="Rules"
-      description={`Client rules for ${clientName}, plus system rules assigned in AI & Governance`}
-      action={
-        <Link to="/payflow/rules" className="text-[12.5px] font-semibold text-primary hover:underline">
-          All rules
-        </Link>
-      }
-    >
+    <div className="space-y-5">
+      <Panel
+        title="Compliance rules"
+        description="Jurisdiction rules for this client. Optional selections are saved with the client and newly applicable rules are marked."
+      >
+        <ClientComplianceRulesPanel
+          clientId={clientId}
+          country={country}
+          provinceState={provinceState}
+          city={city}
+          postalCode={postalCode}
+          canEditOptional={canEditOptional}
+          canEditMandatory={canEditMandatory}
+          persist
+        />
+      </Panel>
+      <Panel
+        title="Rules"
+        description={`Client rules for ${clientName}, plus system rules assigned in AI & Governance`}
+        action={
+          <Link to="/payflow/rules" className="text-[12.5px] font-semibold text-primary hover:underline">
+            All rules
+          </Link>
+        }
+      >
       {error ? <p className="mb-3 text-sm text-destructive">{error}</p> : null}
       {loading ? <p className="text-sm text-muted-foreground">Loading rules…</p> : null}
       {!loading && !error && rows.length === 0 ? (
@@ -511,7 +540,8 @@ export function ClientRulesTab({
           />
         </>
       ) : null}
-    </Panel>
+      </Panel>
+    </div>
   );
 }
 

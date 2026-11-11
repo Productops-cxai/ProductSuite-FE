@@ -21,6 +21,40 @@ import {
 import type { MenuSection, PayflowNotification } from "../../types";
 import { normalizeMenuRoute } from "../../lib/utils";
 
+function withComplianceRulesNav(sections: MenuSection[], canView: boolean): MenuSection[] {
+  if (!canView) return sections;
+  const item = {
+    key: "compliance_rules",
+    label: "Compliance Rules",
+    route: "/payflow/compliance-rules",
+    icon: "shield",
+    sort_order: 2,
+    is_coming_soon: false,
+    badge: null,
+  };
+  const governance = sections.find((section) => section.key === "governance");
+  if (!governance) {
+    return [
+      ...sections,
+      { key: "governance", label: "GOVERNANCE", sort_order: 4, items: [item] },
+    ];
+  }
+  if (
+    governance.items.some(
+      (entry) =>
+        entry.key === "compliance_rules" ||
+        normalizeMenuRoute(entry.route) === "/payflow/compliance-rules",
+    )
+  ) {
+    return sections;
+  }
+  return sections.map((section) =>
+    section.key === "governance"
+      ? { ...section, items: [...section.items, item].sort((a, b) => a.sort_order - b.sort_order) }
+      : section,
+  );
+}
+
 function BellIcon() {
   return (
     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -512,6 +546,8 @@ function SidebarPanel({
 function PayFlowShell() {
   const { user, logout } = useAuth();
   const { loading, error, menus, roleLabel, isOperationsAdmin, access } = usePayFlowAccess();
+  const canViewCompliance =
+    Boolean(access?.is_operations_admin) || (access?.all_permissions || []).includes("view_rules");
   const navigate = useNavigate();
   const location = useLocation();
   const routePerms = permissionsForPath(location.pathname);
@@ -601,7 +637,7 @@ function PayFlowShell() {
   }
 
   // Worker logs live under Platform Admin only — hide any leftover PayFlow nav row.
-  const navSections = menus
+  const navSections = withComplianceRulesNav(menus, canViewCompliance)
     .map((section) => ({
       ...section,
       items: section.items.filter((item) => item.key !== "worker_logs"),
