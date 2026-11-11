@@ -13,8 +13,11 @@ import {
 import { MobileRecordCard, MobileRecordCards } from "../ui/MobileRecordCards";
 import { cn } from "../../lib/utils";
 import { useAuth } from "../../context/AuthContext";
+import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { ApiError } from "../../api/client";
+import { applyComplianceImportSelections } from "../../api/compliance";
+import { ClientComplianceRulesPanel } from "./ClientComplianceRules";
 import {
   downloadPayflowAccountImportTemplate,
   downloadPayflowClientsBulkTemplate,
@@ -69,6 +72,39 @@ function keepMeaningfulImportErrors(errors: ImportError[]): ImportError[] {
     );
     return issues.length > 0;
   });
+}
+
+interface ImportComplianceClient {
+  code: string;
+  name: string;
+  clientId: number | null;
+  country: string;
+  provinceState: string;
+  city: string;
+  postalCode: string;
+}
+
+function complianceClientsFromPreview(
+  rows: PayflowImportPreviewResponse["preview"],
+): ImportComplianceClient[] {
+  const seen = new Set<string>();
+  const clients: ImportComplianceClient[] = [];
+  for (const row of rows || []) {
+    if (row.is_sub || row.action === "Error") continue;
+    const code = (row.client_code || row.client || "").trim();
+    if (!code || code === "—" || seen.has(code.toLowerCase())) continue;
+    seen.add(code.toLowerCase());
+    clients.push({
+      code,
+      name: row.client_name || code,
+      clientId: row.entity_id ?? null,
+      country: row.country || "",
+      provinceState: row.province_state || "",
+      city: row.city || "",
+      postalCode: row.postal_code || "",
+    });
+  }
+  return clients;
 }
 
 type Stage = "upload" | "uploading" | "validating" | "preview" | "processing" | "done";
@@ -946,6 +982,7 @@ function bulkUploadToRun(file: File, result: PayflowBulkUploadResult, uploadedBy
 export function ImportFlow({ kind }: { kind: ImportKind }) {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { hasPermission } = usePayFlowAccess();
   const [stage, setStage] = useState<Stage>("upload");
   const [file, setFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -956,6 +993,10 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
   const [previewRecords, setPreviewRecords] = useState<ImportRecord[]>([]);
   const [previewErrors, setPreviewErrors] = useState<ImportError[]>([]);
   const [previewMessage, setPreviewMessage] = useState<string | null>(null);
+  const [complianceClients, setComplianceClients] = useState<ImportComplianceClient[]>([]);
+  const [complianceClientCode, setComplianceClientCode] = useState("");
+  const [complianceSelections, setComplianceSelections] = useState<Record<string, number[] | null>>({});
+  const [complianceNotice, setComplianceNotice] = useState("");
 
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [progressDone, setProgressDone] = useState(0);
@@ -1032,6 +1073,11 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
         keepMeaningfulImportErrors((preview.errors || []).map((e) => mapClientImportApiError(e))),
       );
       setPreviewMessage(preview.message?.trim() || null);
+      const clients = isClient ? complianceClientsFromPreview(preview.preview || []) : [];
+      setComplianceClients(clients);
+      setComplianceClientCode(clients[0]?.code || "");
+      setComplianceSelections({});
+      setComplianceNotice("");
       setStage("preview");
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
@@ -1057,6 +1103,29 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
         const mapped = bulkUploadToRun(file, result, user?.full_name || "You");
         addImport(mapped);
         setRun(mapped);
+        if (complianceClients.length) {
+          try {
+            const applied = await applyComplianceImportSelections(
+              complianceClients.map((client) => ({
+                code: client.code,
+                selected_optional_ids: Object.prototype.hasOwnProperty.call(complianceSelections, client.code)
+                  ? complianceSelections[client.code]
+                  : null,
+              })),
+            );
+            if (applied.missing.length) {
+              setComplianceNotice(
+                `Import finished. Compliance selections were not matched for ${applied.missing.join(", ")}.`,
+              );
+            }
+          } catch (err) {
+            setComplianceNotice(
+              err instanceof ApiError
+                ? `Import finished, but compliance selections were not saved. ${err.detail}`
+                : "Import finished, but compliance selections were not saved.",
+            );
+          }
+        }
       } else {
         const result = job.result as PayflowImportRun | null;
         if (!result) throw new Error("Import finished without a result");
@@ -1087,6 +1156,10 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
     setPreviewRecords([]);
     setPreviewErrors([]);
     setPreviewMessage(null);
+    setComplianceClients([]);
+    setComplianceClientCode("");
+    setComplianceSelections({});
+    setComplianceNotice("");
     setSubmitError(null);
     setFileError(null);
     setProgressDone(0);
@@ -1218,6 +1291,44 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
           ) : (
             <AccountPreviewTable records={previewRecords} />
           )}
+          {isClient && complianceClients.length > 0 ? (
+            <Panel
+              title="Compliance rules"
+              description="Review applicable rules for each client before processing. Existing clients keep their saved optional selections until you change them."
+            >
+              <label className="mb-3 block text-[13px] text-foreground">
+                Client
+                <select
+                  className="mt-1 h-9 w-full max-w-md rounded-md border border-border bg-card px-3"
+                  value={complianceClientCode}
+                  onChange={(event) => setComplianceClientCode(event.target.value)}
+                >
+                  {complianceClients.map((client) => (
+                    <option key={client.code} value={client.code}>
+                      {client.name} ({client.code})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {complianceClients
+                .filter((client) => client.code === complianceClientCode)
+                .map((client) => (
+                  <ClientComplianceRulesPanel
+                    key={client.code}
+                    clientId={client.clientId}
+                    country={client.country}
+                    provinceState={client.provinceState}
+                    city={client.city}
+                    postalCode={client.postalCode}
+                    canEditOptional
+                    canEditMandatory={hasPermission("modify_governance")}
+                    onSelectionChange={(ids) =>
+                      setComplianceSelections((current) => ({ ...current, [client.code]: ids }))
+                    }
+                  />
+                ))}
+            </Panel>
+          ) : null}
           <div className="flex flex-wrap gap-2">
             <Btn variant="primary" disabled={!canProcess} onClick={() => void processFile()}>
               {isClient ? "Process Import" : "Process Daily File"}
@@ -1240,16 +1351,21 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
       )}
 
       {stage === "done" && run && (
-        <ImportResult
-          run={run}
-          initialShowErrors={run.status === "Failed" || run.errors.length > 0}
-          returnTo={
-            <>
-              {run.status === "Failed" && <Btn onClick={reset}>Upload Again</Btn>}
-              {returnBtn}
-            </>
-          }
-        />
+        <div className="space-y-4">
+          {complianceNotice ? (
+            <p className="text-[13px] text-destructive">{complianceNotice}</p>
+          ) : null}
+          <ImportResult
+            run={run}
+            initialShowErrors={run.status === "Failed" || run.errors.length > 0}
+            returnTo={
+              <>
+                {run.status === "Failed" && <Btn onClick={reset}>Upload Again</Btn>}
+                {returnBtn}
+              </>
+            }
+          />
+        </div>
       )}
     </>
   );

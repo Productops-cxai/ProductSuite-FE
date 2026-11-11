@@ -706,7 +706,16 @@ export function PayFlowClientDetailPage() {
       )}
 
       {tab === "Rules" && (
-        <ClientRulesTab clientId={detail.id} clientName={detail.name} />
+        <ClientRulesTab
+          clientId={detail.id}
+          clientName={detail.name}
+          country={detail.country || ""}
+          provinceState={detail.province_state || ""}
+          city={detail.city || ""}
+          postalCode={detail.postal_code || ""}
+          canEditOptional={canModifyConfig || canModifyGov}
+          canEditMandatory={canModifyGov}
+        />
       )}
 
       {tab === "Configuration" && (

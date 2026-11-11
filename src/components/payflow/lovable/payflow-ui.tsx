@@ -147,12 +147,22 @@ export function Panel({
 export function KpiGrid({
   children,
   className,
+  columns = 4,
 }: {
   children: ReactNode;
   className?: string | undefined;
+  columns?: 3 | 4 | 5;
 }) {
   return (
-    <div className={cn("mb-5 grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4", className)}>
+    <div
+      className={cn(
+        "mb-5 grid grid-cols-2 gap-2 sm:gap-3",
+        columns === 3 && "lg:grid-cols-3",
+        columns === 4 && "lg:grid-cols-4",
+        columns === 5 && "sm:grid-cols-3 lg:grid-cols-5",
+        className,
+      )}
+    >
       {children}
     </div>
   );
@@ -164,13 +174,29 @@ export function KpiCard({
   hint,
   trend,
   tone = "neutral",
+  variant = "default",
 }: {
   label: string;
   value: string;
   hint?: string | undefined;
   trend?: { direction: "up" | "down" | "flat"; text: string };
   tone?: "neutral" | "primary";
+  /** Flat white stat tile used by the Compliance Rules summary row. */
+  variant?: "default" | "flat";
 }) {
+  if (variant === "flat") {
+    return (
+      <div className="flex h-full min-h-[96px] flex-col rounded-xl border border-border bg-card px-4 py-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)] sm:px-5 sm:py-[18px]">
+        <p className="text-[11px] font-semibold leading-snug tracking-[0.04em] text-muted-foreground uppercase">
+          {label}
+        </p>
+        <p className="tabular mt-3 text-[26px] leading-none font-bold tracking-tight text-foreground sm:text-[30px]">
+          {value}
+        </p>
+        {hint ? <p className="mt-2 text-[11px] text-muted-foreground">{hint}</p> : null}
+      </div>
+    );
+  }
   const trendColor =
     trend?.direction === "up"
       ? "text-success"
