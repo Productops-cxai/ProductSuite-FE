@@ -25,6 +25,8 @@ import {
   type ClientDraftConfig,
 } from "../../components/payflow/client-config-sections";
 import { Btn, PageHeader, Panel, StatusPill, type Tone } from "../../components/payflow/lovable/payflow-ui";
+import { ClientComplianceRulesPanel } from "../../components/payflow/ClientComplianceRules";
+import { saveClientComplianceSelections } from "../../api/compliance";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { cn } from "../../lib/utils";
 import type { PayflowUser } from "../../types";
@@ -37,6 +39,7 @@ const steps = [
   "Branding & Channels",
   "AI & Governance",
   "Assigned Users",
+  "Compliance Rules",
   "Review & Activate",
 ] as const;
 
@@ -46,6 +49,7 @@ const stepDescriptions = [
   "How customer-facing communications represent this client.",
   "How PayFlow operates collection activity for this client.",
   "Who supervises this client, and what they can access.",
+  "Review jurisdiction compliance rules that apply to this client.",
   "Confirm configuration before activation.",
 ];
 
@@ -61,6 +65,8 @@ export function PayFlowClientNewPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [activatedName, setActivatedName] = useState<string | null>(null);
+  const [complianceIds, setComplianceIds] = useState<number[] | null>(null);
+  const [complianceTouched, setComplianceTouched] = useState(false);
 
   useEffect(() => {
     // Loaded separately: someone who may create clients but not manage users gets
@@ -191,6 +197,13 @@ export function PayFlowClientNewPage() {
     return clientId;
   }
 
+  async function persistCompliance(id: number) {
+    await saveClientComplianceSelections(id, {
+      selected_optional_ids: complianceTouched ? complianceIds : null,
+      use_defaults: !complianceTouched,
+    });
+  }
+
   async function saveDraftAndLeave() {
     setBusy(true);
     setError("");
@@ -209,6 +222,7 @@ export function PayFlowClientNewPage() {
     setError("");
     try {
       const id = await ensureDraftSaved();
+      if (step === 5 || complianceTouched) await persistCompliance(id);
       const detail = await getPayflowClient(id);
       setClientId(id);
       setDraft(draftFromDetail(detail));
@@ -225,6 +239,7 @@ export function PayFlowClientNewPage() {
     setError("");
     try {
       const id = await ensureDraftSaved();
+      await persistCompliance(id);
       const activated = await activatePayflowClient(id);
       setActivatedName(activated.name);
     } catch (err) {
@@ -369,6 +384,21 @@ export function PayFlowClientNewPage() {
         {step === 3 && <AiGovernanceSection {...sectionProps} />}
         {step === 4 && <SupervisorSection {...sectionProps} />}
         {step === 5 && (
+          <ClientComplianceRulesPanel
+            clientId={clientId}
+            country={draft.config.country}
+            provinceState={draft.config.provinceState}
+            city={draft.config.city}
+            postalCode={draft.config.postalCode}
+            canEditOptional
+            canEditMandatory={hasPermission("modify_governance")}
+            onSelectionChange={(ids) => {
+              setComplianceIds(ids);
+              setComplianceTouched(true);
+            }}
+          />
+        )}
+        {step === 6 && (
           <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <ReviewBlock
@@ -412,6 +442,14 @@ export function PayFlowClientNewPage() {
                           ...draft.config.governanceRules,
                         ]
                       : ["No client-specific governance rules configured"]
+                }
+              />
+              <ReviewBlock
+                title="Compliance Rules"
+                rows={
+                  complianceTouched
+                    ? [`${complianceIds?.length ?? 0} optional rules selected`]
+                    : ["Applicable rules will be selected by default"]
                 }
               />
               <ReviewBlock

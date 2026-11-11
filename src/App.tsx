@@ -35,6 +35,9 @@ import { PayFlowLayout } from "./pages/payflow/PayFlowLayout";
 import { PayFlowProfilePage } from "./pages/payflow/ProfilePage";
 import { PayFlowRuleDetailPage } from "./pages/payflow/RuleDetailPage";
 import { PayFlowRuleNewPage } from "./pages/payflow/RuleNewPage";
+import { PayFlowComplianceRuleDetailPage } from "./pages/payflow/ComplianceRuleDetailPage";
+import { PayFlowComplianceRuleEditPage } from "./pages/payflow/ComplianceRuleEditPage";
+import { PayFlowComplianceRulesPage } from "./pages/payflow/ComplianceRulesPage";
 import { PayFlowRulesPage } from "./pages/payflow/RulesPage";
 import { PayFlowUserDetailPage } from "./pages/payflow/UserDetailPage";
 import { PayFlowUsersPage } from "./pages/payflow/UsersPage";
@@ -112,6 +115,10 @@ export default function App() {
         <Route path="cases/:accountId" element={<PayFlowCaseDetailPage />} />
         <Route path="imports" element={<PayFlowImportsPage />} />
         <Route path="imports/:importId" element={<PayFlowImportDetailPage />} />
+        <Route path="compliance-rules" element={<PayFlowComplianceRulesPage />} />
+        <Route path="compliance-rules/new" element={<PayFlowComplianceRuleEditPage />} />
+        <Route path="compliance-rules/:ruleId/edit" element={<PayFlowComplianceRuleEditPage />} />
+        <Route path="compliance-rules/:ruleId" element={<PayFlowComplianceRuleDetailPage />} />
         <Route path="rules" element={<PayFlowRulesPage />} />
         <Route path="rules/new" element={<PayFlowRuleNewPage />} />
         <Route path="rules/:ruleId/edit" element={<PayFlowRuleNewPage />} />

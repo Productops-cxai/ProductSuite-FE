@@ -683,6 +683,11 @@ export interface PayflowImportPreviewRecord {
   incoming_balance?: number | null;
   note?: string | null;
   setup_issues?: string[];
+  entity_id?: number | null;
+  country?: string | null;
+  province_state?: string | null;
+  city?: string | null;
+  postal_code?: string | null;
 }
 
 export interface PayflowImportPreviewSummary {
@@ -1768,5 +1773,145 @@ export interface PayflowDashboardResponse {
   outcomes: PayflowDashboardOutcome[];
   clients_attention: PayflowDashboardClientAttention[];
   activity: PayflowDashboardActivity[];
+}
+
+export interface ComplianceFieldSpec {
+  key: string;
+  label: string;
+  type: "text" | "textarea" | "number" | "time" | "select" | "multiselect" | "tags" | "weekdays" | string;
+  required: boolean;
+  options: string[];
+}
+
+export interface ComplianceCategorySpec {
+  name: string;
+  fields: ComplianceFieldSpec[];
+}
+
+export interface ComplianceCatalog {
+  categories: ComplianceCategorySpec[];
+  classifications: string[];
+  statuses: string[];
+  channels: string[];
+  actions: string[];
+  collector_types: string[];
+  debt_types: string[];
+  countries: string[];
+  override_levels: string[];
+  weekdays: string[];
+}
+
+export type ComplianceConfigValue = string | number | string[] | number[] | null;
+
+export interface ComplianceRule {
+  id: number;
+  code: string;
+  name: string;
+  category: string;
+  description: string;
+  classification: string;
+  regulatory_authority: string;
+  legal_reference: string;
+  effective_date: string | null;
+  expiry_date: string | null;
+  country: string;
+  states: string[];
+  regions: string[];
+  cities: string[];
+  postal_codes: string[];
+  jurisdiction_label: string;
+  scope_level: string;
+  collector_types: string[];
+  debt_types: string[];
+  channels: string[];
+  channel_label: string;
+  applicability_conditions: string;
+  configuration: Record<string, ComplianceConfigValue>;
+  action: string;
+  override_allowed: boolean;
+  override_authorization_level: string;
+  override_reason_required: boolean;
+  status: string;
+  scheduled_for: string | null;
+  version: number;
+  created_at: string | null;
+  created_by: string | null;
+  updated_at: string | null;
+  updated_by: string | null;
+  can_edit: boolean;
+  can_manage_status: boolean;
+  associated_clients?: { id: number; name: string; code: string; selected: boolean }[];
+}
+
+export interface ComplianceRulesListResponse {
+  rules: ComplianceRule[];
+  total: number;
+  truncated: boolean;
+  summary: {
+    total: number;
+    active: number;
+    needs_review: number;
+    countries: number;
+    clients_affected?: number;
+  };
+  can_create: boolean;
+  can_manage_status: boolean;
+}
+
+export interface ComplianceRuleWrite {
+  name: string;
+  category: string;
+  description: string;
+  classification: string;
+  regulatory_authority: string;
+  legal_reference: string;
+  effective_date: string | null;
+  expiry_date: string | null;
+  country: string;
+  states: string[];
+  regions: string[];
+  cities: string[];
+  postal_codes: string[];
+  collector_types: string[];
+  debt_types: string[];
+  channels: string[];
+  applicability_conditions: string;
+  configuration: Record<string, ComplianceConfigValue>;
+  action: string;
+  override_allowed: boolean;
+  override_authorization_level: string;
+  override_reason_required: boolean;
+  intent: "draft" | "submit" | "save";
+}
+
+export interface ComplianceAuditEntry {
+  id: number;
+  action: string;
+  modified_by: string;
+  modified_at: string | null;
+  previous_value: unknown;
+  updated_value: unknown;
+  version: number;
+}
+
+export interface ComplianceAuditResponse {
+  rule_id: number;
+  code: string;
+  entries: ComplianceAuditEntry[];
+}
+
+export interface ComplianceApplicableRule extends ComplianceRule {
+  selected: boolean;
+  locked: boolean;
+  newly_applicable: boolean;
+}
+
+export interface ComplianceApplicableResponse {
+  jurisdiction_label: string;
+  supported: boolean;
+  message: string | null;
+  rules: ComplianceApplicableRule[];
+  can_edit_mandatory: boolean;
+  configured?: boolean;
 }
 
