@@ -2,10 +2,23 @@ const API_BASE =
   import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") || "/api";
 
 const SESSION_ENDED_KEY = "ps_session_ended_msg";
+/** Set while the user is actively signing out — suppress forced-logout banners. */
+const INTENTIONAL_LOGOUT_KEY = "ps_intentional_logout";
 /** Legacy keys — cleared on boot so JWTs never linger in localStorage. */
 const LEGACY_ACCESS_KEY = "ps_access_token";
 const LEGACY_REFRESH_KEY = "ps_refresh_token";
 const IMPORT_RUNS_KEY = "payflow-import-runs";
+
+/** Generic 401s that must never appear as a login-page banner. */
+const IGNORE_SESSION_DETAILS = [
+  /^not authenticated$/i,
+  /^unauthorized$/i,
+  /^token revoked$/i,
+  /^invalid refresh token$/i,
+  /^invalid or expired access token/i,
+  /^refresh token expired or already used$/i,
+  /^user not active$/i,
+];
 
 /** Wipe legacy token / PII keys from browser storage (idempotent). */
 export function scrubSensitiveBrowserStorage(): void {
@@ -40,21 +53,74 @@ export function clearTokens(): void {
   scrubSensitiveBrowserStorage();
 }
 
+/** Call at the start of an explicit Sign out so follow-up 401s are silent. */
+export function beginIntentionalLogout(): void {
+  try {
+    sessionStorage.setItem(INTENTIONAL_LOGOUT_KEY, "1");
+    sessionStorage.removeItem(SESSION_ENDED_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function clearIntentionalLogout(): void {
+  try {
+    sessionStorage.removeItem(INTENTIONAL_LOGOUT_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+function isIntentionalLogout(): boolean {
+  try {
+    return sessionStorage.getItem(INTENTIONAL_LOGOUT_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function clearSessionEndedMessage(): void {
+  try {
+    sessionStorage.removeItem(SESSION_ENDED_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Read-and-clear message set when another login killed this session. */
 export function takeSessionEndedMessage(): string | null {
+  if (isIntentionalLogout()) {
+    clearSessionEndedMessage();
+    clearIntentionalLogout();
+    return null;
+  }
   const msg = sessionStorage.getItem(SESSION_ENDED_KEY);
   if (msg) sessionStorage.removeItem(SESSION_ENDED_KEY);
+  // Never surface raw API 401 text on the login form.
+  if (msg && IGNORE_SESSION_DETAILS.some((re) => re.test(msg.trim()))) {
+    return null;
+  }
   return msg;
 }
 
 export function markSessionEnded(detail: string, code?: string): void {
-  if (
-    code === "session_replaced" ||
+  // User clicked Sign out — do not treat the next 401s as a forced kick.
+  if (isIntentionalLogout()) return;
+  // Logout / missing cookie — not "signed in elsewhere".
+  if (code === "logged_out") return;
+  const text = (detail || "").trim();
+  if (!text || IGNORE_SESSION_DETAILS.some((re) => re.test(text))) return;
+
+  const isReplaced =
+    code === "session_replaced" || /another location/i.test(text);
+  const isEnded =
     code === "session_ended" ||
-    /another location/i.test(detail) ||
-    /session has ended/i.test(detail)
-  ) {
-    sessionStorage.setItem(SESSION_ENDED_KEY, detail);
+    code === "refresh_expired" ||
+    /session has ended/i.test(text) ||
+    /refresh token expired/i.test(text);
+
+  if (isReplaced || isEnded) {
+    sessionStorage.setItem(SESSION_ENDED_KEY, text);
   }
 }
 
@@ -116,7 +182,8 @@ async function parseError(res: Response): Promise<ApiError> {
   }
   if (res.status === 401) {
     // refresh_reused is a concurrent refresh race — not a real logout signal.
-    if (code !== "refresh_reused") {
+    // logged_out / intentional Sign out must not flash a forced-logout banner.
+    if (code !== "refresh_reused" && code !== "logged_out" && !isIntentionalLogout()) {
       markSessionEnded(detail, code);
       if (
         code === "session_replaced" ||
@@ -124,7 +191,7 @@ async function parseError(res: Response): Promise<ApiError> {
         code === "refresh_expired" ||
         /another location/i.test(detail) ||
         /refresh token expired/i.test(detail) ||
-        /please sign in again/i.test(detail)
+        /session has ended/i.test(detail)
       ) {
         notifySessionEnded();
       }
@@ -275,9 +342,20 @@ async function tryRefresh(): Promise<boolean> {
           return false;
         }
         clearTokens();
-        // Access + refresh both dead → end the UI session (login redirect via AuthContext).
-        markSessionEnded(err.detail, err.code || "session_ended");
-        notifySessionEnded();
+        // Missing/cleared cookies after Sign out → silent; do not force "session_ended".
+        if (!isIntentionalLogout() && err.code !== "logged_out") {
+          markSessionEnded(err.detail, err.code);
+          if (
+            err.code === "session_replaced" ||
+            err.code === "session_ended" ||
+            err.code === "refresh_expired" ||
+            /another location/i.test(err.detail) ||
+            /session has ended/i.test(err.detail) ||
+            /refresh token expired/i.test(err.detail)
+          ) {
+            notifySessionEnded();
+          }
+        }
         return false;
       }
       // Cookies updated by Set-Cookie; ignore any JSON token fields.
