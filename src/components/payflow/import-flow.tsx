@@ -16,7 +16,11 @@ import { useAuth } from "../../context/AuthContext";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { ApiError } from "../../api/client";
-import { applyComplianceImportSelections } from "../../api/compliance";
+import {
+  getClientComplianceRules,
+  syncClientComplianceRules,
+  updateClientComplianceRule,
+} from "../../api/compliance";
 import { ClientComplianceRulesPanel } from "./ClientComplianceRules";
 import {
   downloadPayflowAccountImportTemplate,
@@ -29,6 +33,7 @@ import {
   startPayflowClientsBulkValidate,
 } from "../../api/payflow";
 import type {
+  ClientComplianceChoice,
   PayflowBulkUploadResult,
   PayflowImportJob,
   PayflowImportPreviewResponse,
@@ -1032,7 +1037,7 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
   const [previewMessage, setPreviewMessage] = useState<string | null>(null);
   const [complianceClients, setComplianceClients] = useState<ImportComplianceClient[]>([]);
   const [complianceClientCode, setComplianceClientCode] = useState("");
-  const [complianceSelections, setComplianceSelections] = useState<Record<string, number[] | null>>({});
+  const [complianceSelections, setComplianceSelections] = useState<Record<string, ClientComplianceChoice[]>>({});
   const [complianceNotice, setComplianceNotice] = useState("");
 
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -1125,6 +1130,44 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
     }
   }
 
+  async function applyImportedCompliance(result: PayflowBulkUploadResult) {
+    const created = new Map(
+      (result.created || []).map((row) => [row.code.trim().toLowerCase(), row.id]),
+    );
+    const missed: string[] = [];
+    for (const client of complianceClients) {
+      const selection = complianceSelections[client.code];
+      if (!selection?.length) continue;
+      const id = client.clientId ?? created.get(client.code.trim().toLowerCase()) ?? null;
+      if (id == null) {
+        missed.push(client.code);
+        continue;
+      }
+      try {
+        if (client.clientId == null) await syncClientComplianceRules(id);
+        const current = await getClientComplianceRules(id);
+        for (const want of selection) {
+          const row = (current.rules || []).find((rule) => rule.id === want.ruleId);
+          if (!row || row.locked || row.enabled === want.enabled) continue;
+          await updateClientComplianceRule(id, {
+            rule_id: want.ruleId,
+            enabled: want.enabled,
+            reason: "Set during client import",
+          });
+        }
+      } catch (err) {
+        missed.push(
+          err instanceof ApiError ? `${client.code} (${err.detail})` : client.code,
+        );
+      }
+    }
+    setComplianceNotice(
+      missed.length
+        ? `Compliance selections could not be saved for: ${missed.join(", ")}.`
+        : "",
+    );
+  }
+
   async function processFile() {
     if (!file) return;
     setSubmitError(null);
@@ -1135,6 +1178,10 @@ export function ImportFlow({ kind }: { kind: ImportKind }) {
           isClient ? startPayflowClientsBulkUpload(file) : startPayflowAccountImportUpload(file),
         { remember: file.name },
       );
+      if (isClient && job.status !== "failed") {
+        const result = job.result as PayflowBulkUploadResult | null;
+        if (result) await applyImportedCompliance(result);
+      }
       showUploadResult(job, file.name);
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;

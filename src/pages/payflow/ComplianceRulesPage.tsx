@@ -2,13 +2,13 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import {
-  activateComplianceRule,
-  deactivateComplianceRule,
-  duplicateComplianceRule,
-  getComplianceCatalog,
+  activateListedComplianceRule,
+  deactivateListedComplianceRule,
+  duplicateListedComplianceRule,
+  getComplianceJurisdictions,
+  getComplianceRuleCatalog,
   listComplianceRules,
 } from "../../api/compliance";
-import { fetchStates } from "../../lib/geo-api";
 import { complianceStatusTone } from "../../components/payflow/ComplianceRuleForm";
 import {
   Btn,
@@ -24,9 +24,9 @@ import {
 import { MobileRecordCard, MobileRecordCards } from "../../components/ui/MobileRecordCards";
 import { Modal } from "../../components/ui/Modal";
 import { Pagination } from "../../components/ui/Pagination";
+import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import { useClientPagedList } from "../../hooks/useOffsetPagination";
-import type { ComplianceRule } from "../../types";
+import type { ComplianceApiRule } from "../../types";
 
 const PAGE_SIZE = 10;
 const ALL = "All";
@@ -35,8 +35,31 @@ function withAll(label: string, values: string[]) {
   return [{ value: ALL, label }, ...values.map((value) => ({ value, label: value }))];
 }
 
+function ruleStatusTone(status: string) {
+  if (status === "Pending Approval") return "warning" as const;
+  return complianceStatusTone(status);
+}
+
+async function loadRuleSummary() {
+  const first = await listComplianceRules({ limit: 200, offset: 0, sort: "country", order: "asc" });
+  const rules = [...first.rules];
+  let offset = first.rules.length;
+  while (offset < first.total) {
+    const next = await listComplianceRules({ limit: 200, offset, sort: "country", order: "asc" });
+    rules.push(...next.rules);
+    if (next.rules.length === 0) break;
+    offset += next.rules.length;
+  }
+  return {
+    total: first.total,
+    active: rules.filter((rule) => rule.status === "Active").length,
+    needs_review: rules.filter((rule) => rule.status === "Pending Approval").length,
+    countries: new Set(rules.map((rule) => rule.country).filter(Boolean)).size,
+  };
+}
+
 function RuleStatusText({ status }: { status: string }) {
-  const tone = complianceStatusTone(status);
+  const tone = ruleStatusTone(status);
   const text = {
     success: "text-emerald-600 dark:text-emerald-400",
     warning: "text-amber-600 dark:text-amber-400",
@@ -77,23 +100,26 @@ function EnforcementPill({ value }: { value: string }) {
 export function PayFlowComplianceRulesPage() {
   const isMobile = useIsMobile();
   const navigate = useNavigate();
-  const [rules, setRules] = useState<ComplianceRule[]>([]);
-  const [summary, setSummary] = useState({
-    total: 0,
-    active: 0,
-    needs_review: 0,
-    countries: 0,
-    clients_affected: undefined as number | undefined,
-  });
-  const [canCreate, setCanCreate] = useState(false);
-  const [canManage, setCanManage] = useState(false);
+  const { hasPermission, isOperationsAdmin } = usePayFlowAccess();
+  const canCreate = hasPermission("modify_governance");
+  const [rules, setRules] = useState<ComplianceApiRule[]>([]);
+  const [total, setTotal] = useState(0);
+  const [summary, setSummary] = useState<{
+    total: number;
+    active: number;
+    needs_review: number;
+    countries: number;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
   const [busyId, setBusyId] = useState<number | null>(null);
-  const [confirm, setConfirm] = useState<{ rule: ComplianceRule; action: "activate" | "deactivate" } | null>(
-    null,
-  );
+  const [reason, setReason] = useState("");
+  const [confirm, setConfirm] = useState<{
+    rule: ComplianceApiRule;
+    action: "activate" | "deactivate";
+  } | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -101,12 +127,16 @@ export function PayFlowComplianceRulesPage() {
   const [state, setState] = useState(ALL);
   const [category, setCategory] = useState(ALL);
   const [channel, setChannel] = useState(ALL);
-  const [classification, setClassification] = useState(ALL);
+  const [enforcement, setEnforcement] = useState(ALL);
   const [status, setStatus] = useState(ALL);
   const [sort, setSort] = useState("updated_at");
   const [direction, setDirection] = useState<"asc" | "desc">("desc");
+  const [countries, setCountries] = useState<string[]>([]);
   const [states, setStates] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
+  const [channels, setChannels] = useState<string[]>([]);
+  const [enforcements, setEnforcements] = useState<string[]>([]);
+  const [statuses, setStatuses] = useState<string[]>([]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search), 250);
@@ -114,12 +144,43 @@ export function PayFlowComplianceRulesPage() {
   }, [search]);
 
   useEffect(() => {
-    getComplianceCatalog()
-      .then((catalog) => setCategories(catalog.categories.map((item) => item.name)))
+    let cancelled = false;
+    getComplianceRuleCatalog()
+      .then((catalog) => {
+        if (cancelled) return;
+        setCategories(catalog.categories || []);
+        setChannels(catalog.channels || []);
+        setEnforcements(catalog.enforcements || []);
+        setStatuses(catalog.statuses || []);
+        setCountries((catalog.countries || []).map((item) => item.name).filter(Boolean));
+      })
       .catch(() => {
-        /* category filter falls back to values present in the current result */
+        if (!cancelled) {
+          setCategories([]);
+          setChannels([]);
+          setEnforcements([]);
+          setStatuses([]);
+          setCountries([]);
+        }
       });
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadRuleSummary()
+      .then((next) => {
+        if (!cancelled) setSummary(next);
+      })
+      .catch(() => {
+        if (!cancelled) setSummary(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadKey]);
 
   useEffect(() => {
     if (country === ALL || country === "") {
@@ -127,9 +188,9 @@ export function PayFlowComplianceRulesPage() {
       return;
     }
     let cancelled = false;
-    fetchStates(country)
-      .then((rows) => {
-        if (!cancelled) setStates(rows);
+    getComplianceJurisdictions(country)
+      .then((res) => {
+        if (!cancelled) setStates((res.states || []).map((item) => item.name).filter(Boolean));
       })
       .catch(() => {
         if (!cancelled) setStates([]);
@@ -138,6 +199,15 @@ export function PayFlowComplianceRulesPage() {
       cancelled = true;
     };
   }, [country]);
+
+  const filterKey = `${debouncedSearch}|${country}|${state}|${category}|${channel}|${enforcement}|${status}|${sort}|${direction}`;
+  const [pageState, setPageState] = useState({ filterKey, offset: 0 });
+  if (pageState.filterKey !== filterKey) {
+    setPageState({ filterKey, offset: 0 });
+  }
+  const offset = pageState.filterKey === filterKey ? pageState.offset : 0;
+  const goPrev = () => setPageState((current) => ({ ...current, offset: Math.max(0, current.offset - PAGE_SIZE) }));
+  const goNext = () => setPageState((current) => ({ ...current, offset: current.offset + PAGE_SIZE }));
 
   useEffect(() => {
     let cancelled = false;
@@ -149,25 +219,22 @@ export function PayFlowComplianceRulesPage() {
       state: state === ALL ? "" : state,
       category: category === ALL ? "" : category,
       channel: channel === ALL ? "" : channel,
-      classification: classification === ALL ? "" : classification,
+      enforcement: enforcement === ALL ? "" : enforcement,
       status: status === ALL ? "" : status,
       sort,
-      direction,
+      order: direction,
+      limit: PAGE_SIZE,
+      offset,
     })
       .then((res) => {
         if (cancelled) return;
-        const rows = res.rules || [];
-        setRules(rows);
-        setSummary(res.summary);
-        setCanCreate(res.can_create);
-        setCanManage(res.can_manage_status);
-        setCategories((current) =>
-          current.length ? current : Array.from(new Set(rows.map((rule) => rule.category))).sort(),
-        );
+        setRules(res.rules || []);
+        setTotal(res.total || 0);
       })
       .catch((err) => {
         if (!cancelled) {
           setRules([]);
+          setTotal(0);
           setError(err instanceof ApiError ? err.detail : "Failed to load compliance rules.");
         }
       })
@@ -177,32 +244,49 @@ export function PayFlowComplianceRulesPage() {
     return () => {
       cancelled = true;
     };
-  }, [debouncedSearch, country, state, category, channel, classification, status, sort, direction]);
+  }, [
+    debouncedSearch,
+    country,
+    state,
+    category,
+    channel,
+    enforcement,
+    status,
+    sort,
+    direction,
+    offset,
+    reloadKey,
+  ]);
 
-  const filterKey = `${debouncedSearch}|${country}|${state}|${category}|${channel}|${classification}|${status}|${sort}|${direction}`;
-  const { pageItems, total, offset, pageSize, goPrev, goNext } = useClientPagedList(
-    rules,
-    PAGE_SIZE,
-    filterKey,
-  );
-  const clientsKnown = rules.some((rule) => Array.isArray(rule.associated_clients));
-  const derivedClients = clientsKnown
-    ? new Set(rules.flatMap((rule) => (rule.associated_clients || []).map((client) => client.id))).size
-    : null;
-  const clientsAffected =
-    typeof summary.clients_affected === "number" ? summary.clients_affected : derivedClients;
+  function canEditRule(rule: ComplianceApiRule) {
+    if (!canCreate || rule.status === "Archived") return false;
+    if (rule.status === "Active") return isOperationsAdmin;
+    return true;
+  }
+
+  function openConfirm(rule: ComplianceApiRule, action: "activate" | "deactivate") {
+    setReason("");
+    setActionError("");
+    setConfirm({ rule, action });
+  }
 
   async function runConfirmed() {
     if (!confirm) return;
+    if (confirm.action === "deactivate" && !reason.trim()) {
+      setActionError("A reason is required to deactivate a rule.");
+      return;
+    }
     setBusyId(confirm.rule.id);
     setActionError("");
     try {
-      const updated =
-        confirm.action === "activate"
-          ? await activateComplianceRule(confirm.rule.id)
-          : await deactivateComplianceRule(confirm.rule.id);
-      setRules((current) => current.map((rule) => (rule.id === updated.id ? updated : rule)));
+      if (confirm.action === "activate") {
+        await activateListedComplianceRule(confirm.rule.id);
+      } else {
+        await deactivateListedComplianceRule(confirm.rule.id, reason.trim());
+      }
       setConfirm(null);
+      setReason("");
+      setReloadKey((current) => current + 1);
     } catch (err) {
       setActionError(err instanceof ApiError ? err.detail : "The status change was not saved.");
     } finally {
@@ -210,11 +294,11 @@ export function PayFlowComplianceRulesPage() {
     }
   }
 
-  async function duplicate(rule: ComplianceRule) {
+  async function duplicate(rule: ComplianceApiRule) {
     setBusyId(rule.id);
     setActionError("");
     try {
-      const copy = await duplicateComplianceRule(rule.id);
+      const copy = await duplicateListedComplianceRule(rule.id);
       navigate(`/payflow/compliance-rules/${copy.id}`);
     } catch (err) {
       setActionError(err instanceof ApiError ? err.detail : "The rule could not be duplicated.");
@@ -226,8 +310,10 @@ export function PayFlowComplianceRulesPage() {
   const mutedAction =
     "text-[12.5px] font-medium text-slate-500 hover:text-slate-800 hover:underline disabled:opacity-50 dark:text-slate-400 dark:hover:text-slate-200";
 
-  function renderActions(rule: ComplianceRule, includeView: boolean) {
-    const canEdit = rule.can_edit && rule.status !== "Expired";
+  function renderActions(rule: ComplianceApiRule, includeView: boolean) {
+    const canEdit = canEditRule(rule);
+    const canActivate = isOperationsAdmin && rule.status === "Inactive" && Boolean(rule.approved_at);
+    const canDeactivate = isOperationsAdmin && rule.status === "Active";
     return (
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
         {includeView ? (
@@ -241,7 +327,7 @@ export function PayFlowComplianceRulesPage() {
             Edit
           </Link>
         ) : null}
-        {rule.can_edit ? (
+        {canCreate ? (
           <button
             type="button"
             className={mutedAction}
@@ -254,17 +340,13 @@ export function PayFlowComplianceRulesPage() {
         <Link to={`/payflow/compliance-rules/${rule.id}?tab=audit`} className={mutedAction}>
           History
         </Link>
-        {canManage && (rule.status === "Inactive" || rule.status === "Scheduled") ? (
-          <button type="button" className={mutedAction} onClick={() => setConfirm({ rule, action: "activate" })}>
+        {canActivate ? (
+          <button type="button" className={mutedAction} onClick={() => openConfirm(rule, "activate")}>
             Activate
           </button>
         ) : null}
-        {canManage && (rule.status === "Active" || rule.status === "Scheduled") ? (
-          <button
-            type="button"
-            className={mutedAction}
-            onClick={() => setConfirm({ rule, action: "deactivate" })}
-          >
+        {canDeactivate ? (
+          <button type="button" className={mutedAction} onClick={() => openConfirm(rule, "deactivate")}>
             Deactivate
           </button>
         ) : null}
@@ -303,15 +385,11 @@ export function PayFlowComplianceRulesPage() {
         columns={5}
         className="mb-5 !gap-3 max-sm:[&>*:last-child]:col-span-2"
       >
-        <KpiCard variant="flat" label="Total compliance rules" value={String(summary.total)} />
-        <KpiCard variant="flat" label="Active rules" value={String(summary.active)} />
-        <KpiCard variant="flat" label="Countries / regions covered" value={String(summary.countries)} />
-        <KpiCard variant="flat" label="Rules requiring review" value={String(summary.needs_review)} />
-        <KpiCard
-          variant="flat"
-          label="Clients affected"
-          value={clientsAffected == null ? "—" : String(clientsAffected)}
-        />
+        <KpiCard variant="flat" label="Total compliance rules" value={summary ? String(summary.total) : "—"} />
+        <KpiCard variant="flat" label="Active rules" value={summary ? String(summary.active) : "—"} />
+        <KpiCard variant="flat" label="Countries / regions covered" value={summary ? String(summary.countries) : "—"} />
+        <KpiCard variant="flat" label="Rules requiring review" value={summary ? String(summary.needs_review) : "—"} />
+        <KpiCard variant="flat" label="Clients affected" value="—" />
       </KpiGrid>
 
       <div className="mb-4 space-y-2.5">
@@ -330,7 +408,7 @@ export function PayFlowComplianceRulesPage() {
               setCountry(value);
               setState(ALL);
             }}
-            options={withAll("All Countries", ["United States", "Canada"])}
+            options={withAll("All Countries", countries)}
           />
           <FilterSelect
             className="xl:!w-full"
@@ -344,7 +422,13 @@ export function PayFlowComplianceRulesPage() {
             label="Channel"
             value={channel}
             onChange={setChannel}
-            options={withAll("All Channels", ["Call", "Email", "SMS", "Letter", "Other"])}
+            options={[
+              { value: ALL, label: "All Channels" },
+              ...channels.map((value) => ({
+                value,
+                label: value === "All Channels" ? "All Channels (exact)" : value,
+              })),
+            ]}
           />
           <FilterSelect
             className="xl:!w-full"
@@ -358,23 +442,16 @@ export function PayFlowComplianceRulesPage() {
           <FilterSelect
             className="xl:!w-[220px]"
             label="Enforcement"
-            value={classification}
-            onChange={setClassification}
-            options={withAll("All Types", ["Mandatory", "Conditional", "Client Policy"])}
+            value={enforcement}
+            onChange={setEnforcement}
+            options={withAll("All Types", enforcements)}
           />
           <FilterSelect
             className="xl:!w-[220px]"
             label="Status"
             value={status}
             onChange={setStatus}
-            options={withAll("All Statuses", [
-              "Draft",
-              "Pending Review",
-              "Scheduled",
-              "Active",
-              "Inactive",
-              "Expired",
-            ])}
+            options={withAll("All Statuses", statuses)}
           />
           <FilterSelect
             className="xl:!w-[200px]"
@@ -385,7 +462,7 @@ export function PayFlowComplianceRulesPage() {
               { value: "updated_at", label: "Last updated" },
               { value: "name", label: "Rule name" },
               { value: "code", label: "Rule ID" },
-              { value: "effective_date", label: "Effective date" },
+              { value: "effective_from", label: "Effective date" },
               { value: "status", label: "Status" },
               { value: "country", label: "Country" },
             ]}
@@ -414,12 +491,12 @@ export function PayFlowComplianceRulesPage() {
           No compliance rules match these filters.
         </div>
       ) : null}
-      {!loading && pageItems.length > 0 ? (
+      {!loading && rules.length > 0 ? (
         <div className="overflow-hidden rounded-xl border border-border bg-card shadow-[0_1px_2px_rgba(15,23,42,0.04)] [&_td]:py-3.5 [&_td]:text-[13px] [&_th]:bg-card [&_th]:py-3 [&_th]:text-[11px] [&_th]:tracking-[0.04em] [&_th]:text-[#94a3b8]">
           {isMobile ? (
             <div className="p-3">
               <MobileRecordCards>
-                {pageItems.map((rule) => (
+                {rules.map((rule) => (
                   <MobileRecordCard
                     key={rule.id}
                     to={`/payflow/compliance-rules/${rule.id}`}
@@ -428,7 +505,7 @@ export function PayFlowComplianceRulesPage() {
                     badges={<RuleStatusText status={rule.status} />}
                     meta={
                       <p>
-                        {rule.country} · {rule.states.length ? rule.states.join(", ") : "All"} · {rule.channel_label}
+                        {rule.country || "—"} · {rule.state || "All"} · {rule.channel || "—"}
                       </p>
                     }
                     footer={renderActions(rule, false)}
@@ -456,9 +533,9 @@ export function PayFlowComplianceRulesPage() {
                 "Actions",
               ]}
             >
-              {pageItems.map((rule) => {
-                const place = [rule.regions.join(", "), rule.cities.join(", ")].filter(Boolean).join(" · ");
-                const portal = rule.postal_codes.length ? rule.postal_codes.join(", ") : "Any";
+              {rules.map((rule) => {
+                const place = [rule.region, rule.city].filter(Boolean).join(" · ");
+                const portal = rule.postal || "Any";
                 return (
                   <Tr key={rule.id}>
                     <Td className="text-[12.5px] font-medium text-slate-500">{rule.code}</Td>
@@ -469,25 +546,25 @@ export function PayFlowComplianceRulesPage() {
                       >
                         {rule.name}
                       </Link>
-                      {rule.scope_level ? (
+                      {rule.jurisdiction_type ? (
                         <span className="mt-0.5 block text-[11.5px] font-normal text-muted-foreground">
-                          {rule.scope_level}
+                          {rule.jurisdiction_type}
                         </span>
                       ) : null}
                     </Td>
                     <Td className="max-w-[160px] whitespace-normal text-foreground">{rule.category}</Td>
-                    <Td>{rule.country}</Td>
-                    <Td>{rule.states.length ? rule.states.join(", ") : "All"}</Td>
+                    <Td>{rule.country || "—"}</Td>
+                    <Td>{rule.state || "All"}</Td>
                     <Td className="text-muted-foreground">{place || "—"}</Td>
                     <Td>{portal}</Td>
-                    <Td>{rule.channel_label}</Td>
+                    <Td>{rule.channel || "—"}</Td>
                     <Td>
-                      <EnforcementPill value={rule.classification} />
+                      <EnforcementPill value={rule.enforcement} />
                     </Td>
                     <Td>
                       <RuleStatusText status={rule.status} />
                     </Td>
-                    <Td className="text-slate-600 dark:text-slate-300">{rule.effective_date || "—"}</Td>
+                    <Td className="text-slate-600 dark:text-slate-300">{rule.effective_from || "—"}</Td>
                     <Td>{renderActions(rule, true)}</Td>
                   </Tr>
                 );
@@ -498,8 +575,8 @@ export function PayFlowComplianceRulesPage() {
             <Pagination
               total={total}
               offset={offset}
-              pageSize={pageSize}
-              rowCount={pageItems.length}
+              pageSize={PAGE_SIZE}
+              rowCount={rules.length}
               onPrevious={goPrev}
               onNext={goNext}
               disabled={loading}
@@ -517,7 +594,11 @@ export function PayFlowComplianceRulesPage() {
         footer={
           <div className="flex justify-end gap-2">
             <Btn onClick={() => setConfirm(null)}>Cancel</Btn>
-            <Btn variant="primary" onClick={() => void runConfirmed()} disabled={busyId != null}>
+            <Btn
+              variant="primary"
+              onClick={() => void runConfirmed()}
+              disabled={busyId != null || (confirm?.action === "deactivate" && !reason.trim())}
+            >
               Confirm
             </Btn>
           </div>
@@ -526,6 +607,17 @@ export function PayFlowComplianceRulesPage() {
         <p className="text-[13px] text-muted-foreground">
           {confirm ? `${confirm.rule.code} · ${confirm.rule.name}` : ""}
         </p>
+        {confirm?.action === "deactivate" ? (
+          <label className="mt-3 block text-[13px]">
+            Reason
+            <textarea
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              rows={3}
+              className="mt-1 w-full rounded-md border border-border px-3 py-2"
+            />
+          </label>
+        ) : null}
       </Modal>
     </>
   );

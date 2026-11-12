@@ -1,11 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ApiError } from "../../api/client";
 import {
   createComplianceRule,
-  getComplianceCatalog,
+  getComplianceJurisdictions,
+  loadComplianceEditorCatalog,
+  submitComplianceRule,
   updateComplianceRule,
 } from "../../api/compliance";
-import { fetchCities, fetchStates } from "../../lib/geo-api";
+import {
+  complianceSaveIssues,
+  draftFromApiRule,
+  emptyComplianceDraft,
+  fieldsForRuleType,
+  toComplianceSaveBody,
+} from "../../lib/compliance-rule";
 import { cn } from "../../lib/utils";
 import { Modal } from "../ui/Modal";
 import {
@@ -18,77 +26,24 @@ import {
   ToggleRow,
 } from "./lovable/payflow-ui";
 import type {
+  ComplianceApiRule,
   ComplianceCatalog,
   ComplianceConfigValue,
   ComplianceFieldSpec,
-  ComplianceRule,
+  ComplianceRuleTypeOption,
   ComplianceRuleWrite,
 } from "../../types";
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+export { draftFromApiRule, emptyComplianceDraft };
+
 export function complianceStatusTone(status: string) {
   if (status === "Active") return "success" as const;
-  if (status === "Pending Review" || status === "Draft") return "warning" as const;
+  if (status === "Pending Approval" || status === "Pending Review" || status === "Draft") return "warning" as const;
   if (status === "Scheduled") return "info" as const;
   if (status === "Expired") return "danger" as const;
   return "neutral" as const;
-}
-
-export function emptyComplianceDraft(category = ""): ComplianceRuleWrite {
-  return {
-    name: "",
-    category,
-    description: "",
-    classification: "Mandatory",
-    regulatory_authority: "",
-    legal_reference: "",
-    effective_date: "",
-    expiry_date: "",
-    country: "",
-    states: [],
-    regions: [],
-    cities: [],
-    postal_codes: [],
-    collector_types: [],
-    debt_types: [],
-    channels: [],
-    applicability_conditions: "",
-    configuration: {},
-    action: "Block",
-    override_allowed: false,
-    override_authorization_level: "",
-    override_reason_required: false,
-    intent: "draft",
-  };
-}
-
-export function draftFromRule(rule: ComplianceRule): ComplianceRuleWrite {
-  return {
-    name: rule.name,
-    category: rule.category,
-    description: rule.description || "",
-    classification: rule.classification,
-    regulatory_authority: rule.regulatory_authority || "",
-    legal_reference: rule.legal_reference || "",
-    effective_date: rule.effective_date || "",
-    expiry_date: rule.expiry_date || "",
-    country: rule.country,
-    states: rule.states || [],
-    regions: rule.regions || [],
-    cities: rule.cities || [],
-    postal_codes: rule.postal_codes || [],
-    collector_types: rule.collector_types || [],
-    debt_types: rule.debt_types || [],
-    channels: rule.channels || [],
-    applicability_conditions: rule.applicability_conditions || "",
-    configuration: { ...(rule.configuration || {}) },
-    action: rule.action,
-    override_allowed: rule.override_allowed,
-    override_authorization_level: rule.override_authorization_level || "",
-    override_reason_required: rule.override_reason_required,
-    intent: "save",
-  };
 }
 
 function splitTags(value: string): string[] {
@@ -337,38 +292,14 @@ function jurisdictionScope(draft: ComplianceRuleWrite) {
   return `${level} scope · ${parts.join(" · ")}`;
 }
 
-function localIssues(draft: ComplianceRuleWrite, catalog: ComplianceCatalog, strict: boolean) {
-  const issues: string[] = [];
-  if (!draft.name.trim()) issues.push("Rule name is required.");
-  if (!draft.category) issues.push("Rule category is required.");
-  if (!draft.classification) issues.push("Rule classification is required.");
-  if (!draft.country) issues.push("Country is required.");
-  if (!draft.action) issues.push("Enforcement action is required.");
-  if (draft.effective_date && draft.expiry_date && draft.expiry_date < draft.effective_date) {
-    issues.push("Expiry date must be on or after the effective date.");
-  }
-  const category = catalog.categories.find((item) => item.name === draft.category);
-  const start = String(draft.configuration.start_time || "");
-  const end = String(draft.configuration.end_time || "");
-  if (start && end && start >= end) issues.push("End time must be later than start time.");
-  if (strict && category) {
-    if (!draft.legal_reference.trim()) issues.push("Legal reference / source is required.");
-    if (!draft.effective_date) issues.push("Effective date is required.");
-    if (!draft.channels.length) issues.push("Select at least one communication channel.");
-    for (const field of category.fields) {
-      if (!field.required) continue;
-      const value = draft.configuration[field.key];
-      const empty =
-        value == null ||
-        value === "" ||
-        (Array.isArray(value) && value.length === 0);
-      if (empty) issues.push(`${field.label} is required.`);
-    }
-  }
-  if (draft.override_allowed && !draft.override_authorization_level) {
-    issues.push("Select an override authorization level.");
-  }
-  return issues;
+function localIssues(
+  draft: ComplianceRuleWrite,
+  catalog: ComplianceCatalog,
+  ruleTypes: ComplianceRuleTypeOption[],
+  strict: boolean,
+  requireReason: boolean,
+) {
+  return complianceSaveIssues(draft, catalog, ruleTypes, { strict, requireReason });
 }
 
 function ConfigField({
@@ -542,21 +473,34 @@ function conditionsSummary(logic: "AND" | "OR", rows: RuleCondition[]) {
 function RuleConditionEditor({
   place,
   action,
-  onText,
+  initialLogic,
+  initialRows,
+  onChange,
 }: {
   place: string;
   action: string;
-  onText: (text: string) => void;
+  initialLogic: "AND" | "OR";
+  initialRows: ComplianceRuleWrite["conditions"];
+  onChange: (logic: "AND" | "OR", rows: ComplianceRuleWrite["conditions"], text: string) => void;
 }) {
-  const [logic, setLogic] = useState<"AND" | "OR">("AND");
-  const [rows, setRows] = useState<RuleCondition[]>([
-    { id: "c1", field: "Consent", operator: "Equals", value: "No", days: "7" },
-  ]);
-  const onTextRef = useRef(onText);
-  onTextRef.current = onText;
+  const [logic, setLogic] = useState<"AND" | "OR">(initialLogic);
+  const [rows, setRows] = useState<RuleCondition[]>(
+    initialRows.length
+      ? initialRows.map((row) => ({ ...row, days: String(row.period || 7) }))
+      : [],
+  );
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   useEffect(() => {
-    onTextRef.current(conditionsText(logic, rows));
+    const next = rows.map((row) => ({
+      id: row.id,
+      field: row.field,
+      operator: row.operator,
+      value: row.value,
+      period: Number(row.days) || 7,
+    }));
+    onChangeRef.current(logic, next, conditionsText(logic, rows));
   }, [logic, rows]);
 
   function update(id: string, partial: Partial<RuleCondition>) {
@@ -642,7 +586,7 @@ function RuleConditionEditor({
             </Field>
             <button
               type="button"
-              disabled={rows.length < 2}
+              disabled={rows.length === 0}
               aria-label="Remove condition"
               onClick={() => setRows((current) => current.filter((item) => item.id !== row.id))}
               className="mb-0.5 inline-flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-surface hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
@@ -663,7 +607,7 @@ function RuleConditionEditor({
 
 function GuidedCreateFields({
   catalog,
-  category,
+  ruleTypes,
   draft,
   states,
   cities,
@@ -672,12 +616,13 @@ function GuidedCreateFields({
   activeWarning,
   allowDraft,
   disabled,
+  showReason,
   patch,
   setConfig,
   requestSave,
 }: {
   catalog: ComplianceCatalog | null;
-  category: ComplianceCatalog["categories"][number] | undefined;
+  ruleTypes: ComplianceRuleTypeOption[];
   draft: ComplianceRuleWrite;
   states: string[];
   cities: string[];
@@ -686,21 +631,57 @@ function GuidedCreateFields({
   activeWarning?: boolean;
   allowDraft?: boolean;
   disabled?: boolean;
+  showReason?: boolean;
   patch: (partial: Partial<ComplianceRuleWrite>) => void;
   setConfig: (key: string, value: ComplianceConfigValue) => void;
   requestSave: (intent: ComplianceRuleWrite["intent"]) => void;
 }) {
-  const [template, setTemplate] = useState("");
+  const [template, setTemplate] = useState(draft.rule_type || "");
   const words = plainScope(draft);
   const categories = catalog?.categories ?? [];
+  const selectedType = ruleTypes.find((item) => item.code === template);
   const configTitle = draft.category || "Rule details";
   const place =
     [draft.country, ...draft.states, ...draft.regions, ...draft.postal_codes].filter(Boolean).join(" / ") ||
     "any location";
 
+  const typeFields = fieldsForRuleType(selectedType);
+
   function chooseCategory(name: string) {
     if (name === draft.category) return;
-    patch({ category: name, configuration: {} });
+    const selected = ruleTypes.find((item) => item.code === template);
+    if (selected && selected.category !== name) {
+      setTemplate("");
+      patch({ category: name, rule_type: "", configuration: {}, conditions: [] });
+      return;
+    }
+    patch({ category: name });
+  }
+
+  function chooseRuleType(code: string) {
+    setTemplate(code);
+    const type = ruleTypes.find((item) => item.code === code);
+    if (!type) {
+      patch({ rule_type: "" });
+      return;
+    }
+    patch({
+      rule_type: type.code,
+      category: type.category,
+      action: type.action || draft.action,
+      configuration: {},
+      conditions: type.field
+        ? [
+            {
+              id: "c1",
+              field: type.field,
+              operator: type.operator || "Equals",
+              value: type.value == null ? "" : String(type.value),
+              period: 7,
+            },
+          ]
+        : [],
+    });
   }
 
   return (
@@ -712,28 +693,26 @@ function GuidedCreateFields({
       ) : null}
 
       <div className="max-w-xl">
-        <Field label="Start from a rule type (optional)">
+        <Field label="Rule type">
           <select
             value={template}
-            onChange={(event) => {
-              const next = event.target.value;
-              setTemplate(next);
-              if (next) chooseCategory(next);
-            }}
+            onChange={(event) => chooseRuleType(event.target.value)}
             className={controlClass}
           >
             <option value=""> </option>
-            {categories.map((item) => (
-              <option key={item.name} value={item.name}>
-                {item.name}
+            {ruleTypes.map((item) => (
+              <option key={item.code} value={item.code}>
+                {item.code} · {item.name}
               </option>
             ))}
           </select>
         </Field>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-          {template
-            ? `${template} — ${CATEGORY_BLURBS[template] ?? "Other compliance controls."} Default action: ${draft.action || "Block"}.`
-            : "Pick a rule type to pre-fill the form, or start blank for any new kind of rule."}
+          {selectedType
+            ? `${selectedType.code} · ${selectedType.name} — ${CATEGORY_BLURBS[selectedType.name] ?? CATEGORY_BLURBS[selectedType.category] ?? "Other compliance controls."} Default action: ${selectedType.action || draft.action || "Block"}.`
+            : catalog && ruleTypes.length === 0
+              ? "No rule types are available."
+              : "Pick a rule type to pre-fill the form, or start blank for any new kind of rule."}
         </p>
       </div>
 
@@ -869,13 +848,13 @@ function GuidedCreateFields({
             />
           </Field>
         </div>
-        {category && category.fields.length > 0 ? (
+        {typeFields.length > 0 ? (
           <div className="mt-4">
             <h4 className="mb-3 text-[13.5px] font-semibold tracking-tight text-foreground">{configTitle}</h4>
             <div className="grid gap-3 sm:grid-cols-2">
-              {category.fields.map((field) => (
+              {typeFields.map((field) => (
                 <Field
-                  key={`${draft.category}-${field.key}`}
+                  key={`${draft.rule_type}-${field.key}`}
                   label={field.label}
                   hint={field.required ? "Required before review" : undefined}
                   className={field.type === "textarea" || field.type === "weekdays" ? "sm:col-span-2" : undefined}
@@ -939,9 +918,14 @@ function GuidedCreateFields({
 
           <div>
             <RuleConditionEditor
+              key={draft.rule_type || "none"}
               place={place}
               action={words.action}
-              onText={(applicability_conditions) => patch({ applicability_conditions })}
+              initialLogic={draft.logic}
+              initialRows={draft.conditions}
+              onChange={(logic, conditions, applicability_conditions) =>
+                patch({ logic, conditions, applicability_conditions })
+              }
             />
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <Field label="Collector type">
@@ -1019,6 +1003,12 @@ function GuidedCreateFields({
         </div>
       </details>
 
+      {showReason ? (
+        <Field label="Reason for this change" hint="Required when updating a saved rule">
+          <TextArea value={draft.change_reason} onChange={(change_reason) => patch({ change_reason })} />
+        </Field>
+      ) : null}
+
       {error ? (
         <p role="alert" className="text-[13px] text-destructive">
           {error}
@@ -1056,9 +1046,10 @@ export function ComplianceRuleForm({
   activeWarning?: boolean;
   allowDraft?: boolean;
   disabled?: boolean;
-  onSaved: (rule: ComplianceRule) => void;
+  onSaved: (rule: ComplianceApiRule) => void;
 }) {
   const [catalog, setCatalog] = useState<ComplianceCatalog | null>(null);
+  const [ruleTypes, setRuleTypes] = useState<ComplianceRuleTypeOption[]>([]);
   const [draft, setDraft] = useState<ComplianceRuleWrite>(initial);
   const [states, setStates] = useState<string[]>([]);
   const [cities, setCities] = useState<string[]>([]);
@@ -1069,13 +1060,13 @@ export function ComplianceRuleForm({
 
   useEffect(() => {
     let cancelled = false;
-    getComplianceCatalog()
-      .then((next) => {
+    loadComplianceEditorCatalog()
+      .then(({ catalog: next, ruleTypes: types }) => {
         if (cancelled) return;
         setCatalog(next);
+        setRuleTypes(types);
         setDraft((current) => ({
           ...current,
-          category: current.category || next.categories[0]?.name || "",
           classification: current.classification || next.classifications[0] || "Mandatory",
           action: current.action || next.actions[0] || "Block",
         }));
@@ -1095,9 +1086,9 @@ export function ComplianceRuleForm({
     }
     let cancelled = false;
     setGeoError("");
-    fetchStates(draft.country)
-      .then((rows) => {
-        if (!cancelled) setStates(rows);
+    getComplianceJurisdictions(draft.country)
+      .then((res) => {
+        if (!cancelled) setStates((res.states || []).map((item) => item.name).filter(Boolean));
       })
       .catch((err) => {
         if (!cancelled) {
@@ -1111,26 +1102,26 @@ export function ComplianceRuleForm({
   }, [draft.country]);
 
   useEffect(() => {
-    if (!draft.country || draft.states.length === 0) {
+    if (!draft.country || draft.states.length !== 1) {
       setCities([]);
       return;
     }
     let cancelled = false;
-    Promise.all(draft.states.map((state) => fetchCities(draft.country, state).catch(() => [] as string[])))
-      .then((groups) => {
+    getComplianceJurisdictions(draft.country, draft.states[0])
+      .then((res) => {
         if (cancelled) return;
-        const merged = Array.from(new Set(groups.flat())).sort((a, b) => a.localeCompare(b));
+        const merged = Array.from(new Set((res.regions || []).flatMap((region) => region.cities || []))).sort((a, b) =>
+          a.localeCompare(b),
+        );
         setCities(merged);
+      })
+      .catch(() => {
+        if (!cancelled) setCities([]);
       });
     return () => {
       cancelled = true;
     };
   }, [draft.country, draft.states]);
-
-  const category = useMemo(
-    () => catalog?.categories.find((item) => item.name === draft.category),
-    [catalog, draft.category],
-  );
 
   function patch(partial: Partial<ComplianceRuleWrite>) {
     setDraft((current) => ({ ...current, ...partial }));
@@ -1143,27 +1134,29 @@ export function ComplianceRuleForm({
     }));
   }
 
+  const [savedId, setSavedId] = useState<number | null>(ruleId ?? null);
+
   async function persist(intent: ComplianceRuleWrite["intent"]) {
     if (!catalog) return;
-    const strict = intent === "submit";
-    const issues = localIssues(draft, catalog, strict);
+    const strict = intent === "submit" || Boolean(activeWarning);
+    const requireReason = mode === "edit" || savedId != null;
+    const issues = localIssues(draft, catalog, ruleTypes, strict, requireReason);
     if (issues.length) {
-      setError(issues[0]);
+      setError(issues.join(" "));
       return;
     }
     setBusy(true);
     setError("");
-    const payload: ComplianceRuleWrite = {
-      ...draft,
-      effective_date: draft.effective_date || null,
-      expiry_date: draft.expiry_date || null,
-      intent,
-    };
+    const reason = draft.change_reason.trim();
     try {
-      const saved =
-        mode === "create" || ruleId == null
-          ? await createComplianceRule(payload)
-          : await updateComplianceRule(ruleId, payload);
+      let saved =
+        savedId == null
+          ? await createComplianceRule(toComplianceSaveBody(draft))
+          : await updateComplianceRule(savedId, toComplianceSaveBody(draft, reason));
+      setSavedId(saved.id);
+      if (intent === "submit") {
+        saved = await submitComplianceRule(saved.id, reason || undefined);
+      }
       onSaved(saved);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "The rule could not be saved.");
@@ -1207,7 +1200,7 @@ export function ComplianceRuleForm({
       <fieldset disabled={disabled || busy} className="min-w-0 space-y-7">
         <GuidedCreateFields
           catalog={catalog}
-          category={category}
+          ruleTypes={ruleTypes}
           draft={draft}
           states={states}
           cities={cities}
@@ -1216,6 +1209,7 @@ export function ComplianceRuleForm({
           activeWarning={activeWarning}
           allowDraft={allowDraft}
           disabled={disabled}
+          showReason={savedId != null}
           patch={patch}
           setConfig={setConfig}
           requestSave={requestSave}
@@ -1242,11 +1236,33 @@ export function ComplianceRuleForm({
           <Field label="Rule name">
             <TextInput value={draft.name} onChange={(name) => patch({ name })} />
           </Field>
+          <Field label="Rule type">
+            <select
+              value={draft.rule_type}
+              onChange={(event) => {
+                const code = event.target.value;
+                const type = ruleTypes.find((item) => item.code === code);
+                patch({
+                  rule_type: code,
+                  category: type?.category || draft.category,
+                  action: type?.action || draft.action,
+                });
+              }}
+              className="h-9 w-full rounded-md border border-border bg-card px-3 text-[13px]"
+            >
+              <option value="">Select a rule type</option>
+              {ruleTypes.map((item) => (
+                <option key={item.code} value={item.code}>
+                  {item.code} · {item.name}
+                </option>
+              ))}
+            </select>
+          </Field>
           <Field label="Rule category">
             <SelectInput
               value={draft.category}
               options={catalog?.categories.map((item) => item.name) || [draft.category].filter(Boolean)}
-              onChange={(category) => patch({ category, configuration: {} })}
+              onChange={(category) => patch({ category })}
             />
           </Field>
           <Field label="Description" className="sm:col-span-2">
@@ -1360,10 +1376,16 @@ export function ComplianceRuleForm({
               onChange={(channels) => patch({ channels })}
             />
           </Field>
-          <Field label="Applicability conditions" className="sm:col-span-2">
-            <TextArea
-              value={draft.applicability_conditions}
-              onChange={(applicability_conditions) => patch({ applicability_conditions })}
+          <Field label="Rule conditions" className="sm:col-span-2">
+            <RuleConditionEditor
+              key={draft.rule_type || "edit"}
+              place={draft.country || "any location"}
+              action={(draft.action || "apply").toLowerCase()}
+              initialLogic={draft.logic}
+              initialRows={draft.conditions}
+              onChange={(logic, conditions, applicability_conditions) =>
+                patch({ logic, conditions, applicability_conditions })
+              }
             />
           </Field>
         </div>
@@ -1372,12 +1394,12 @@ export function ComplianceRuleForm({
       <section className="space-y-3">
         <SectionHeading
           title="Rule configuration"
-          description={category ? `Fields for ${category.name}.` : "Select a category to show its fields."}
+          description={draft.rule_type ? `Fields for ${draft.rule_type}.` : "Select a rule type to show its fields."}
         />
-        {category ? (
+        {fieldsForRuleType(ruleTypes.find((item) => item.code === draft.rule_type)).length ? (
           <div className="grid gap-3 sm:grid-cols-2">
-            {category.fields.map((field) => (
-              <Field key={`${draft.category}-${field.key}`} label={field.label} hint={field.required ? "Required before review" : undefined}>
+            {fieldsForRuleType(ruleTypes.find((item) => item.code === draft.rule_type)).map((field) => (
+              <Field key={`${draft.rule_type}-${field.key}`} label={field.label} hint={field.required ? "Required before review" : undefined}>
                 <ConfigField
                   field={field}
                   value={draft.configuration[field.key]}
@@ -1387,7 +1409,7 @@ export function ComplianceRuleForm({
             ))}
           </div>
         ) : (
-          <p className="text-[13px] text-muted-foreground">Loading categories…</p>
+          <p className="text-[13px] text-muted-foreground">This rule type has no extra settings.</p>
         )}
       </section>
 
@@ -1434,6 +1456,10 @@ export function ComplianceRuleForm({
           </label>
         </div>
       </section>
+
+      <Field label="Reason for this change" hint="Required when updating a saved rule">
+        <TextArea value={draft.change_reason} onChange={(change_reason) => patch({ change_reason })} />
+      </Field>
 
       {error ? (
         <p role="alert" className="text-[13px] text-destructive">

@@ -2,17 +2,16 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import { getComplianceRule } from "../../api/compliance";
-import {
-  ComplianceRuleForm,
-  draftFromRule,
-  emptyComplianceDraft,
-} from "../../components/payflow/ComplianceRuleForm";
+import { ComplianceRuleForm, emptyComplianceDraft } from "../../components/payflow/ComplianceRuleForm";
 import { PageHeader, Panel } from "../../components/payflow/lovable/payflow-ui";
-import type { ComplianceRule, ComplianceRuleWrite } from "../../types";
+import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
+import { draftFromApiRule } from "../../lib/compliance-rule";
+import type { ComplianceApiRule, ComplianceRuleWrite } from "../../types";
 
 export function PayFlowComplianceRuleEditPage() {
   const { ruleId } = useParams();
   const navigate = useNavigate();
+  const { hasPermission, isOperationsAdmin } = usePayFlowAccess();
   const editing = Boolean(ruleId);
   const [initial, setInitial] = useState<ComplianceRuleWrite | null>(editing ? null : emptyComplianceDraft());
   const [status, setStatus] = useState("");
@@ -24,11 +23,13 @@ export function PayFlowComplianceRuleEditPage() {
     getComplianceRule(Number(ruleId))
       .then((rule) => {
         if (cancelled) return;
-        setInitial(draftFromRule(rule));
+        const canEdit =
+          hasPermission("modify_governance") &&
+          rule.status !== "Archived" &&
+          (rule.status !== "Active" || isOperationsAdmin);
+        setInitial(draftFromApiRule(rule));
         setStatus(rule.status);
-        if (!rule.can_edit) {
-          setError("Your role cannot edit compliance rules.");
-        }
+        if (!canEdit) setError("Your role cannot edit compliance rules.");
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof ApiError ? err.detail : "Failed to load the compliance rule.");
@@ -36,9 +37,9 @@ export function PayFlowComplianceRuleEditPage() {
     return () => {
       cancelled = true;
     };
-  }, [ruleId]);
+  }, [ruleId, hasPermission, isOperationsAdmin]);
 
-  function saved(rule: ComplianceRule) {
+  function saved(rule: ComplianceApiRule) {
     navigate(`/payflow/compliance-rules/${rule.id}`, { state: { savedStatus: rule.status } });
   }
 
