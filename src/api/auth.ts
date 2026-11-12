@@ -1,4 +1,11 @@
-import { apiRequest, apiRequestMultipart, clearTokens } from "./client";
+import {
+  apiRequest,
+  apiRequestMultipart,
+  beginIntentionalLogout,
+  clearIntentionalLogout,
+  clearSessionEndedMessage,
+  clearTokens,
+} from "./client";
 import { cachedAsync, invalidateCache } from "../lib/dedupeAsync";
 import type { LoginResponse, MeResponse } from "../types";
 
@@ -10,6 +17,8 @@ export async function login(email: string, password: string): Promise<LoginRespo
   });
   // Session cookies are Set-Cookie by the API — never persist JWTs in JS storage.
   clearTokens();
+  clearSessionEndedMessage();
+  clearIntentionalLogout();
   invalidateCache();
   return data;
 }
@@ -53,6 +62,9 @@ export async function changePassword(
 }
 
 export async function logout(): Promise<void> {
+  // Mark first so any in-flight 401 after revoke does not show "another location".
+  beginIntentionalLogout();
+  clearSessionEndedMessage();
   try {
     await apiRequest<{ message: string }>("/auth/logout", {
       method: "POST",
@@ -60,6 +72,12 @@ export async function logout(): Promise<void> {
   } finally {
     clearTokens();
     invalidateCache();
+    clearSessionEndedMessage();
+    // Keep the flag until LoginPage reads it (takeSessionEndedMessage clears it).
+    // If we never land on login, drop it after a short beat so later sessions are normal.
+    if (typeof window !== "undefined") {
+      window.setTimeout(() => clearIntentionalLogout(), 5_000);
+    }
     try {
       const { clearImportRuns } = await import("../lib/import-data");
       clearImportRuns();
