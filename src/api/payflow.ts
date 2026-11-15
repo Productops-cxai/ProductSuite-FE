@@ -923,6 +923,22 @@ export interface PayflowAiSuggestJob {
   created_at: string;
 }
 
+/**
+ * "Suggest with AI" as a background run: the server answers at once with the job, and the
+ * page follows it with listPayflowAiSuggestJobs. `started` is false when a run for this
+ * scope was already waiting or running (that run is returned).
+ */
+export function startPayflowSuggestJob(payload: {
+  client_id: number;
+  /** Null / omit = parent-level suggest (no sub-client). */
+  portfolio_id?: number | null;
+}) {
+  return apiRequest<{ started: boolean; job: PayflowAiSuggestJob }>(
+    "/payflow/workflows/suggest-jobs",
+    { method: "POST", body: payload },
+  );
+}
+
 /** Latest AI-suggest runs for a client / portfolio, newest first. */
 export function listPayflowAiSuggestJobs(clientId: number, portfolioId?: number | null) {
   const q = new URLSearchParams({ client_id: String(clientId) });

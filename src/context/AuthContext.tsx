@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import * as authApi from "../api/auth";
-import { ApiError, clearTokens } from "../api/client";
+import { ApiError, beginIntentionalLogout, clearSessionEndedMessage, clearTokens } from "../api/client";
 import { invalidateCache } from "../lib/dedupeAsync";
 import { rememberReturnPath } from "../lib/productRouting";
 import type { LoginNextStep, LoginResponse, MeResponse, PersonBrief, ProductBrief } from "../types";
@@ -97,10 +97,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    beginIntentionalLogout();
+    clearSessionEndedMessage();
     try {
       await authApi.logout();
     } catch {
       clearTokens();
+      clearSessionEndedMessage();
     }
     setUser(null);
     setProducts([]);

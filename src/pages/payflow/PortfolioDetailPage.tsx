@@ -7,7 +7,7 @@ import {
   deletePayflowClientPortfolio,
   listPayflowAiSuggestJobs,
   previewPayflowPortfolioSegments,
-  suggestPayflowWorkflows,
+  startPayflowSuggestJob,
   type PayflowAiSuggestJob,
 } from "../../api/payflow";
 import {
@@ -150,6 +150,16 @@ export function PayFlowPortfolioDetailPage() {
     const timer = window.setInterval(() => {
       void loadAiJob().then((latest) => {
         if (latest && latest.status !== "pending" && latest.status !== "running") {
+          if (latest.status === "done") {
+            const count = latest.workflows_created ?? 0;
+            setInfo(
+              count
+                ? `AI proposed ${count} workflow(s) as AI Proposed. Review them below or open a strategy.`
+                : "Suggest finished but no workflows were created.",
+            );
+          } else {
+            setInfo(""); // failed / skipped: the banner below says why
+          }
           void load({ quiet: true });
         }
       });
@@ -189,29 +199,17 @@ export function PayFlowPortfolioDetailPage() {
     if (!Number.isFinite(cid) || !Number.isFinite(pid) || !canCreateWorkflow || aiBusy) return;
     setSuggestBusy(true);
     setError("");
-    setInfo("PayFlow AI is designing workflows — this can take 1–5 minutes. Keep this page open.");
+    setInfo("");
     try {
-      const result = await suggestPayflowWorkflows({ client_id: cid, portfolio_id: pid });
-      const count = result.workflows?.length ?? 0;
-      setInfo(
-        count
-          ? `AI proposed ${count} workflow(s) as AI Proposed. Review them below or open a strategy.`
-          : "Suggest finished but no workflows were returned.",
-      );
-      await load({ quiet: true });
-    } catch (err) {
-      setInfo("");
-      if (err instanceof ApiError) {
-        // The server answered: it saves all workflows or none, so nothing was saved.
-        setError(err.detail);
-      } else {
-        // No answer (timeout / dropped connection). The server may still be working
-        // and may yet save the workflows, so do not invite an immediate retry.
-        setError(
-          "The connection was lost before the AI finished. It may still be working: wait a few minutes and refresh this page before trying again, or you may get the same workflows twice.",
-        );
-        window.setTimeout(() => void load({ quiet: true }), 60000);
+      // The AI runs in the background (1–5 minutes): the server answers at once with the
+      // job, and the polling above shows the workflows when it is done.
+      const { job, started } = await startPayflowSuggestJob({ client_id: cid, portfolio_id: pid });
+      setAiJob(job);
+      if (!started) {
+        setInfo("PayFlow AI is already working on this portfolio. Its workflows will appear below.");
       }
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail : "Could not start the AI suggestion. Try again.");
     } finally {
       setSuggestBusy(false);
     }
@@ -333,7 +331,7 @@ export function PayFlowPortfolioDetailPage() {
         </p>
       ) : aiJob?.status === "failed" ? (
         <p className="mb-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-[13px] text-destructive">
-          The last automatic AI suggestion for this portfolio failed
+          The last AI suggestion for this portfolio failed
           {aiJob.error_message ? `: ${aiJob.error_message}` : "."} You can run Suggest with AI
           again.
         </p>
