@@ -26,7 +26,12 @@ import {
 } from "../../components/payflow/client-config-sections";
 import { Btn, PageHeader, Panel, StatusPill, type Tone } from "../../components/payflow/lovable/payflow-ui";
 import { ClientComplianceRulesPanel } from "../../components/payflow/ClientComplianceRules";
-import { saveClientComplianceSelections } from "../../api/compliance";
+import {
+  getClientComplianceRules,
+  syncClientComplianceRules,
+  updateClientComplianceRule,
+} from "../../api/compliance";
+import type { ClientComplianceChoice } from "../../types";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { cn } from "../../lib/utils";
 import type { PayflowUser } from "../../types";
@@ -65,7 +70,7 @@ export function PayFlowClientNewPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [activatedName, setActivatedName] = useState<string | null>(null);
-  const [complianceIds, setComplianceIds] = useState<number[] | null>(null);
+  const [complianceSelection, setComplianceSelection] = useState<ClientComplianceChoice[] | null>(null);
   const [complianceTouched, setComplianceTouched] = useState(false);
 
   useEffect(() => {
@@ -198,10 +203,18 @@ export function PayFlowClientNewPage() {
   }
 
   async function persistCompliance(id: number) {
-    await saveClientComplianceSelections(id, {
-      selected_optional_ids: complianceTouched ? complianceIds : null,
-      use_defaults: !complianceTouched,
-    });
+    await syncClientComplianceRules(id);
+    if (!complianceSelection) return;
+    const current = await getClientComplianceRules(id);
+    for (const want of complianceSelection) {
+      const row = (current.rules || []).find((rule) => rule.id === want.ruleId);
+      if (!row || row.locked || row.enabled === want.enabled) continue;
+      await updateClientComplianceRule(id, {
+        rule_id: want.ruleId,
+        enabled: want.enabled,
+        reason: "Set during client setup",
+      });
+    }
   }
 
   async function saveDraftAndLeave() {
@@ -392,8 +405,8 @@ export function PayFlowClientNewPage() {
             postalCode={draft.config.postalCode}
             canEditOptional
             canEditMandatory={hasPermission("modify_governance")}
-            onSelectionChange={(ids) => {
-              setComplianceIds(ids);
+            onSelectionChange={(selection) => {
+              setComplianceSelection(selection);
               setComplianceTouched(true);
             }}
           />
@@ -448,7 +461,9 @@ export function PayFlowClientNewPage() {
                 title="Compliance Rules"
                 rows={
                   complianceTouched
-                    ? [`${complianceIds?.length ?? 0} optional rules selected`]
+                    ? [
+                        `${complianceSelection?.filter((item) => item.enabled).length ?? 0} optional rules on`,
+                      ]
                     : ["Applicable rules will be selected by default"]
                 }
               />

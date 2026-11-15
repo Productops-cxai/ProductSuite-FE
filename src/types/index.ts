@@ -1858,8 +1858,114 @@ export interface ComplianceRulesListResponse {
   can_manage_status: boolean;
 }
 
+/** Rule row from `GET /payflow/compliance/rules` (ProductSuite-BE). */
+export interface ComplianceApiRule {
+  id: number;
+  code: string;
+  name: string;
+  description: string;
+  category: string;
+  rule_type: string;
+  rule_type_name: string | null;
+  enforcement: string;
+  regulatory_authority: string;
+  legal_reference: string;
+  source: string;
+  jurisdiction_type: string;
+  country: string;
+  state: string;
+  region: string;
+  city: string;
+  postal: string;
+  timezone: string;
+  collector_type: string;
+  debt_type: string;
+  channel: string;
+  logic: string;
+  conditions: Record<string, unknown>[];
+  settings: Record<string, unknown>;
+  action: string;
+  override_policy: string;
+  priority: number;
+  effective_from: string | null;
+  effective_until: string | null;
+  status: string;
+  version: number;
+  client_id: number | null;
+  is_library: boolean;
+  created_by: string | null;
+  updated_by: string | null;
+  submitted_by: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  rejection_reason: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  activation_problems?: string[];
+}
+
+export interface ComplianceApiListResponse {
+  rules: ComplianceApiRule[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ComplianceRuleTypeOption {
+  code: string;
+  name: string;
+  category: string;
+  action?: string;
+  field?: string;
+  value?: string;
+  operator?: string;
+  needs?: string[];
+}
+
+export interface ComplianceApiCatalog {
+  categories: string[];
+  rule_types?: ComplianceRuleTypeOption[];
+  statuses?: string[];
+  enforcements?: string[];
+  actions?: string[];
+  channels?: string[];
+  collector_types?: string[];
+  debt_types?: string[];
+  override_policies?: string[];
+  countries?: { code: string; name: string }[];
+}
+
+export interface ComplianceJurisdictionState {
+  code: string;
+  name: string;
+  timezone?: string;
+}
+
+export interface ComplianceJurisdictionsResponse {
+  countries?: {
+    code: string;
+    name: string;
+    default_timezone?: string;
+    subdivision_label?: string;
+    postal_label?: string;
+  }[];
+  country?: { code: string; name: string };
+  states?: ComplianceJurisdictionState[];
+  state?: ComplianceJurisdictionState;
+  regions?: { name: string; cities?: string[]; postal_prefixes?: string[] }[];
+}
+
+export interface ComplianceConditionDraft {
+  id: string;
+  field: string;
+  operator: string;
+  value: string;
+  period: number;
+}
+
 export interface ComplianceRuleWrite {
   name: string;
+  rule_type: string;
   category: string;
   description: string;
   classification: string;
@@ -1875,13 +1981,67 @@ export interface ComplianceRuleWrite {
   collector_types: string[];
   debt_types: string[];
   channels: string[];
+  logic: "AND" | "OR";
+  conditions: ComplianceConditionDraft[];
   applicability_conditions: string;
   configuration: Record<string, ComplianceConfigValue>;
   action: string;
   override_allowed: boolean;
   override_authorization_level: string;
   override_reason_required: boolean;
+  change_reason: string;
   intent: "draft" | "submit" | "save";
+}
+
+export interface ComplianceRuleSaveBody {
+  name: string;
+  description?: string | null;
+  rule_type: string;
+  category?: string;
+  enforcement?: string;
+  regulatory_authority?: string | null;
+  legal_reference?: string | null;
+  country: string;
+  state?: string;
+  region?: string;
+  city?: string;
+  postal?: string;
+  collector_type?: string;
+  debt_type?: string;
+  channel?: string;
+  logic?: string;
+  conditions?: { id: string; field: string; operator: string; value: string; period: number }[];
+  settings?: Record<string, unknown>;
+  action?: string;
+  override_policy?: string;
+  effective_from?: string | null;
+  effective_until?: string | null;
+  reason?: string;
+}
+
+export interface ComplianceRuleHistory {
+  rule_id: number;
+  code: string;
+  current_version: number;
+  versions: {
+    id: number;
+    version: number;
+    status: string;
+    event: string;
+    snapshot: Record<string, unknown>;
+    change_reason: string | null;
+    changed_by: string | null;
+    created_at: string | null;
+  }[];
+  audit: {
+    id: number;
+    event: string;
+    reason: string | null;
+    before: unknown;
+    after: unknown;
+    by: string | null;
+    at: string | null;
+  }[];
 }
 
 export interface ComplianceAuditEntry {
@@ -1898,6 +2058,28 @@ export interface ComplianceAuditResponse {
   rule_id: number;
   code: string;
   entries: ComplianceAuditEntry[];
+}
+
+/** One rule on `GET /payflow/clients/{id}/compliance-rules`. */
+export interface ClientComplianceRule extends ComplianceApiRule {
+  associated: boolean;
+  enabled: boolean;
+  in_force: boolean;
+  inherited: boolean;
+  locked: boolean;
+}
+
+export interface ClientComplianceRulesResponse {
+  client_id: number;
+  jurisdiction: { country: string; state: string; city: string; postal: string };
+  jurisdiction_resolved: boolean;
+  message: string | null;
+  rules: ClientComplianceRule[];
+}
+
+export interface ClientComplianceChoice {
+  ruleId: number;
+  enabled: boolean;
 }
 
 export interface ComplianceApplicableRule extends ComplianceRule {

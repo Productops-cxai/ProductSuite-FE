@@ -1,11 +1,14 @@
 import { apiRequest } from "./client";
 import type {
-  ComplianceApplicableResponse,
-  ComplianceAuditResponse,
+  ComplianceApiCatalog,
+  ComplianceApiListResponse,
+  ComplianceApiRule,
+  ClientComplianceRulesResponse,
   ComplianceCatalog,
-  ComplianceRule,
-  ComplianceRuleWrite,
-  ComplianceRulesListResponse,
+  ComplianceJurisdictionsResponse,
+  ComplianceRuleHistory,
+  ComplianceRuleSaveBody,
+  ComplianceRuleTypeOption,
 } from "../types";
 
 export interface ComplianceListParams {
@@ -13,11 +16,15 @@ export interface ComplianceListParams {
   country?: string;
   state?: string;
   category?: string;
+  rule_type?: string;
   channel?: string;
-  classification?: string;
+  enforcement?: string;
   status?: string;
+  client_id?: number;
   sort?: string;
-  direction?: "asc" | "desc";
+  order?: "asc" | "desc";
+  limit?: number;
+  offset?: number;
 }
 
 function query(params: object) {
@@ -30,117 +37,166 @@ function query(params: object) {
   return text ? `?${text}` : "";
 }
 
-export function getComplianceCatalog() {
-  return apiRequest<ComplianceCatalog>("/payflow/compliance-rules/catalog");
+/** Dropdown lists for the compliance rules screen (`GET /payflow/compliance/catalog`). */
+export function getComplianceRuleCatalog() {
+  return apiRequest<ComplianceApiCatalog>("/payflow/compliance/catalog");
 }
 
-export function listComplianceRules(params: ComplianceListParams = {}) {
-  return apiRequest<ComplianceRulesListResponse>(
-    `/payflow/compliance-rules${query(params)}`,
+/** Catalog shaped for the Add / Edit Compliance Rule form. */
+export function loadComplianceEditorCatalog(): Promise<{
+  catalog: ComplianceCatalog;
+  ruleTypes: ComplianceRuleTypeOption[];
+}> {
+  return getComplianceRuleCatalog().then((raw) => {
+    const topics = (raw.categories || []).map((name) => name.trim()).filter(Boolean);
+    const ruleTypes = (raw.rule_types || []).filter((item) => item.code && item.name);
+    const catalog: ComplianceCatalog = {
+      categories: topics.map((name) => ({ name, fields: [] })),
+      classifications: raw.enforcements || [],
+      statuses: raw.statuses || [],
+      channels: raw.channels || [],
+      actions: raw.actions || [],
+      collector_types: raw.collector_types || [],
+      debt_types: raw.debt_types || [],
+      countries: (raw.countries || []).map((item) => item.name).filter(Boolean),
+      override_levels: raw.override_policies || [],
+      weekdays: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+    };
+    return { catalog, ruleTypes };
+  });
+}
+
+/** Countries, or states for one country (`GET /payflow/compliance/jurisdictions`). */
+export function getComplianceJurisdictions(country?: string, state?: string) {
+  return apiRequest<ComplianceJurisdictionsResponse>(
+    `/payflow/compliance/jurisdictions${query({ country, state })}`,
   );
 }
 
-export function getComplianceRule(ruleId: number) {
-  return apiRequest<ComplianceRule>(`/payflow/compliance-rules/${ruleId}`);
+export function listComplianceRules(params: ComplianceListParams = {}) {
+  return apiRequest<ComplianceApiListResponse>(`/payflow/compliance/rules${query(params)}`);
 }
 
-export function createComplianceRule(payload: ComplianceRuleWrite) {
-  return apiRequest<ComplianceRule>("/payflow/compliance-rules", {
+export function activateListedComplianceRule(ruleId: number, reason?: string) {
+  return apiRequest<ComplianceApiRule>(`/payflow/compliance/rules/${ruleId}/activate`, {
     method: "POST",
-    body: payload,
+    body: reason ? { reason } : {},
   });
 }
 
-export function updateComplianceRule(ruleId: number, payload: ComplianceRuleWrite) {
-  return apiRequest<ComplianceRule>(`/payflow/compliance-rules/${ruleId}/update`, {
-    method: "POST",
-    body: payload,
-  });
-}
-
-export function duplicateComplianceRule(ruleId: number) {
-  return apiRequest<ComplianceRule>(`/payflow/compliance-rules/${ruleId}/duplicate`, {
-    method: "POST",
-  });
-}
-
-export function submitComplianceRule(ruleId: number) {
-  return apiRequest<ComplianceRule>(`/payflow/compliance-rules/${ruleId}/submit`, {
-    method: "POST",
-  });
-}
-
-export function approveComplianceRule(ruleId: number) {
-  return apiRequest<ComplianceRule>(`/payflow/compliance-rules/${ruleId}/approve`, {
-    method: "POST",
-  });
-}
-
-export function rejectComplianceRule(ruleId: number, reason: string) {
-  return apiRequest<ComplianceRule>(`/payflow/compliance-rules/${ruleId}/reject`, {
+export function deactivateListedComplianceRule(ruleId: number, reason: string) {
+  return apiRequest<ComplianceApiRule>(`/payflow/compliance/rules/${ruleId}/deactivate`, {
     method: "POST",
     body: { reason },
   });
 }
 
-export function activateComplianceRule(ruleId: number) {
-  return apiRequest<ComplianceRule>(`/payflow/compliance-rules/${ruleId}/activate`, {
+export function duplicateListedComplianceRule(ruleId: number) {
+  return apiRequest<ComplianceApiRule>(`/payflow/compliance/rules/${ruleId}/duplicate`, {
     method: "POST",
   });
 }
 
-export function deactivateComplianceRule(ruleId: number) {
-  return apiRequest<ComplianceRule>(`/payflow/compliance-rules/${ruleId}/deactivate`, {
+export function getComplianceRule(ruleId: number) {
+  return apiRequest<ComplianceApiRule>(`/payflow/compliance/rules/${ruleId}`);
+}
+
+export function createComplianceRule(body: ComplianceRuleSaveBody) {
+  return apiRequest<ComplianceApiRule>("/payflow/compliance/rules", {
     method: "POST",
+    body,
   });
 }
 
-export function scheduleComplianceRule(ruleId: number, activateOn: string) {
-  return apiRequest<ComplianceRule>(`/payflow/compliance-rules/${ruleId}/schedule`, {
+export function updateComplianceRule(ruleId: number, body: ComplianceRuleSaveBody) {
+  return apiRequest<ComplianceApiRule>(`/payflow/compliance/rules/${ruleId}/update`, {
     method: "POST",
-    body: { activate_on: activateOn },
+    body,
   });
 }
 
-export function getComplianceAudit(ruleId: number) {
-  return apiRequest<ComplianceAuditResponse>(`/payflow/compliance-rules/${ruleId}/audit`);
+export function duplicateComplianceRule(ruleId: number) {
+  return duplicateListedComplianceRule(ruleId);
 }
 
-export function getApplicableComplianceRules(params: {
-  clientId?: number | null;
-  country?: string;
-  state?: string;
-  region?: string;
-  city?: string;
-  postal?: string;
-}) {
-  return apiRequest<ComplianceApplicableResponse>(
-    `/payflow/compliance-rules/applicable${query({
-      client_id: params.clientId ?? undefined,
-      country: params.country,
-      state: params.state,
-      region: params.region,
-      city: params.city,
-      postal: params.postal,
-    })}`,
-  );
+export function submitComplianceRule(ruleId: number, reason?: string) {
+  return apiRequest<ComplianceApiRule>(`/payflow/compliance/rules/${ruleId}/submit`, {
+    method: "POST",
+    body: reason ? { reason } : {},
+  });
 }
 
-export function saveClientComplianceSelections(
+export function approveComplianceRule(ruleId: number, reason?: string, activate = true) {
+  return apiRequest<ComplianceApiRule>(`/payflow/compliance/rules/${ruleId}/approve`, {
+    method: "POST",
+    body: { reason, activate },
+  });
+}
+
+export function rejectComplianceRule(ruleId: number, reason: string) {
+  return apiRequest<ComplianceApiRule>(`/payflow/compliance/rules/${ruleId}/reject`, {
+    method: "POST",
+    body: { reason },
+  });
+}
+
+export function activateComplianceRule(ruleId: number, reason?: string) {
+  return activateListedComplianceRule(ruleId, reason);
+}
+
+export function deactivateComplianceRule(ruleId: number, reason: string) {
+  return deactivateListedComplianceRule(ruleId, reason);
+}
+
+export function archiveComplianceRule(ruleId: number, reason?: string) {
+  return apiRequest<ComplianceApiRule>(`/payflow/compliance/rules/${ruleId}/archive`, {
+    method: "POST",
+    body: reason ? { reason } : {},
+  });
+}
+
+export function getComplianceRuleHistory(ruleId: number) {
+  return apiRequest<ComplianceRuleHistory>(`/payflow/compliance/rules/${ruleId}/history`);
+}
+
+/** Rules in force for a saved client (`GET /payflow/clients/{id}/compliance-rules`). */
+export function getClientComplianceRules(clientId: number) {
+  return apiRequest<ClientComplianceRulesResponse>(`/payflow/clients/${clientId}/compliance-rules`);
+}
+
+/** Switch one non-mandatory rule on or off. Reason is required. */
+export function updateClientComplianceRule(
   clientId: number,
-  body: { selected_optional_ids: number[] | null; use_defaults: boolean },
+  body: { rule_id: number; enabled: boolean; reason: string },
 ) {
-  return apiRequest<ComplianceApplicableResponse>(
-    `/payflow/clients/${clientId}/compliance-selections`,
+  return apiRequest<ClientComplianceRulesResponse>(
+    `/payflow/clients/${clientId}/compliance-rules/update`,
     { method: "POST", body },
   );
 }
 
-export function applyComplianceImportSelections(
-  clients: { code: string; selected_optional_ids: number[] | null }[],
-) {
-  return apiRequest<{ applied: string[]; missing: string[] }>(
-    "/payflow/compliance-rules/apply-import-selections",
-    { method: "POST", body: { clients } },
+/** Re-link the client to the rules of its current jurisdiction. */
+export function syncClientComplianceRules(clientId: number) {
+  return apiRequest<ClientComplianceRulesResponse>(
+    `/payflow/clients/${clientId}/compliance-rules/sync`,
+    { method: "POST", body: {} },
   );
+}
+
+/**
+ * Active rules for a place, used only before a client id exists.
+ * The client endpoint does the real jurisdiction match after the client is saved.
+ */
+export async function previewActiveComplianceRules(country: string, state?: string) {
+  const scoped = await listComplianceRules({
+    country,
+    state: state || undefined,
+    status: "Active",
+    limit: 200,
+  });
+  if (!state) return scoped.rules;
+  const countryWide = await listComplianceRules({ country, status: "Active", limit: 200 });
+  const seen = new Set(scoped.rules.map((rule) => rule.id));
+  const broader = countryWide.rules.filter((rule) => !rule.state && !seen.has(rule.id));
+  return [...scoped.rules, ...broader];
 }
