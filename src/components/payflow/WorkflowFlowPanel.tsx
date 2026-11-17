@@ -15,6 +15,7 @@ import {
   EDIT_DEMOTES_WARNING,
   editDemotesWorkflow,
   ensureStepLinks,
+  isRejectedWorkflowStatus,
   stepChannelFor,
   strategyStatusTone,
   toStepPayload,
@@ -96,6 +97,7 @@ export function WorkflowFlowPanel({
   const [busy, setBusy] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [writingMessages, setWritingMessages] = useState(false);
+  const canMutate = canEdit && !isRejectedWorkflowStatus(strategy?.status);
 
   useEffect(() => {
     let cancelled = false;
@@ -200,7 +202,7 @@ export function WorkflowFlowPanel({
 
   async function closeDialog() {
     if (busy || writingMessages) return;
-    if (!dirty || !strategy || !canEdit) {
+    if (!dirty || !strategy || !canMutate) {
       setDialogOpen(false);
       setSaveError("");
       return;
@@ -324,7 +326,7 @@ export function WorkflowFlowPanel({
         step={selectedStep}
         catalog={catalog}
         open={dialogOpen}
-        canEdit={canEdit && !busy && !writingMessages}
+        canEdit={canMutate && !busy && !writingMessages}
         busy={busy || writingMessages}
         error={saveError}
         canWriteMessages={allowWriteMessages}

@@ -25,6 +25,7 @@ import {
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { SHOW_PAYFLOW_DELETE } from "../../lib/payflow-features";
+import { strategyStatusTone } from "../../lib/strategy-workflow";
 import type { PayflowPortfolioDetail } from "../../types";
 
 type SegmentPreview = Awaited<ReturnType<typeof previewPayflowPortfolioSegments>>;
@@ -525,20 +526,7 @@ export function PayFlowPortfolioDetailPage() {
                         {s.origin || "—"} · v{s.version ?? 1}
                       </p>
                     </div>
-                    <StatusPill
-                      tone={
-                        s.status === "Active"
-                          ? "success"
-                          : s.status === "AI Proposed" || s.status === "Under Review"
-                            ? s.status === "AI Proposed"
-                              ? "ai"
-                              : "warning"
-                            : s.status === "Approved"
-                              ? "info"
-                              : "neutral"
-                      }
-                      dot
-                    >
+                    <StatusPill tone={strategyStatusTone(s.status)} dot>
                       {s.status}
                     </StatusPill>
                   </Link>
