@@ -7,6 +7,7 @@ import {
   getPayflowAccountCommunicationEligibility,
   listPayflowAccountPaymentLinks,
   listPayflowAccountPayments,
+  getPayflowAccountEmailUnsubscribe,
   listPayflowComms,
   listPayflowReviews,
   reassessPayflowCase,
@@ -15,6 +16,10 @@ import {
   sendPayflowManualSms,
   updatePayflowAccountEmailConsent,
 } from "../../api/payflow";
+import {
+  MarkUnsubscribedModal,
+  type MarkUnsubscribedInput,
+} from "../../components/payflow/MarkUnsubscribedModal";
 import { WorkflowFlowPanel } from "../../components/payflow/WorkflowFlowPanel";
 import {
   Btn,
@@ -26,7 +31,9 @@ import {
   type Tone,
 } from "../../components/payflow/lovable/payflow-ui";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
+import { unsubscribeSourceLabel } from "../../lib/emailUnsubscribe";
 import type {
+  EmailUnsubscribeEvent,
   PayflowAccount,
   PayflowAccountPaymentsResponse,
   PayflowCommunication,
@@ -332,6 +339,10 @@ export function PayFlowCaseDetailPage() {
   const [reassessMsg, setReassessMsg] = useState("");
   const [consentBusy, setConsentBusy] = useState(false);
   const [consentError, setConsentError] = useState("");
+  const [unsubOpen, setUnsubOpen] = useState(false);
+  const [unsubscribeEvent, setUnsubscribeEvent] = useState<EmailUnsubscribeEvent | null>(null);
+  const [unsubscribeLoading, setUnsubscribeLoading] = useState(false);
+  const [unsubscribeError, setUnsubscribeError] = useState("");
 
   useEffect(() => {
     const id = Number(accountId);
@@ -459,6 +470,37 @@ export function PayFlowCaseDetailPage() {
 
   const canRevokeLink = hasPermission("send_communications");
   const canToggleEmailConsent = hasPermission("send_communications");
+  const canViewUnsubscribe = hasPermission("view_communications");
+
+  useEffect(() => {
+    if (!account || account.email_consent !== false || !canViewUnsubscribe) {
+      setUnsubscribeEvent(null);
+      setUnsubscribeError("");
+      setUnsubscribeLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setUnsubscribeLoading(true);
+    setUnsubscribeError("");
+    getPayflowAccountEmailUnsubscribe(account.id)
+      .then((res) => {
+        if (!cancelled) setUnsubscribeEvent(res.last_unsubscribe ?? null);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setUnsubscribeEvent(null);
+          setUnsubscribeError(
+            err instanceof ApiError ? err.detail : "Failed to load unsubscribe details",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setUnsubscribeLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [account, canViewUnsubscribe]);
 
   async function handleEmailConsentToggle(next: boolean) {
     if (!account || consentBusy) return;
@@ -467,6 +509,22 @@ export function PayFlowCaseDetailPage() {
     try {
       const updated = await updatePayflowAccountEmailConsent(account.id, next);
       setAccount(updated);
+      setCommsRefresh((n) => n + 1);
+    } catch (err) {
+      setConsentError(err instanceof ApiError ? err.detail : "Failed to update email consent");
+    } finally {
+      setConsentBusy(false);
+    }
+  }
+
+  async function handleMarkUnsubscribed(input: MarkUnsubscribedInput) {
+    if (!account || consentBusy) return;
+    setConsentBusy(true);
+    setConsentError("");
+    try {
+      const updated = await updatePayflowAccountEmailConsent(account.id, false, input);
+      setAccount(updated);
+      setUnsubOpen(false);
       setCommsRefresh((n) => n + 1);
     } catch (err) {
       setConsentError(err instanceof ApiError ? err.detail : "Failed to update email consent");
@@ -789,11 +847,11 @@ export function PayFlowCaseDetailPage() {
     { label: "Email", value: account.email || "—" },
     {
       label: "Email consent",
-      value: canToggleEmailConsent ? (
+      value: (
         <div className="space-y-1.5">
           <div className="flex flex-wrap items-center gap-2">
             <span>{yn(account.email_consent)}</span>
-            {account.email_consent === false ? (
+            {canToggleEmailConsent && account.email_consent === false ? (
               <Btn
                 variant="secondary"
                 disabled={consentBusy}
@@ -801,26 +859,66 @@ export function PayFlowCaseDetailPage() {
               >
                 {consentBusy ? "Saving…" : "Restore consent"}
               </Btn>
-            ) : (
+            ) : null}
+            {canToggleEmailConsent && account.email_consent !== false ? (
               <Btn
                 variant="secondary"
                 disabled={consentBusy}
-                onClick={() => void handleEmailConsentToggle(false)}
+                onClick={() => {
+                  setConsentError("");
+                  setUnsubOpen(true);
+                }}
               >
-                {consentBusy ? "Saving…" : "Mark unsubscribed"}
+                Mark unsubscribed
               </Btn>
-            )}
+            ) : null}
           </div>
-          {consentError ? (
+          {consentError && !unsubOpen ? (
             <p className="text-[12px] font-normal text-destructive">{consentError}</p>
-          ) : (
+          ) : null}
+          {account.email_consent === false && canViewUnsubscribe ? (
+            <div className="space-y-1 text-[12px] font-normal">
+              {unsubscribeLoading ? (
+                <p className="text-muted-foreground">Loading unsubscribe details…</p>
+              ) : null}
+              {unsubscribeError ? (
+                <p className="text-destructive">{unsubscribeError}</p>
+              ) : null}
+              {!unsubscribeLoading && !unsubscribeError && !unsubscribeEvent ? (
+                <p className="text-muted-foreground">No unsubscribe reason was recorded.</p>
+              ) : null}
+              {unsubscribeEvent ? (
+                <>
+                  {unsubscribeEvent.review_required ? (
+                    <StatusPill tone="warning">Review required</StatusPill>
+                  ) : null}
+                  <p>
+                    <span className="text-muted-foreground">Reasons: </span>
+                    {unsubscribeEvent.reason_labels?.length
+                      ? unsubscribeEvent.reason_labels.join("; ")
+                      : "None provided"}
+                  </p>
+                  <p>
+                    <span className="text-muted-foreground">Comment: </span>
+                    {unsubscribeEvent.comment?.trim() || "—"}
+                  </p>
+                  <p>
+                    <span className="text-muted-foreground">Source: </span>
+                    {unsubscribeSourceLabel(unsubscribeEvent.source)}
+                  </p>
+                  <p>
+                    <span className="text-muted-foreground">Unsubscribed: </span>
+                    {formatStamp(unsubscribeEvent.unsubscribed_at)}
+                  </p>
+                </>
+              ) : null}
+            </div>
+          ) : canToggleEmailConsent ? (
             <p className="text-[11px] font-normal text-muted-foreground">
-              Customer can also change this via the unsubscribe link in emails.
+              Reasons are optional. Customers can also use the unsubscribe link in collection emails.
             </p>
-          )}
+          ) : null}
         </div>
-      ) : (
-        yn(account.email_consent)
       ),
     },
     { label: "Mobile", value: account.phone_mobile || "—" },
@@ -1651,6 +1749,17 @@ export function PayFlowCaseDetailPage() {
           ) : null}
         </Panel>
       </div>
+      <MarkUnsubscribedModal
+        open={unsubOpen}
+        busy={consentBusy}
+        error={consentError}
+        onClose={() => {
+          if (consentBusy) return;
+          setUnsubOpen(false);
+          setConsentError("");
+        }}
+        onConfirm={(input) => void handleMarkUnsubscribed(input)}
+      />
     </>
   );
 }
