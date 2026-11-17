@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import {
   activatePayflowWorkflow,
@@ -40,11 +40,14 @@ import {
   editDemotesWorkflow,
   ensureStepLinks,
   messagesNotWrittenContext,
+  isRejectedWorkflowStatus,
   originTone,
+  rejectionAudit,
   removeStep,
   stepChannelFor,
   strategyStatusTone,
   toStepPayload,
+  workflowVersionMention,
   type AddableStepKind,
 } from "../../lib/strategy-workflow";
 import type {
@@ -55,6 +58,52 @@ import type {
 } from "../../types";
 
 type NoteAction = "update" | "approve" | "activate" | "reject";
+
+const REGENERATION_NOTICE =
+  "Regeneration requested. PayFlow will propose a revised strategy.";
+
+function noticeFromLocation(state: unknown): string {
+  if (!state || typeof state !== "object" || !("notice" in state)) return "";
+  const notice = (state as { notice?: unknown }).notice;
+  return typeof notice === "string" ? notice : "";
+}
+
+function positiveWorkflowId(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+/** Turns #id mentions of a related workflow into links. Other text is left unchanged. */
+function LinkedWorkflowText({
+  text,
+  workflowIds,
+}: {
+  text?: string | null;
+  workflowIds: number[];
+}) {
+  if (!text) return null;
+  const allowed = new Set(workflowIds);
+  if (allowed.size === 0) return <>{text}</>;
+  const parts = text.split(/(#\d+)/g);
+  return (
+    <>
+      {parts.map((part, index) => {
+        const match = /^#(\d+)$/.exec(part);
+        if (!match) return <span key={index}>{part}</span>;
+        const id = Number(match[1]);
+        if (!allowed.has(id)) return <span key={index}>{part}</span>;
+        return (
+          <Link
+            key={index}
+            to={`/payflow/workflows/${id}`}
+            className="font-medium text-primary hover:underline"
+          >
+            {part}
+          </Link>
+        );
+      })}
+    </>
+  );
+}
 
 function findStep(strategy: PayflowStrategy, id: string | null): PayflowStrategyStep | null {
   if (!id) return null;
@@ -92,6 +141,8 @@ function SparklesIcon({ className }: { className?: string }) {
 export function PayFlowWorkflowDetailPage() {
   const { strategyId } = useParams<{ strategyId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const flashNotice = noticeFromLocation(location.state);
   const { hasPermission } = usePayFlowAccess();
   const canDelete = SHOW_PAYFLOW_DELETE && hasPermission("delete_workflows");
   const canEdit = hasPermission("create_edit_workflows");
@@ -147,9 +198,10 @@ export function PayFlowWorkflowDetailPage() {
   }
 
   useEffect(() => {
+    setNotice(flashNotice);
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [strategyId]);
+  }, [strategyId, flashNotice]);
 
   const displayStrategy = useMemo(() => {
     if (!strategy) return null;
@@ -338,7 +390,9 @@ export function PayFlowWorkflowDetailPage() {
           // The new version exists; the original simply stays open for the reviewer.
         }
         setRejectNote("");
-        navigate(`/payflow/workflows/${regenerated.id}`);
+        navigate(`/payflow/workflows/${regenerated.id}`, {
+          state: { notice: REGENERATION_NOTICE },
+        });
         return;
       }
       await rejectPayflowWorkflow(strategy.id, { note: note || undefined });
@@ -348,8 +402,9 @@ export function PayFlowWorkflowDetailPage() {
         const regenerated = ensureStepLinks(
           await regeneratePayflowWorkflow(strategy.id, { remarks: note.trim() }),
         );
-        setNotice("Regeneration requested. PayFlow will propose a revised strategy.");
-        navigate(`/payflow/workflows/${regenerated.id}`);
+        navigate(`/payflow/workflows/${regenerated.id}`, {
+          state: { notice: REGENERATION_NOTICE },
+        });
         return;
       }
       const refreshed = ensureStepLinks(await getPayflowWorkflow(strategy.id));
@@ -495,6 +550,7 @@ export function PayFlowWorkflowDetailPage() {
   const isApproved = strategy.status === "Approved";
   const isActive = strategy.status === "Active";
   const isInactive = strategy.status === "Inactive";
+  const isRejected = isRejectedWorkflowStatus(strategy.status);
   // Lovable: humanCreated = origin === "Human Created" (Human Modified still gets Reject + regen).
   const isHumanCreated = isHumanCreatedWorkflow(strategy);
   const isAiGenerated = regeneratesOnReject(strategy);
@@ -523,20 +579,52 @@ export function PayFlowWorkflowDetailPage() {
     ? (strategy.ai_proposal_snapshot?.steps as PayflowStrategyStep[])
     : [];
   // Lovable: step edits always available to reviewers (BE demotes Active → Under Review).
-  const canMutateGraph = canEdit;
+  // A rejected workflow is kept for audit and is read-only.
+  const canMutateGraph = canEdit && !isRejected;
   // Lovable: Save Draft + Approve always for reviewers; Approve→Activate after approval (AC1).
-  const canSaveDraft = canEdit;
-  const showPrimaryAction = canEdit && !isActive;
+  const canSaveDraft = canEdit && !isRejected;
+  const showPrimaryAction = canEdit && !isActive && !isRejected;
   const primaryIsActivate = isApproved || (isInactive && !!strategy.approved_by);
   // Delete only for human-created (soft-gated). Reject / regen is available for all origins.
   const showDelete = canDelete && isHumanCreated && !isActive;
-  const showReject = canEdit;
+  const showReject = canEdit && !isRejected;
   const canDeactivate = canEdit && isActive;
   const canSubmitReview = canEdit && isDraft;
   // Lovable: AI banner only while origin is still "AI Proposed".
-  const showAiBanner = strategy.origin === "AI Proposed" && strategy.status !== "Active";
+  const showAiBanner =
+    strategy.origin === "AI Proposed" && strategy.status !== "Active" && !isRejected;
   // Request regeneration for AI Proposed, Human Modified, and Human Created.
-  const showRequestRegen = canEdit;
+  const showRequestRegen = canEdit && !isRejected;
+  const replacedById = positiveWorkflowId(strategy.replaced_by_id);
+  const revisionOfId = positiveWorkflowId(strategy.revision_of_id);
+  const mentionNotes = [
+    ...(strategy.versions || []).map((version) => version.note),
+    ...(strategy.ai_context || []).map((item) => `${item.label} ${item.value}`),
+  ];
+  const linkedWorkflowIds = [replacedById, revisionOfId].filter((id): id is number => id != null);
+  const rejection = isRejected ? rejectionAudit(strategy) : null;
+  const approvalRows: [string, string][] = [["Origin", strategy.origin]];
+  if (!isHumanCreated) {
+    approvalRows.push(["Human modified steps", String(humanModifiedCount)]);
+  }
+  if (rejection) {
+    approvalRows.push(["Rejected By", rejection.by], ["Rejected Date", rejection.date]);
+  }
+  if (!rejection || strategy.approved_by) {
+    approvalRows.push(
+      ["Approved By", strategy.approved_by || "Not yet approved"],
+      ["Approval Date", strategy.approval_date || "—"],
+    );
+  }
+  approvalRows.push(
+    ["Strategy Version", `v${strategy.version}`],
+    [
+      "Cases covered",
+      strategy.cases_covered != null
+        ? strategy.cases_covered.toLocaleString()
+        : strategy.coverage || "—",
+    ],
+  );
   const hasCommSteps = (displayStrategy.steps || []).some(
     (s) => s.kind === "Communication",
   );
@@ -711,6 +799,30 @@ export function PayFlowWorkflowDetailPage() {
         </div>
       )}
 
+      {isRejected && replacedById != null && (
+        <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/[0.06] px-4 py-2.5 text-[12.5px] text-foreground">
+          Rejected – replaced by{" "}
+          <Link
+            to={`/payflow/workflows/${replacedById}`}
+            className="font-semibold text-primary hover:underline"
+          >
+            {workflowVersionMention(replacedById, mentionNotes)}
+          </Link>
+        </div>
+      )}
+
+      {revisionOfId != null && (
+        <div className="mb-4 rounded-lg border border-border/80 bg-card px-4 py-2.5 text-[12.5px] text-foreground">
+          Revision of{" "}
+          <Link
+            to={`/payflow/workflows/${revisionOfId}`}
+            className="font-semibold text-primary hover:underline"
+          >
+            {workflowVersionMention(revisionOfId, mentionNotes)}
+          </Link>
+        </div>
+      )}
+
       {showAiBanner && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-ai/25 bg-ai/[0.06] px-4 py-3.5">
           <div className="flex items-start gap-2.5">
@@ -766,9 +878,11 @@ export function PayFlowWorkflowDetailPage() {
                   key={item.label}
                   className="flex flex-col gap-1 border-b border-border/50 pb-1.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4"
                 >
-                  <dt className="text-[12px] text-muted-foreground">{item.label}</dt>
+                  <dt className="text-[12px] text-muted-foreground">
+                    <LinkedWorkflowText text={item.label} workflowIds={linkedWorkflowIds} />
+                  </dt>
                   <dd className="text-[12.5px] font-medium text-foreground sm:text-right">
-                    {item.value}
+                    <LinkedWorkflowText text={item.value} workflowIds={linkedWorkflowIds} />
                     {item.label === "Messages" &&
                     allowWriteMessages &&
                     /not written/i.test(item.value) ? (
@@ -818,7 +932,11 @@ export function PayFlowWorkflowDetailPage() {
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_310px]">
         <Panel
           title="Strategy flow"
-          description="Click a step to review it, or use the expand icon to edit it in a popup."
+          description={
+            isRejected
+              ? "This workflow was rejected and is read-only. Click a step to review its configuration."
+              : "Click a step to review it, or use the expand icon to edit it in a popup."
+          }
           bodyClassName="min-w-0 p-3"
           className="min-w-0"
         >
@@ -918,23 +1036,7 @@ export function PayFlowWorkflowDetailPage() {
             }
           >
             <dl className="space-y-1.5 text-[12.5px]">
-              {(
-                [
-                  ["Origin", strategy.origin],
-                  ...(!isHumanCreated
-                    ? [["Human modified steps", String(humanModifiedCount)] as const]
-                    : []),
-                  ["Approved By", strategy.approved_by || "Not yet approved"],
-                  ["Approval Date", strategy.approval_date || "—"],
-                  ["Strategy Version", `v${strategy.version}`],
-                  [
-                    "Cases covered",
-                    strategy.cases_covered != null
-                      ? strategy.cases_covered.toLocaleString()
-                      : strategy.coverage || "—",
-                  ],
-                ] as const
-              ).map(([label, value]) => (
+              {approvalRows.map(([label, value]) => (
                 <div key={label} className="flex items-baseline justify-between gap-3">
                   <dt className="text-muted-foreground">{label}</dt>
                   <dd className="font-medium text-foreground">
@@ -1014,7 +1116,9 @@ export function PayFlowWorkflowDetailPage() {
                         </span>
                         <span className="text-[11px] text-muted-foreground">{v.date}</span>
                       </div>
-                      <p className="mt-0.5 text-[11.5px] text-muted-foreground">{v.note}</p>
+                      <p className="mt-0.5 text-[11.5px] text-muted-foreground">
+                        <LinkedWorkflowText text={v.note} workflowIds={linkedWorkflowIds} />
+                      </p>
                       {v.reviewer_note && (
                         <p className="mt-1 text-[11.5px] text-foreground">
                           <span className="font-semibold">Reviewer note: </span>

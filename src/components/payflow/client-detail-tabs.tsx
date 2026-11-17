@@ -51,6 +51,8 @@ function strategyStatusTone(status: string): Tone {
       return "info";
     case "Active":
       return "success";
+    case "Rejected":
+      return "danger";
     default:
       return "neutral";
   }
