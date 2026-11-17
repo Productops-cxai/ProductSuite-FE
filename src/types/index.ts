@@ -1287,10 +1287,15 @@ export interface PayflowStrategy {
   stats: PayflowStrategyStats;
   ai_context: PayflowStrategyContextItem[];
   ai_proposal_snapshot?: Record<string, unknown> | null;
+  /** Id of the workflow this one replaced. Set on the new version after reject / regenerate. */
   revision_of_id?: number | null;
+  /** Id of the workflow that replaced this one. Set on the rejected version. */
+  replaced_by_id?: number | null;
   versions: PayflowStrategyVersion[];
   approved_by?: string | null;
   approval_date?: string | null;
+  rejected_by?: string | null;
+  rejected_date?: string | null;
   reviewed_by?: string | null;
   created_by?: string | null;
   human_modified?: boolean;
@@ -1309,6 +1314,7 @@ export interface PayflowStrategiesSummary {
   active: number;
   inactive?: number;
   awaiting_review?: number;
+  rejected?: number;
 }
 
 export interface PayflowStrategiesListResponse {

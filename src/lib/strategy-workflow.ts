@@ -8,6 +8,7 @@ export const STRATEGY_STATUSES = [
   "Approved",
   "Active",
   "Inactive",
+  "Rejected",
 ] as const;
 
 /** Fixed channels plus AI contact mode (worker picks Email or SMS per customer). */
@@ -144,9 +145,73 @@ export function strategyStatusTone(status: string): Tone {
       return "success";
     case "Inactive":
       return "neutral";
+    case "Rejected":
+      return "danger";
     default:
       return "neutral";
   }
+}
+
+/** A rejected workflow is kept for audit and must not be edited or run. */
+export function isRejectedWorkflowStatus(status?: string | null) {
+  return status === "Rejected";
+}
+
+/**
+ * Reviewer named in a rejection history note.
+ * "Rejected / regeneration requested by Platform Super Admin. New version: #37 (v2)."
+ */
+export function rejectionActorFromNote(note?: string | null): string | null {
+  if (!note) return null;
+  const match = note.match(
+    /rejected(?:\s*\/\s*regeneration requested)?\s+by\s+(.+?)(?:\.|\s+on\s+|$)/i,
+  );
+  const name = match?.[1]?.replace(/\s+/g, " ").trim();
+  return name || null;
+}
+
+/** Version written beside a workflow id, e.g. "#37 (v2)" or "#18 Name (v1)". */
+export function versionBesideWorkflowId(
+  text: string | null | undefined,
+  workflowId: number,
+): string | null {
+  if (!text || !Number.isFinite(workflowId)) return null;
+  const match = text.match(
+    new RegExp(`#${workflowId}\\b[^#\\n]{0,180}?\\(v(\\d+(?:\\.\\d+)?)\\)`, "i"),
+  );
+  return match?.[1] ?? null;
+}
+
+/** "#37" or "#37 (v2)" when a history or context line records the version. */
+export function workflowVersionMention(
+  workflowId: number,
+  notes: Array<string | null | undefined>,
+): string {
+  for (const note of notes) {
+    const version = versionBesideWorkflowId(note, workflowId);
+    if (version) return `#${workflowId} (v${version})`;
+  }
+  return `#${workflowId}`;
+}
+
+/**
+ * Rejected By / Rejected Date for the Approval & versions card.
+ * Prefers structured fields, then the rejection row in version history.
+ */
+export function rejectionAudit(strategy: {
+  rejected_by?: string | null;
+  rejected_date?: string | null;
+  versions?: { note?: string | null; date?: string | null; status?: string | null }[] | null;
+}): { by: string; date: string } {
+  const versions = strategy.versions || [];
+  const row =
+    versions.find((v) => v.status === "Rejected" || /rejected/i.test(v.note || "")) ||
+    versions[0] ||
+    null;
+  return {
+    by: strategy.rejected_by?.trim() || rejectionActorFromNote(row?.note) || "—",
+    date: strategy.rejected_date?.trim() || row?.date?.trim() || "—",
+  };
 }
 
 export function stepTone(kind: string): Tone {
