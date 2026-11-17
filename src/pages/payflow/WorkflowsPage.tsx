@@ -18,6 +18,7 @@ import { useClientPagedList } from "../../hooks/useOffsetPagination";
 import {
   originTone,
   segmentChips,
+  STRATEGY_STATUSES,
   strategyStatusTone,
 } from "../../lib/strategy-workflow";
 import { cn } from "../../lib/utils";
@@ -133,6 +134,12 @@ export function PayFlowWorkflowsPage() {
   const awaiting =
     summary.awaiting_review ?? summary.ai_proposed + (summary.under_review || 0);
 
+  const statusOptions = useMemo(() => {
+    const fromApi = statuses.filter((value) => !!value);
+    const list = fromApi.length > 0 ? fromApi : [...STRATEGY_STATUSES];
+    return list.includes("Rejected") ? list : [...list, "Rejected"];
+  }, [statuses]);
+
   return (
     <>
       <PageHeader
@@ -188,14 +195,7 @@ export function PayFlowWorkflowsPage() {
           label="Status"
           value={status}
           onChange={setStatus}
-          options={["All Statuses", ...(statuses.length ? statuses : [
-            "AI Proposed",
-            "Draft",
-            "Under Review",
-            "Approved",
-            "Active",
-            "Inactive",
-          ])]}
+          options={["All Statuses", ...statusOptions]}
         />
       </FilterBar>
 
