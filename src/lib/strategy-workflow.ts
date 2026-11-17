@@ -129,6 +129,12 @@ export type DraftStep = {
   referenceEvent?: string;
   action?: string;
   note?: string;
+  /** Email subject chosen or drafted before the workflow is saved. */
+  subject?: string;
+  /** Email body chosen or drafted before the workflow is saved. */
+  body?: string;
+  reminderStage?: string;
+  contentOrigin?: string;
 };
 
 export function strategyStatusTone(status: string): Tone {
@@ -494,12 +500,19 @@ export function buildStepsFromDraft(steps: DraftStep[]): PayflowStrategyStep[] {
     };
     if (step.kind === "Communication") {
       const channel = step.channel || CONTACT_CHANNEL;
+      const emailCapable = channel === CONTACT_CHANNEL || channel === "Email";
       if (channel === CONTACT_CHANNEL) {
         config.channel = null;
       } else {
         config.channel = channel;
       }
       config.purpose = step.purpose || MESSAGE_PURPOSES[0];
+      if (step.reminderStage) config.reminder_stage = step.reminderStage;
+      if (emailCapable) {
+        if (step.subject) config.subject = step.subject;
+        if (step.body) config.body = step.body;
+        if (step.contentOrigin) config.content_origin = step.contentOrigin;
+      }
     }
     if (step.kind === "Payment Action" || step.kind === "Case Action") {
       config.action = step.action;

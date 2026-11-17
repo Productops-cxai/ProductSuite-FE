@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import { getPayflowDashboard } from "../../api/payflow";
+import { EmailSubjectPerformanceSection } from "../../components/payflow/email-subjects/EmailSubjectPerformanceSection";
 import { PageHeader, Panel, KpiCard, KpiGrid, FilterBar, FilterSelect } from "../../components/payflow-ui";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { cn } from "../../lib/utils";
@@ -480,6 +481,8 @@ export function PayFlowDashboardPage() {
           })()
         )}
       </Panel>
+
+      <EmailSubjectPerformanceSection initialClientId={clientId} />
 
       <Panel
         title="Payment Outcomes"

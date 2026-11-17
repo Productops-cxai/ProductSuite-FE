@@ -16,6 +16,7 @@ import {
   writePayflowWorkflowMessages,
 } from "../../api/payflow";
 import { StrategyCanvas } from "../../components/payflow/strategy-canvas";
+import { EmailOptimizationPanel } from "../../components/payflow/email-subjects/EmailOptimizationPanel";
 import {
   StepConfigForm,
   StepEditorDialog,
@@ -1159,6 +1160,33 @@ export function PayFlowWorkflowDetailPage() {
           )}
         </div>
       </div>
+
+      <EmailOptimizationPanel
+        strategy={strategy}
+        stepId={draftStep?.id}
+        canEdit={!!canMutateGraph && !busy}
+        unsaved={!!pendingSteps || segmentDirty}
+        onWorkflowUpdated={(updated) => {
+          const linked = ensureStepLinks(updated);
+          setStrategy(linked);
+          setPendingSteps(null);
+          setSegmentDraft({ ...(linked.segment || {}) });
+          setSegmentDirty(false);
+          const focus = draftStep?.id;
+          if (focus) {
+            const refreshed = findStep(linked, focus);
+            if (refreshed) {
+              setDraftStep({ ...refreshed, id: focus, config: { ...(refreshed.config || {}) } });
+            }
+          }
+          setError("");
+          setNotice(
+            linked.status === "Under Review"
+              ? "Recommendation saved. The workflow is Under Review and must be approved and activated before new accounts use it."
+              : `Recommendation saved. Workflow status: ${linked.status}.`,
+          );
+        }}
+      />
 
       <StepEditorDialog
         strategy={displayStrategy}

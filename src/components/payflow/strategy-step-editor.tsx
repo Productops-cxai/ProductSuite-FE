@@ -39,6 +39,8 @@ import type {
   PayflowStrategyStep,
   PayflowStrategyStepConfig,
 } from "../../types";
+import { REMINDER_STAGES } from "../../types/emailSubjects";
+import { EmailStepPerformance } from "./email-subjects/EmailStepPerformance";
 
 const SUBJECT_MAX = 255;
 const BODY_MAX = 5000;
@@ -58,7 +60,13 @@ function AiSparklesIcon({ className }: { className?: string }) {
 function clearMessageTextPatch(
   patch: Partial<PayflowStrategyStepConfig>,
 ): Partial<PayflowStrategyStepConfig> {
-  return { ...patch, subject: null, body: null, sms_body: null, tone: null };
+  return { ...patch, subject: null, body: null, sms_body: null, tone: null, content_origin: null };
+}
+
+function contentOriginAfterEdit(current?: string | null): Partial<PayflowStrategyStepConfig> {
+  if (current === "AI Generated") return { content_origin: "AI Generated, Human Edited" };
+  if (!current) return { content_origin: "Human Created" };
+  return {};
 }
 
 /** Persist contact mode as no channel (matches AI / worker contract). */
@@ -242,6 +250,7 @@ export function StepConfigForm({
                 <p className="text-[12.5px] font-semibold text-foreground">Message text</p>
                 {contactStep ? <StatusPill tone="ai">{CONTACT_CHANNEL}</StatusPill> : null}
                 {cfg.tone ? <StatusPill tone="ai">{cfg.tone}</StatusPill> : null}
+                {cfg.content_origin ? <StatusPill tone="info">{cfg.content_origin}</StatusPill> : null}
               </div>
               {canWriteMessages && onRewriteMessage ? (
                 <button
@@ -285,7 +294,10 @@ export function StepConfigForm({
                   value={cfg.subject ?? ""}
                   disabled={!canEdit}
                   onChange={(v) =>
-                    onChange({ subject: v.slice(0, SUBJECT_MAX) || null })
+                    onChange({
+                      subject: v.slice(0, SUBJECT_MAX) || null,
+                      ...contentOriginAfterEdit(cfg.content_origin),
+                    })
                   }
                 />
               </Field>
@@ -298,7 +310,12 @@ export function StepConfigForm({
                 <TextArea
                   value={cfg.body ?? ""}
                   disabled={!canEdit}
-                  onChange={(v) => onChange({ body: v.slice(0, BODY_MAX) || null })}
+                  onChange={(v) =>
+                    onChange({
+                      body: v.slice(0, BODY_MAX) || null,
+                      ...contentOriginAfterEdit(cfg.content_origin),
+                    })
+                  }
                 />
               </Field>
             ) : null}
@@ -357,6 +374,38 @@ export function StepConfigForm({
               </div>
             ) : null}
           </div>
+
+          {(contactStep || isEmail) && (
+            <>
+              <Field
+                label="Reminder stage"
+                hint="Compared with similar reminders. Leave unset and PayFlow infers it from the purpose and position."
+              >
+                <SelectInput
+                  value={cfg.reminder_stage || "Not set"}
+                  options={[
+                    "Not set",
+                    ...REMINDER_STAGES,
+                    ...(cfg.reminder_stage &&
+                    !(REMINDER_STAGES as readonly string[]).includes(cfg.reminder_stage)
+                      ? [cfg.reminder_stage]
+                      : []),
+                  ]}
+                  disabled={!canEdit}
+                  onChange={(v) => onChange({ reminder_stage: v === "Not set" ? null : v })}
+                />
+              </Field>
+              <EmailStepPerformance
+                clientId={strategy.client_id}
+                strategyId={strategy.id > 0 ? strategy.id : null}
+                stepId={step.id}
+                purpose={cfg.purpose}
+                reminderStage={cfg.reminder_stage}
+                canEdit={canEdit}
+                onApply={onChange}
+              />
+            </>
+          )}
 
           {!contactStep && templates.length > 0 && (
             <>

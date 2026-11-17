@@ -1185,6 +1185,13 @@ export interface PayflowStrategyStepConfig {
   sms_body?: string | null;
   /** Display-only tone chosen for the message (Friendly, Firm, …). */
   tone?: string | null;
+  /**
+   * How the email copy was produced.
+   * `AI Generated` | `AI Generated, Human Edited` | `Human Created`.
+   */
+  content_origin?: string | null;
+  /** One of the five reminder stages. Omitted when the server should infer it. */
+  reminder_stage?: string | null;
 }
 
 export interface PayflowStrategyStep {
@@ -1419,6 +1426,55 @@ export interface PayflowCommunicationsListResponse {
   total?: number;
   limit?: number;
   offset?: number;
+}
+
+/** Fixed unsubscribe reason returned by preference and staff list APIs. */
+export interface EmailUnsubscribeReasonOption {
+  code: string;
+  label: string;
+}
+
+/** Latest recorded unsubscribe for one account. */
+export interface EmailUnsubscribeEvent {
+  id: number;
+  reasons: string[];
+  reason_labels: string[];
+  comment?: string | null;
+  source: string;
+  review_required: boolean;
+  unsubscribed_at: string;
+}
+
+export interface PayflowAccountEmailUnsubscribeResponse {
+  account_id: number;
+  last_unsubscribe: EmailUnsubscribeEvent | null;
+}
+
+/** One row of GET /payflow/email-unsubscribes (latest event per opted-out account). */
+export interface PayflowEmailUnsubscribeListItem {
+  event_id: number;
+  account_id: number;
+  client_id: number;
+  client_name?: string | null;
+  account_reference?: string | null;
+  customer_name?: string | null;
+  email_masked?: string | null;
+  outstanding_balance?: number | null;
+  reasons: string[];
+  reason_labels: string[];
+  comment?: string | null;
+  source: string;
+  review_required: boolean;
+  unsubscribed_at: string;
+}
+
+export interface PayflowEmailUnsubscribeListResponse {
+  items: PayflowEmailUnsubscribeListItem[];
+  total: number;
+  limit: number;
+  offset: number;
+  reason_options: EmailUnsubscribeReasonOption[];
+  review_reason_codes: string[];
 }
 
 export interface PayflowCommunicationEligibility {

@@ -49,6 +49,7 @@ import { PayFlowWorkflowNewPage } from "./pages/payflow/WorkflowNewPage";
 import { PayFlowWorkflowDetailPage } from "./pages/payflow/WorkflowDetailPage";
 import { PayFlowReviewDetailPage } from "./pages/payflow/ReviewDetailPage";
 import { PayFlowCommsPage } from "./pages/payflow/CommsPage";
+import { PayFlowEmailUnsubscribesPage } from "./pages/payflow/EmailUnsubscribesPage";
 import { PayFlowCommDetailPage } from "./pages/payflow/CommDetailPage";
 import { PayFlowExceptionsPage } from "./pages/payflow/ExceptionsPage";
 import { PayFlowPaymentReconciliationPage } from "./pages/payflow/PaymentReconciliationPage";
@@ -135,6 +136,7 @@ export default function App() {
         <Route path="workflows/:strategyId" element={<PayFlowWorkflowDetailPage />} />
         <Route path="comms" element={<PayFlowCommsPage />} />
         <Route path="comms/:communicationId" element={<PayFlowCommDetailPage />} />
+        <Route path="email-unsubscribes" element={<PayFlowEmailUnsubscribesPage />} />
         <Route path="exceptions" element={<PayFlowExceptionsPage />} />
         <Route
           path="reports/payment-reconciliation"
