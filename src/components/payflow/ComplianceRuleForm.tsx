@@ -150,6 +150,8 @@ const CATEGORY_BLURBS: Record<string, string> = {
   "Communication Cost": "Stop contact methods that charge the customer.",
   "Record Retention": "Keep required records for a set number of days.",
   "Consent & Opt-Out": "Only contact people who agreed, and stop when they opt out.",
+  "Unsubscribe Option":
+    "Include an unsubscribe link for selected clients and record why a customer opted out.",
   "Reply Handling": "What to do when a customer replies or texts STOP/HELP.",
   Frequency: "Limit how often a customer can be contacted.",
   "Permitted Hours": "Only send messages during allowed local hours.",

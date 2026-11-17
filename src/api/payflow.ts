@@ -17,6 +17,8 @@ import type {
   PayflowCommunication,
   PayflowCommunicationEligibility,
   PayflowCommunicationsListResponse,
+  PayflowAccountEmailUnsubscribeResponse,
+  PayflowEmailUnsubscribeListResponse,
   ManualSmsSendResponse,
   PayflowOperationalException,
   PayflowOperationalExceptionsListResponse,
@@ -460,11 +462,56 @@ export function getPayflowAccount(accountId: number) {
   return apiRequest<PayflowAccount>(`/payflow/accounts/${accountId}`);
 }
 
-export function updatePayflowAccountEmailConsent(accountId: number, emailConsent: boolean) {
+export function updatePayflowAccountEmailConsent(
+  accountId: number,
+  emailConsent: boolean,
+  details?: { reasons?: string[]; comment?: string },
+) {
+  const body: { email_consent: boolean; reasons?: string[]; comment?: string } = {
+    email_consent: emailConsent,
+  };
+  // Reasons are recorded only when flipping to unsubscribed.
+  if (!emailConsent) {
+    const reasons = (details?.reasons || []).map((code) => code.trim()).filter(Boolean);
+    if (reasons.length) body.reasons = reasons;
+    const comment = details?.comment?.trim();
+    if (comment) body.comment = comment;
+  }
   return apiRequest<PayflowAccount>(`/payflow/accounts/${accountId}/email-consent/update`, {
     method: "POST",
-    body: { email_consent: emailConsent },
+    body,
   });
+}
+
+export function getPayflowAccountEmailUnsubscribe(accountId: number) {
+  return apiRequest<PayflowAccountEmailUnsubscribeResponse>(
+    `/payflow/accounts/${accountId}/email-unsubscribe`,
+  );
+}
+
+export function listPayflowEmailUnsubscribes(params?: {
+  client_id?: number;
+  search?: string;
+  date_from?: string;
+  date_to?: string;
+  review_required?: boolean;
+  limit?: number;
+  offset?: number;
+}) {
+  const q = new URLSearchParams();
+  if (params?.client_id != null) q.set("client_id", String(params.client_id));
+  if (params?.search) q.set("search", params.search);
+  if (params?.date_from) q.set("date_from", params.date_from);
+  if (params?.date_to) q.set("date_to", params.date_to);
+  if (params?.review_required != null) {
+    q.set("review_required", params.review_required ? "true" : "false");
+  }
+  if (params?.limit != null) q.set("limit", String(params.limit));
+  if (params?.offset != null) q.set("offset", String(params.offset));
+  const qs = q.toString();
+  return apiRequest<PayflowEmailUnsubscribeListResponse>(
+    `/payflow/email-unsubscribes${qs ? `?${qs}` : ""}`,
+  );
 }
 
 export async function downloadPayflowAccountImportTemplate() {

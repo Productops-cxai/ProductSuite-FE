@@ -155,6 +155,7 @@ export const PAYFLOW_ROUTE_PERMISSIONS: Array<{ prefix: string; anyOf: string[] 
   { prefix: "/payflow/compliance-rules", anyOf: ["view_rules"] },
   { prefix: "/payflow/rules", anyOf: ["view_rules"] },
   { prefix: "/payflow/comms", anyOf: ["view_communications"] },
+  { prefix: "/payflow/email-unsubscribes", anyOf: ["view_communications"] },
   { prefix: "/payflow/exceptions", anyOf: ["view_operational_exceptions"] },
   {
     prefix: "/payflow/reports/payment-reconciliation",

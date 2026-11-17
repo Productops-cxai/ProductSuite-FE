@@ -9,8 +9,8 @@ type Props = {
   onClose: () => void;
   children: ReactNode;
   wide?: boolean;
-  /** default ~480 · wide ~560 · xl ~820 for permission grids */
-  size?: "default" | "wide" | "xl";
+  /** default ~480 · wide ~560 · xl ~820 · 2xl ~1100 for analytics popups */
+  size?: "default" | "wide" | "xl" | "2xl";
   footer?: ReactNode;
   overlayClassName?: string;
   bodyClassName?: string;
@@ -37,11 +37,13 @@ export function Modal({
 
   const resolvedSize = size || (wide ? "wide" : "default");
   const widthClass =
-    resolvedSize === "xl"
-      ? "max-w-[820px]"
-      : resolvedSize === "wide"
-        ? "max-w-[560px]"
-        : "max-w-[480px]";
+    resolvedSize === "2xl"
+      ? "max-w-[1100px]"
+      : resolvedSize === "xl"
+        ? "max-w-[820px]"
+        : resolvedSize === "wide"
+          ? "max-w-[560px]"
+          : "max-w-[480px]";
 
   return (
     <div
