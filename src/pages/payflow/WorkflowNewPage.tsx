@@ -34,6 +34,8 @@ import {
   type DraftStep,
   type DraftStepKind,
 } from "../../lib/strategy-workflow";
+import { EmailStepPerformance } from "../../components/payflow/email-subjects/EmailStepPerformance";
+import { REMINDER_STAGES } from "../../types/emailSubjects";
 import type {
   PayflowClient,
   PayflowPortfolio,
@@ -549,6 +551,7 @@ export function PayFlowWorkflowNewPage() {
                       </button>
                     </div>
                     {step.kind === "Communication" && (
+                      <>
                       <div className="mt-2 grid gap-2 sm:grid-cols-3">
                         <Field label="Channel">
                           <SelectInput
@@ -575,6 +578,52 @@ export function PayFlowWorkflowNewPage() {
                           />
                         </Field>
                       </div>
+                      {(step.channel === CONTACT_CHANNEL || step.channel === "Email" || !step.channel) && (
+                        <div className="mt-2 space-y-2">
+                          <Field label="Reminder stage">
+                            <SelectInput
+                              value={step.reminderStage || "Not set"}
+                              options={["Not set", ...REMINDER_STAGES]}
+                              onChange={(v) =>
+                                patchStep(step.id, { reminderStage: v === "Not set" ? undefined : v })
+                              }
+                            />
+                          </Field>
+                          <Field label="Email subject" hint="Optional. Leave blank to use the template.">
+                            <TextInput
+                              value={step.subject || ""}
+                              onChange={(v) => patchStep(step.id, { subject: v.slice(0, 255) })}
+                            />
+                          </Field>
+                          <Field label="Email body">
+                            <TextArea
+                              value={step.body || ""}
+                              onChange={(v) => patchStep(step.id, { body: v.slice(0, 5000) })}
+                            />
+                          </Field>
+                          <EmailStepPerformance
+                            clientId={clientId ? Number(clientId) : null}
+                            strategyId={null}
+                            stepId={step.id}
+                            purpose={step.purpose}
+                            reminderStage={step.reminderStage}
+                            canEdit
+                            onApply={(patch) =>
+                              patchStep(step.id, {
+                                ...(patch.subject !== undefined ? { subject: patch.subject || undefined } : {}),
+                                ...(patch.body !== undefined ? { body: patch.body || undefined } : {}),
+                                ...(patch.reminder_stage !== undefined
+                                  ? { reminderStage: patch.reminder_stage || undefined }
+                                  : {}),
+                                ...(patch.content_origin !== undefined
+                                  ? { contentOrigin: patch.content_origin || undefined }
+                                  : {}),
+                              })
+                            }
+                          />
+                        </div>
+                      )}
+                      </>
                     )}
                     {step.kind === "Wait" && (
                       <div className="mt-2 grid gap-2 sm:grid-cols-2">

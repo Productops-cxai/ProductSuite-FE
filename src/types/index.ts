@@ -1185,6 +1185,13 @@ export interface PayflowStrategyStepConfig {
   sms_body?: string | null;
   /** Display-only tone chosen for the message (Friendly, Firm, …). */
   tone?: string | null;
+  /**
+   * How the email copy was produced.
+   * `AI Generated` | `AI Generated, Human Edited` | `Human Created`.
+   */
+  content_origin?: string | null;
+  /** One of the five reminder stages. Omitted when the server should infer it. */
+  reminder_stage?: string | null;
 }
 
 export interface PayflowStrategyStep {
