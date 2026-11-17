@@ -26,6 +26,8 @@ export function LoginPage() {
   const [sent, setSent] = useState(false);
 
   useEffect(() => {
+    // Only show real forced-kick reasons (e.g. signed in elsewhere).
+    // Intentional Sign out / bare "Not authenticated" are filtered in takeSessionEndedMessage.
     const ended = takeSessionEndedMessage();
     if (ended) setError(ended);
   }, []);
