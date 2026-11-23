@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import {
@@ -7,16 +7,24 @@ import {
   listPayflowReviews,
   listPayflowRules,
   listPayflowWorkflows,
+  type PayflowCommListParams,
 } from "../../api/payflow";
+import { dateRangeOrderError, resolveCommDateBounds } from "../../lib/comm-query";
 import { ClientComplianceRulesPanel } from "./ClientComplianceRules";
+import { CommDateRangeControls } from "./CommDateRangeControls";
+import { CommunicationExportDialog } from "./CommunicationExportDialog";
 import { MobileRecordCard, MobileRecordCards } from "../ui/MobileRecordCards";
 import { Pagination } from "../ui/Pagination";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useClientPagedList, useOffsetPagination, usePagePagination } from "../../hooks/useOffsetPagination";
 import {
+  Btn,
   DataTable,
   EmptyState,
+  FilterBar,
+  FilterSelect,
   Panel,
+  SearchInput,
   StatusPill,
   Td,
   Tr,
@@ -299,21 +307,81 @@ export function ClientWorkflowsTab({
 export function ClientCommunicationsTab({
   clientId,
   clientName,
+  portfolios,
 }: {
   clientId: number;
   clientName: string;
+  portfolios: { id: number; name: string }[];
 }) {
   const isMobile = useIsMobile();
   const [rows, setRows] = useState<PayflowCommunication[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const { offset, pageSize, goPrev, goNext } = useOffsetPagination(PAGE_SIZE, clientId);
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [pendingFrom, setPendingFrom] = useState("");
+  const [pendingTo, setPendingTo] = useState("");
+  const [appliedFrom, setAppliedFrom] = useState("");
+  const [appliedTo, setAppliedTo] = useState("");
+  const [dateError, setDateError] = useState("");
+  const [subClient, setSubClient] = useState("All Sub-Clients");
+  const [exportOpen, setExportOpen] = useState(false);
+  const [scopeId, setScopeId] = useState(clientId);
+  if (scopeId !== clientId) {
+    setScopeId(clientId);
+    setQuery("");
+    setDebouncedQuery("");
+    setPendingFrom("");
+    setPendingTo("");
+    setAppliedFrom("");
+    setAppliedTo("");
+    setDateError("");
+    setSubClient("All Sub-Clients");
+    setExportOpen(false);
+  }
+
+  const filterKey = [clientId, debouncedQuery, appliedFrom, appliedTo, subClient].join("|");
+  const { offset, pageSize, goPrev, goNext } = useOffsetPagination(PAGE_SIZE, filterKey);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedQuery(query.trim()), 300);
+    return () => window.clearTimeout(t);
+  }, [query]);
+
+  const selectedPortfolioId = useMemo(() => {
+    if (subClient === "All Sub-Clients") return undefined;
+    return portfolios.find((p) => p.name === subClient)?.id;
+  }, [subClient, portfolios]);
+
+  const dateBounds = useMemo(
+    () => resolveCommDateBounds({}, appliedFrom, appliedTo),
+    [appliedFrom, appliedTo],
+  );
+
+  const listFilters = useMemo<PayflowCommListParams>(
+    () => ({
+      client_id: clientId,
+      portfolio_id: selectedPortfolioId,
+      search: debouncedQuery || undefined,
+      date_from: dateBounds.date_from,
+      date_to: dateBounds.date_to,
+    }),
+    [clientId, selectedPortfolioId, debouncedQuery, dateBounds.date_from, dateBounds.date_to],
+  );
 
   useEffect(() => {
     let cancelled = false;
+    if (dateBounds.error) {
+      setLoading(false);
+      setError(dateBounds.error);
+      setRows([]);
+      setTotal(0);
+      return;
+    }
     setLoading(true);
-    listPayflowComms({ client_id: clientId, limit: pageSize, offset })
+    setError("");
+    listPayflowComms({ ...listFilters, limit: pageSize, offset })
       .then((res) => {
         if (!cancelled) {
           setRows(res.communications || []);
@@ -333,7 +401,30 @@ export function ClientCommunicationsTab({
     return () => {
       cancelled = true;
     };
-  }, [clientId, pageSize, offset]);
+  }, [listFilters, dateBounds.error, pageSize, offset]);
+
+  const rangeDirty = pendingFrom !== appliedFrom || pendingTo !== appliedTo;
+  const rangeActive = Boolean(appliedFrom || appliedTo);
+  const filtersActive = Boolean(debouncedQuery || appliedFrom || appliedTo || selectedPortfolioId);
+
+  function applyRange() {
+    const message = dateRangeOrderError(pendingFrom, pendingTo);
+    if (message) {
+      setDateError(message);
+      return;
+    }
+    setDateError("");
+    setAppliedFrom(pendingFrom);
+    setAppliedTo(pendingTo);
+  }
+
+  function resetRange() {
+    setPendingFrom("");
+    setPendingTo("");
+    setAppliedFrom("");
+    setAppliedTo("");
+    setDateError("");
+  }
 
   return (
     <Panel
@@ -348,15 +439,76 @@ export function ClientCommunicationsTab({
         </Link>
       }
     >
+      <FilterBar className="mb-3">
+        <SearchInput
+          value={query}
+          onChange={setQuery}
+          placeholder="Search customer, email or account"
+          className="w-full md:col-span-2 xl:w-72"
+        />
+        <CommDateRangeControls
+          from={pendingFrom}
+          to={pendingTo}
+          onFrom={(value) => {
+            setPendingFrom(value);
+            setDateError("");
+          }}
+          onTo={(value) => {
+            setPendingTo(value);
+            setDateError("");
+          }}
+          showApply={rangeDirty}
+          showReset={rangeDirty || rangeActive}
+          onApply={applyRange}
+          onReset={resetRange}
+        />
+        {portfolios.length > 0 ? (
+          <FilterSelect
+            label="Sub-Client"
+            value={subClient}
+            onChange={setSubClient}
+            options={["All Sub-Clients", ...portfolios.map((p) => p.name)]}
+          />
+        ) : null}
+        <span
+          className="inline-flex xl:ml-auto"
+          title={
+            loading
+              ? "Loading communications"
+              : total === 0
+                ? "No communications match the current filters"
+                : "Generate an export of this client's retained emails"
+          }
+        >
+          <Btn
+            variant="primary"
+            disabled={loading || total === 0 || Boolean(dateBounds.error)}
+            onClick={() => setExportOpen(true)}
+          >
+            Generate Exportable View
+          </Btn>
+        </span>
+      </FilterBar>
+
+      {dateError ? <p className="mb-3 text-sm text-destructive">{dateError}</p> : null}
+      {!dateError && !loading ? (
+        <p className="mb-3 text-[12px] text-muted-foreground">
+          {`${total} communication${total === 1 ? "" : "s"} match the current filters. Records older than this client's retention period are excluded.`}
+        </p>
+      ) : null}
       {error ? <p className="mb-3 text-sm text-destructive">{error}</p> : null}
       {loading ? <p className="text-sm text-muted-foreground">Loading communications…</p> : null}
-      {!loading && !error && total === 0 ? (
+      {!loading && !error && rows.length === 0 ? (
         <EmptyState
-          title="No communications yet"
-          description="Outbound reminders and payment links for this client will appear here."
+          title={filtersActive ? "No communications match these filters" : "No communications yet"}
+          description={
+            filtersActive
+              ? "No retained communications match the selected filters. Adjust the filters or check the client's retention period."
+              : "Outbound reminders and payment links for this client will appear here."
+          }
         />
       ) : null}
-      {!loading && rows.length > 0 ? (
+      {!loading && !error && rows.length > 0 ? (
         <>
           {isMobile ? (
             <MobileRecordCards>
@@ -365,19 +517,30 @@ export function ClientCommunicationsTab({
                   key={c.id}
                   to={`/payflow/comms/${c.id}`}
                   title={c.customer_name || "—"}
-                  subtitle={`${c.channel} · ${c.purpose}`}
+                  subtitle={[c.recipient, c.channel, c.purpose].filter(Boolean).join(" · ")}
                   badges={<StatusPill>{c.status}</StatusPill>}
-                  meta={[c.date_label, c.time_label].filter(Boolean).join(" · ") || "—"}
+                  meta={
+                    [c.portfolio_name, c.account_reference, c.date_label, c.time_label]
+                      .filter(Boolean)
+                      .join(" · ") || "—"
+                  }
                 />
               ))}
             </MobileRecordCards>
           ) : (
-            <DataTable minWidth={820} head={["Customer", "Channel", "Purpose", "Status", "When", ""]}>
+            <DataTable
+              minWidth={980}
+              head={["Customer", "Recipient", "Account", "Portfolio", "Subject", "Status", "When", ""]}
+            >
               {rows.map((c) => (
                 <Tr key={c.id}>
                   <Td className="font-medium">{c.customer_name || "—"}</Td>
-                  <Td>{c.channel}</Td>
-                  <Td className="text-muted-foreground">{c.purpose}</Td>
+                  <Td className="text-muted-foreground">{c.recipient || "—"}</Td>
+                  <Td className="tabular text-muted-foreground">
+                    {c.account_reference || c.case_reference || "—"}
+                  </Td>
+                  <Td className="text-muted-foreground">{c.portfolio_name || "—"}</Td>
+                  <Td className="text-muted-foreground">{c.subject || c.purpose}</Td>
                   <Td>
                     <StatusPill>{c.status}</StatusPill>
                   </Td>
@@ -407,6 +570,12 @@ export function ClientCommunicationsTab({
           />
         </>
       ) : null}
+      <CommunicationExportDialog
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        filters={listFilters}
+        searchLabel={debouncedQuery || undefined}
+      />
     </Panel>
   );
 }

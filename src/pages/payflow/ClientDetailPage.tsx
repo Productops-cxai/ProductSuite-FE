@@ -23,6 +23,7 @@ import {
   emptyDraft,
   generalConfigIssues,
   postalCodeConfigIssues,
+  retentionDaysIssue,
   type ClientDraft,
   type ClientDraftConfig,
 } from "../../components/payflow/client-config-sections";
@@ -46,6 +47,7 @@ import {
 } from "../../components/payflow/lovable/payflow-ui";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
+import { Modal } from "../../components/ui/Modal";
 import { SHOW_PAYFLOW_DELETE } from "../../lib/payflow-features";
 import {
   buildActivationChecks,
@@ -134,7 +136,11 @@ const CONFIG_FIELD_KEYS: Record<
     "sms_sender_id",
     "channels",
   ],
-  "Payment Options": ["payment_settings"],
+  "Payment Options": [
+    "payment_settings",
+    "communication_retention_days",
+    "confirm_retention_shorten",
+  ],
 };
 
 function statusTone(status: string): Tone {
@@ -184,6 +190,9 @@ export function PayFlowClientDetailPage() {
   const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [retentionConfirm, setRetentionConfirm] = useState<{ from: number; to: number } | null>(
+    null,
+  );
 
   const load = async () => {
     if (!Number.isFinite(id)) {
@@ -253,7 +262,7 @@ export function PayFlowClientDetailPage() {
           ? canModifyConfig && detail?.status === "draft"
           : canModifyConfig;
 
-  async function saveConfig() {
+  async function saveConfig(options?: { confirmRetentionShorten?: boolean }) {
     if (!detail || !sectionCanSave) return;
     if (configSection === "Branding & Channels" && detail.status !== "draft") {
       setError("Branding & channels can only be updated while the client is in Draft status");
@@ -263,6 +272,20 @@ export function PayFlowClientDetailPage() {
     if (postalError && (canEdit || configSection === "General")) {
       setError(postalError);
       return;
+    }
+    const confirmRetentionShorten = options?.confirmRetentionShorten === true;
+    if (configSection === "Payment Options") {
+      const retentionIssue = retentionDaysIssue(draft.config.communicationRetentionDays);
+      if (retentionIssue) {
+        setError(retentionIssue);
+        return;
+      }
+      const oldDays = detail.communication_retention_days ?? 30;
+      const newDays = draft.config.communicationRetentionDays;
+      if (newDays < oldDays && !confirmRetentionShorten) {
+        setRetentionConfirm({ from: oldDays, to: newDays });
+        return;
+      }
     }
     setBusy(true);
     setError("");
@@ -287,6 +310,12 @@ export function PayFlowClientDetailPage() {
       if (configSection !== "Payment Options") {
         const { payment_settings: _payments, ...rest } = payload as typeof full;
         payload = rest;
+      } else {
+        payload = {
+          ...payload,
+          communication_retention_days: draft.config.communicationRetentionDays,
+          ...(confirmRetentionShorten ? { confirm_retention_shorten: true } : {}),
+        };
       }
       // Fine-grained modify_* without edit_client: send only fields for this section.
       if (!canEdit) {
@@ -305,9 +334,22 @@ export function PayFlowClientDetailPage() {
       const updated = await updatePayflowClient(detail.id, payload);
       setDetail(updated);
       setDraft(draftFromDetail(updated));
+      setRetentionConfirm(null);
       setInfo("Changes saved.");
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to save");
+      const message = err instanceof ApiError ? err.detail : "Failed to save";
+      if (
+        configSection === "Payment Options" &&
+        /shortening retention|confirm_retention_shorten/i.test(message)
+      ) {
+        setRetentionConfirm({
+          from: detail.communication_retention_days ?? 30,
+          to: draft.config.communicationRetentionDays,
+        });
+        setError("");
+      } else {
+        setError(message);
+      }
     } finally {
       setBusy(false);
     }
@@ -704,7 +746,11 @@ export function PayFlowClientDetailPage() {
       )}
 
       {tab === "Communications" && (
-        <ClientCommunicationsTab clientId={detail.id} clientName={detail.name} />
+        <ClientCommunicationsTab
+          clientId={detail.id}
+          clientName={detail.name}
+          portfolios={detail.portfolios || []}
+        />
       )}
 
       {tab === "Workflows" && (
@@ -920,6 +966,39 @@ export function PayFlowClientDetailPage() {
           </div>
         </div>
       )}
+
+      <Modal
+        open={retentionConfirm != null}
+        title="Shorten communication retention?"
+        description={
+          retentionConfirm
+            ? `Shortening retention from ${retentionConfirm.from} to ${retentionConfirm.to} days will hide older communications from search and export. Confirm to save this shorter period.`
+            : undefined
+        }
+        onClose={() => setRetentionConfirm(null)}
+        footer={
+          <div className="mt-2 flex justify-end gap-2">
+            <Btn variant="secondary" onClick={() => setRetentionConfirm(null)} disabled={busy}>
+              Cancel
+            </Btn>
+            <Btn
+              variant="primary"
+              disabled={busy}
+              onClick={() => {
+                setRetentionConfirm(null);
+                void saveConfig({ confirmRetentionShorten: true });
+              }}
+            >
+              {busy ? "Saving…" : "Shorten retention"}
+            </Btn>
+          </div>
+        }
+      >
+        <p className="text-[13px] leading-relaxed text-slate-600">
+          Messages older than the new period will no longer appear in communications search or
+          exportable views for this client.
+        </p>
+      </Modal>
 
       <ConfirmDelete
         open={confirmDelete}

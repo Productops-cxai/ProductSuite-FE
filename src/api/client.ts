@@ -264,23 +264,24 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 
 /** Blob download (e.g. bulk-upload Excel template) — same auth/refresh handling as apiRequest. */
 export async function apiRequestBlob(path: string, options: RequestOptions = {}): Promise<Blob> {
-  const { method = "GET", auth = true, headers = {} } = options;
+  const { method = "GET", body, auth = true, headers = {} } = options;
   const reqHeaders: Record<string, string> = { ...headers };
-
-  let res = await fetch(`${API_BASE}${path}`, {
+  if (body !== undefined && !reqHeaders["Content-Type"]) {
+    reqHeaders["Content-Type"] = "application/json";
+  }
+  const init: RequestInit = {
     method,
     headers: reqHeaders,
     credentials: "include",
-  });
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  };
+
+  let res = await fetch(`${API_BASE}${path}`, init);
 
   if (res.status === 401 && auth) {
     const refreshed = await tryRefresh();
     if (refreshed) {
-      res = await fetch(`${API_BASE}${path}`, {
-        method,
-        headers: reqHeaders,
-        credentials: "include",
-      });
+      res = await fetch(`${API_BASE}${path}`, init);
     }
   }
 
