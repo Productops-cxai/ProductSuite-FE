@@ -1,8 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
-import { listPayflowClients, listPayflowComms } from "../../api/payflow";
 import {
+  listPayflowClientPortfolios,
+  listPayflowClients,
+  listPayflowComms,
+  type PayflowCommListParams,
+} from "../../api/payflow";
+import { CommDateRangeControls } from "../../components/payflow/CommDateRangeControls";
+import { CommunicationExportDialog } from "../../components/payflow/CommunicationExportDialog";
+import {
+  Btn,
   DataTable,
   EmptyState,
   FilterBar,
@@ -22,10 +30,12 @@ import { MobileRecordCard, MobileRecordCards } from "../../components/ui/MobileR
 import { Pagination } from "../../components/ui/Pagination";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useOffsetPagination } from "../../hooks/useOffsetPagination";
+import { dateRangeOrderError, presetDateRangeToParams, resolveCommDateBounds } from "../../lib/comm-query";
 import type {
   PayflowClient,
   PayflowCommunication,
   PayflowCommunicationsSummary,
+  PayflowPortfolio,
 } from "../../types";
 
 const DATE_RANGES = ["Today", "Yesterday", "Last 7 Days", "This Month"];
@@ -38,41 +48,6 @@ const EMPTY_SUMMARY: PayflowCommunicationsSummary = {
   clicks: 0,
   failed: 0,
 };
-
-function startOfDay(d: Date) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
-}
-
-function endOfDay(d: Date) {
-  const x = new Date(d);
-  x.setHours(23, 59, 59, 999);
-  return x;
-}
-
-function dateRangeToParams(date: string): { date_from?: string; date_to?: string } {
-  if (date === "All Dates") return {};
-  const now = new Date();
-  if (date === "Today") {
-    return { date_from: startOfDay(now).toISOString(), date_to: endOfDay(now).toISOString() };
-  }
-  if (date === "Yesterday") {
-    const y = new Date(now);
-    y.setDate(y.getDate() - 1);
-    return { date_from: startOfDay(y).toISOString(), date_to: endOfDay(y).toISOString() };
-  }
-  if (date === "Last 7 Days") {
-    const from = new Date(now);
-    from.setDate(from.getDate() - 6);
-    return { date_from: startOfDay(from).toISOString(), date_to: endOfDay(now).toISOString() };
-  }
-  if (date === "This Month") {
-    const from = new Date(now.getFullYear(), now.getMonth(), 1);
-    return { date_from: startOfDay(from).toISOString(), date_to: endOfDay(now).toISOString() };
-  }
-  return {};
-}
 
 function commStatusTone(status: string): Tone {
   switch (status) {
@@ -107,6 +82,7 @@ export function PayFlowCommsPage() {
   const isMobile = useIsMobile();
   const [rows, setRows] = useState<PayflowCommunication[]>([]);
   const [clients, setClients] = useState<PayflowClient[]>([]);
+  const [portfolios, setPortfolios] = useState<PayflowPortfolio[]>([]);
   const [summary, setSummary] = useState<PayflowCommunicationsSummary>(EMPTY_SUMMARY);
   const [dropOff, setDropOff] = useState<Record<string, number>>({});
   const [dropOffSegments, setDropOffSegments] = useState<string[]>([]);
@@ -121,6 +97,13 @@ export function PayFlowCommsPage() {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [date, setDate] = useState("All Dates");
+  const [pendingFrom, setPendingFrom] = useState("");
+  const [pendingTo, setPendingTo] = useState("");
+  const [appliedFrom, setAppliedFrom] = useState("");
+  const [appliedTo, setAppliedTo] = useState("");
+  const [dateError, setDateError] = useState("");
+  const [subClient, setSubClient] = useState("All Sub-Clients");
+  const [exportOpen, setExportOpen] = useState(false);
   const [client, setClient] = useState(searchParams.get("client") || "All Clients");
   const [channel, setChannel] = useState(searchParams.get("channel") || "All Channels");
   const [status, setStatus] = useState(searchParams.get("status") || "All Statuses");
@@ -128,7 +111,18 @@ export function PayFlowCommsPage() {
     searchParams.get("journey") || searchParams.get("workflow") || "All Workflows",
   );
   const [purpose, setPurpose] = useState("All Purposes");
-  const filterKey = [debouncedQuery, date, client, channel, status, workflow, purpose].join("|");
+  const filterKey = [
+    debouncedQuery,
+    date,
+    appliedFrom,
+    appliedTo,
+    client,
+    subClient,
+    channel,
+    status,
+    workflow,
+    purpose,
+  ].join("|");
   const { offset, pageSize, goPrev, goNext } = useOffsetPagination(PAGE_SIZE, filterKey);
 
   useEffect(() => {
@@ -169,21 +163,70 @@ export function PayFlowCommsPage() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError("");
-    const range = dateRangeToParams(date);
-    listPayflowComms({
+    if (selectedClientId == null) {
+      setPortfolios([]);
+      return;
+    }
+    listPayflowClientPortfolios(selectedClientId)
+      .then((res) => {
+        if (!cancelled) setPortfolios(res.portfolios || []);
+      })
+      .catch(() => {
+        if (!cancelled) setPortfolios([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedClientId]);
+
+  const selectedPortfolioId = useMemo(() => {
+    if (subClient === "All Sub-Clients") return undefined;
+    return portfolios.find((p) => p.name === subClient)?.id;
+  }, [subClient, portfolios]);
+
+  const dateBounds = useMemo(
+    () => resolveCommDateBounds(presetDateRangeToParams(date), appliedFrom, appliedTo),
+    [date, appliedFrom, appliedTo],
+  );
+
+  const listFilters = useMemo<PayflowCommListParams>(
+    () => ({
       client_id: selectedClientId,
+      portfolio_id: selectedPortfolioId,
       status: status !== "All Statuses" ? status : undefined,
       channel: channel !== "All Channels" ? channel : undefined,
       purpose: purpose !== "All Purposes" ? purpose : undefined,
       workflow: workflow !== "All Workflows" ? workflow : undefined,
       search: debouncedQuery.trim() || undefined,
-      date_from: range.date_from,
-      date_to: range.date_to,
-      limit: pageSize,
-      offset,
-    })
+      date_from: dateBounds.date_from,
+      date_to: dateBounds.date_to,
+    }),
+    [
+      selectedClientId,
+      selectedPortfolioId,
+      status,
+      channel,
+      purpose,
+      workflow,
+      debouncedQuery,
+      dateBounds.date_from,
+      dateBounds.date_to,
+    ],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    if (dateBounds.error) {
+      setLoading(false);
+      setError(dateBounds.error);
+      setRows([]);
+      setSummary(EMPTY_SUMMARY);
+      setTotal(0);
+      return;
+    }
+    setLoading(true);
+    setError("");
+    listPayflowComms({ ...listFilters, limit: pageSize, offset })
       .then((commRes) => {
         if (cancelled) return;
         setRows(commRes.communications || []);
@@ -210,17 +253,30 @@ export function PayFlowCommsPage() {
     return () => {
       cancelled = true;
     };
-  }, [
-    selectedClientId,
-    status,
-    channel,
-    purpose,
-    workflow,
-    debouncedQuery,
-    date,
-    offset,
-    pageSize,
-  ]);
+  }, [listFilters, dateBounds.error, offset, pageSize]);
+
+  const rangeDirty = pendingFrom !== appliedFrom || pendingTo !== appliedTo;
+  const rangeActive = Boolean(appliedFrom || appliedTo || date !== "All Dates");
+
+  function applyRange() {
+    const message = dateRangeOrderError(pendingFrom, pendingTo);
+    if (message) {
+      setDateError(message);
+      return;
+    }
+    setDateError("");
+    setAppliedFrom(pendingFrom);
+    setAppliedTo(pendingTo);
+  }
+
+  function resetRange() {
+    setPendingFrom("");
+    setPendingTo("");
+    setAppliedFrom("");
+    setAppliedTo("");
+    setDate("All Dates");
+    setDateError("");
+  }
 
   const segments =
     dropOffSegments.length > 0
@@ -272,8 +328,8 @@ export function PayFlowCommsPage() {
           <SearchInput
             value={query}
             onChange={setQuery}
-            placeholder="Customer, account reference or ID"
-            className="w-full md:col-span-2 xl:w-64"
+            placeholder="Search client, customer, email or account"
+            className="w-full md:col-span-2 xl:w-72"
           />
           <FilterSelect
             label="Date"
@@ -281,12 +337,39 @@ export function PayFlowCommsPage() {
             onChange={setDate}
             options={["All Dates", ...DATE_RANGES]}
           />
+          <CommDateRangeControls
+            from={pendingFrom}
+            to={pendingTo}
+            onFrom={(value) => {
+              setPendingFrom(value);
+              setDateError("");
+            }}
+            onTo={(value) => {
+              setPendingTo(value);
+              setDateError("");
+            }}
+            showApply={rangeDirty}
+            showReset={rangeDirty || rangeActive}
+            onApply={applyRange}
+            onReset={resetRange}
+          />
           <FilterSelect
             label="Client"
             value={client}
-            onChange={setClient}
+            onChange={(value) => {
+              setClient(value);
+              setSubClient("All Sub-Clients");
+            }}
             options={["All Clients", ...clients.map((c) => c.name)]}
           />
+          {selectedClientId != null ? (
+            <FilterSelect
+              label="Sub-Client"
+              value={subClient}
+              onChange={setSubClient}
+              options={["All Sub-Clients", ...portfolios.map((p) => p.name)]}
+            />
+          ) : null}
           <FilterSelect
             label="Channel"
             value={channel}
@@ -320,7 +403,32 @@ export function PayFlowCommsPage() {
             onChange={setPurpose}
             options={["All Purposes", ...purposes]}
           />
+          <span
+            className="inline-flex xl:ml-auto"
+            title={
+              loading
+                ? "Loading communications"
+                : total === 0
+                  ? "No communications match the current filters"
+                  : "Generate an export of the retained emails for these filters"
+            }
+          >
+            <Btn
+              variant="primary"
+              disabled={loading || total === 0 || Boolean(dateBounds.error)}
+              onClick={() => setExportOpen(true)}
+            >
+              Generate Exportable View
+            </Btn>
+          </span>
         </FilterBar>
+
+        {dateError ? <p className="mb-3 text-sm text-destructive">{dateError}</p> : null}
+        {!dateError && !loading ? (
+          <p className="mb-3 text-[12px] text-muted-foreground">
+            {`${total} communication${total === 1 ? "" : "s"} match the current filters. Records older than each client's retention period are excluded.`}
+          </p>
+        ) : null}
 
         {error ? <p className="mb-3 text-sm text-destructive">{error}</p> : null}
         {loading ? <p className="text-sm text-muted-foreground">Loading communications…</p> : null}
@@ -328,7 +436,7 @@ export function PayFlowCommsPage() {
         {!loading && !error && rows.length === 0 ? (
           <EmptyState
             title="No communications match these filters"
-            description="Adjust the search or filters to see customer communications."
+            description="No retained communications match the selected filters. Adjust the filters or check the client's retention period."
           />
         ) : null}
 
@@ -341,7 +449,7 @@ export function PayFlowCommsPage() {
                     key={c.id}
                     to={`/payflow/comms/${c.id}`}
                     title={c.customer_name || c.time_label || "—"}
-                    subtitle={`${c.client_name || "—"} · ${c.time_label || c.date_label || "—"}`}
+                    subtitle={`${c.client_name || "—"}${c.portfolio_name ? ` · ${c.portfolio_name}` : ""} · ${c.time_label || c.date_label || "—"}`}
                     badges={
                       <>
                         <StatusPill tone={c.channel === "SMS" ? "info" : "neutral"}>
@@ -361,10 +469,11 @@ export function PayFlowCommsPage() {
               </MobileRecordCards>
             ) : (
               <DataTable
-                minWidth={1100}
+                minWidth={1240}
                 head={[
                   "Time",
                   "Client",
+                  "Portfolio",
                   "Customer",
                   "Account",
                   "Channel",
@@ -397,6 +506,7 @@ export function PayFlowCommsPage() {
                         </Link>
                       </Td>
                       <Td>{c.client_name || "—"}</Td>
+                      <Td className="text-muted-foreground">{c.portfolio_name || "—"}</Td>
                       <Td className="font-medium">{c.customer_name || "—"}</Td>
                       <Td className="tabular">
                         <Link
@@ -434,6 +544,12 @@ export function PayFlowCommsPage() {
           </>
         ) : null}
       </Panel>
+      <CommunicationExportDialog
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        filters={listFilters}
+        searchLabel={debouncedQuery.trim() || undefined}
+      />
     </>
   );
 }

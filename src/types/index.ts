@@ -569,6 +569,8 @@ export interface PayflowClientDetail extends PayflowClient {
   sms_sender_id: string;
   channels: PayflowClientChannels;
   governance_rules: string[];
+  /** Days of communication history available for search and export. Default 30. */
+  communication_retention_days?: number | null;
   payment_settings?: {
     allow_partial?: boolean;
     allow_plans?: boolean;
@@ -1346,6 +1348,8 @@ export interface PayflowCommunication {
   client_id: number;
   client_code?: string | null;
   client_name?: string | null;
+  portfolio_id?: number | null;
+  portfolio_name?: string | null;
   account_id: number;
   customer_name?: string | null;
   account_reference?: string | null;
@@ -1412,6 +1416,39 @@ export interface PayflowCommunicationsSummary {
   engaged: number;
   clicks: number;
   failed: number;
+}
+
+/** One retained email inside POST /payflow/comms/export?format=json. */
+export interface PayflowCommExportEmail {
+  id: number;
+  code?: string | null;
+  sent_at?: string | null;
+  from_email?: string | null;
+  to_email?: string | null;
+  subject?: string | null;
+  status?: string | null;
+  body?: string | null;
+  body_lines?: string[];
+  client_name?: string | null;
+  portfolio_id?: number | null;
+  account_reference?: string | null;
+  customer_name?: string | null;
+  channel?: string | null;
+  purpose?: string | null;
+  workflow_name?: string | null;
+}
+
+/** JSON preview from POST /payflow/comms/export?format=json. */
+export interface PayflowCommExportReport {
+  title: string;
+  client_name?: string | null;
+  portfolio_name?: string | null;
+  recipient_email?: string | null;
+  date_from?: string | null;
+  date_to?: string | null;
+  total_emails: number;
+  generated_at?: string | null;
+  emails: PayflowCommExportEmail[];
 }
 
 export interface PayflowCommunicationsListResponse {

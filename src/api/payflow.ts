@@ -15,6 +15,7 @@ import type {
   PayflowClientDetail,
   PayflowClientsListResponse,
   PayflowCommunication,
+  PayflowCommExportReport,
   PayflowCommunicationEligibility,
   PayflowCommunicationsListResponse,
   PayflowAccountEmailUnsubscribeResponse,
@@ -230,6 +231,10 @@ export interface UpdatePayflowClientPayload {
       max_term_months?: number;
     }>;
   };
+  /** Whole days of communication history kept available for search and export. */
+  communication_retention_days?: number;
+  /** Required by the API when the new retention window is shorter than the saved one. */
+  confirm_retention_shorten?: boolean;
   mappings?: {
     source_field: string;
     payflow_field?: string | null;
@@ -1060,33 +1065,58 @@ export function getPayflowWorkflowRun(runId: number) {
   return apiRequest<PayflowWorkflowRun>(`/payflow/workflow-runs/${runId}`);
 }
 
-export function listPayflowComms(params?: {
+export interface PayflowCommListParams {
   client_id?: number;
+  portfolio_id?: number;
   account_id?: number;
   status?: string;
   channel?: string;
   purpose?: string;
   workflow?: string;
   search?: string;
+  recipient_email?: string;
   date_from?: string;
   date_to?: string;
   limit?: number;
   offset?: number;
-}) {
+}
+
+function commListQuery(params?: PayflowCommListParams, format?: "json" | "html") {
   const q = new URLSearchParams();
   if (params?.client_id != null) q.set("client_id", String(params.client_id));
+  if (params?.portfolio_id != null) q.set("portfolio_id", String(params.portfolio_id));
   if (params?.account_id != null) q.set("account_id", String(params.account_id));
   if (params?.status) q.set("status", params.status);
   if (params?.channel) q.set("channel", params.channel);
   if (params?.purpose) q.set("purpose", params.purpose);
   if (params?.workflow) q.set("workflow", params.workflow);
   if (params?.search) q.set("search", params.search);
+  if (params?.recipient_email) q.set("recipient_email", params.recipient_email);
   if (params?.date_from) q.set("date_from", params.date_from);
   if (params?.date_to) q.set("date_to", params.date_to);
-  if (params?.limit != null) q.set("limit", String(params.limit));
-  if (params?.offset != null) q.set("offset", String(params.offset));
-  const qs = q.toString();
+  if (format) q.set("format", format);
+  else {
+    if (params?.limit != null) q.set("limit", String(params.limit));
+    if (params?.offset != null) q.set("offset", String(params.offset));
+  }
+  return q;
+}
+
+export function listPayflowComms(params?: PayflowCommListParams) {
+  const qs = commListQuery(params).toString();
   return apiRequest<PayflowCommunicationsListResponse>(`/payflow/comms${qs ? `?${qs}` : ""}`);
+}
+
+/** All matching retained emails for the current filters (not the current page). */
+export function exportPayflowComms(params?: PayflowCommListParams) {
+  const qs = commListQuery(params, "json").toString();
+  return apiRequest<PayflowCommExportReport>(`/payflow/comms/export?${qs}`, { method: "POST" });
+}
+
+/** Printable HTML for the same filters. The browser print dialog saves it as PDF. */
+export function downloadPayflowCommsExportHtml(params?: PayflowCommListParams) {
+  const qs = commListQuery(params, "html").toString();
+  return apiRequestBlob(`/payflow/comms/export?${qs}`, { method: "POST" });
 }
 
 export function getPayflowAccountCommunicationEligibility(accountId: number) {

@@ -84,6 +84,8 @@ export interface ClientDraftConfig {
     /** Balance tiers that cap how long a payment plan may run. */
     plan_limits: PlanLimitRule[];
   };
+  /** Whole days this client's communications stay searchable and exportable. */
+  communicationRetentionDays: number;
 }
 
 /** Balance tier that limits how long a payment plan may run. */
@@ -104,6 +106,26 @@ export const DEFAULT_PLAN_LIMITS: PlanLimitRule[] = [
 
 const PLAN_LIMIT_TO_OPTIONS = ["500", "1000", "2000", "No limit"];
 const PLAN_LIMIT_TERM_OPTIONS = ["3 months", "5 months", "6 months", "9 months", "12 months"];
+
+export const RETENTION_PRESETS = [30, 60, 90, 180] as const;
+export const MAX_RETENTION_DAYS = 3650;
+const RETENTION_OPTIONS = ["30 Days", "60 Days", "90 Days", "180 Days", "Custom Days"];
+
+export function retentionDaysIssue(days: number): string | null {
+  if (!Number.isInteger(days) || days < 1) {
+    return "Communication retention must be a whole number of at least 1 day.";
+  }
+  if (days > MAX_RETENTION_DAYS) {
+    return `Communication retention cannot exceed ${MAX_RETENTION_DAYS} days.`;
+  }
+  return null;
+}
+
+function normalizeRetentionDays(value: unknown): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isInteger(n) || n < 1) return 30;
+  return Math.min(MAX_RETENTION_DAYS, n);
+}
 
 function formatPlanLimitMoney(value: number) {
   return new Intl.NumberFormat("en-US", {
@@ -309,6 +331,7 @@ export function emptyDraft(): ClientDraft {
         accepted_currencies: "",
         plan_limits: DEFAULT_PLAN_LIMITS.map((r) => ({ ...r })),
       },
+      communicationRetentionDays: 30,
     },
   };
 }
@@ -347,6 +370,7 @@ export function draftFromDetail(
     governance_rules?: string[];
     mappings?: PayflowClientMapping[];
     supervisor_user_ids?: string[];
+    communication_retention_days?: number | null;
     payment_settings?: {
       allow_partial?: boolean;
       allow_plans?: boolean;
@@ -413,6 +437,7 @@ export function draftFromDetail(
         accepted_currencies: acceptedList,
         plan_limits: normalizePlanLimits(ps.plan_limits),
       },
+      communicationRetentionDays: normalizeRetentionDays(detail.communication_retention_days),
     },
   };
 }
@@ -484,6 +509,14 @@ export function draftToUpdatePayload(draft: ClientDraft) {
 
 export function PaymentSettingsSection({ draft, patchConfig, readOnly }: SectionProps) {
   const ps = draft.config.paymentSettings;
+  const retentionDays = draft.config.communicationRetentionDays ?? 30;
+  const [customRetention, setCustomRetention] = useState(
+    () => !RETENTION_PRESETS.includes(retentionDays as (typeof RETENTION_PRESETS)[number]),
+  );
+  const retentionChoice = customRetention
+    ? "Custom Days"
+    : `${RETENTION_PRESETS.includes(retentionDays as (typeof RETENTION_PRESETS)[number]) ? retentionDays : 30} Days`;
+  const retentionIssue = retentionDaysIssue(retentionDays);
   const planLimits = ps.plan_limits?.length
     ? ps.plan_limits
     : DEFAULT_PLAN_LIMITS.map((r) => ({ ...r }));
@@ -690,6 +723,61 @@ export function PaymentSettingsSection({ draft, patchConfig, readOnly }: Section
           Comma-separated ISO codes. Blank = no extra restriction beyond the case currency.
         </p>
       </Field>
+
+      <div className="border-t border-border pt-4">
+        <p className="text-[13px] font-semibold text-foreground">Communication Retention Period</p>
+        <p className="mb-3 text-[12px] leading-relaxed text-muted-foreground">
+          Determines how long this Client&apos;s communication history and content remain available
+          for search and export, subject to applicable retention requirements.
+        </p>
+        <div className="flex flex-wrap items-end gap-3">
+          <Field label="Retention period" className="w-full sm:w-44">
+            <SelectInput
+              value={retentionChoice}
+              options={RETENTION_OPTIONS}
+              disabled={readOnly}
+              onChange={(v) => {
+                if (readOnly) return;
+                if (v === "Custom Days") {
+                  setCustomRetention(true);
+                  return;
+                }
+                setCustomRetention(false);
+                patchConfig({ communicationRetentionDays: Number(v.split(" ")[0]) });
+              }}
+            />
+          </Field>
+          {customRetention ? (
+            <Field label="Custom days" className="w-full sm:w-36">
+              <TextInput
+                value={retentionDays >= 1 ? String(retentionDays) : ""}
+                disabled={readOnly}
+                placeholder="30"
+                onChange={(v) => {
+                  if (readOnly) return;
+                  const digits = v.replace(/[^0-9]/g, "").slice(0, 4);
+                  patchConfig({
+                    communicationRetentionDays: digits === "" ? 0 : Number(digits),
+                  });
+                }}
+              />
+            </Field>
+          ) : null}
+        </div>
+        {retentionIssue ? (
+          <p className="mt-2 text-[12px] text-destructive">{retentionIssue}</p>
+        ) : (
+          <p className="mt-2 text-[12px] text-muted-foreground">
+            Currently retained:{" "}
+            <span className="font-medium text-foreground">{retentionDays} days</span> of
+            communication history.
+          </p>
+        )}
+        <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+          Shortening the period hides older communications from search and export. They remain
+          stored, and saving a shorter period asks you to confirm.
+        </p>
+      </div>
     </div>
   );
 }
