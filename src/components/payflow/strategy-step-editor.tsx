@@ -8,6 +8,8 @@ import {
   TextInput,
 } from "./lovable/payflow-ui";
 import { Modal } from "../ui/Modal";
+import { CommunicationVersionEditor } from "./communication-version-editor";
+import { stepHasMessageContent } from "../../lib/message-versions";
 import {
   ADDABLE_STEP_KINDS,
   CASE_ACTIONS,
@@ -26,7 +28,6 @@ import {
   displayChannel,
   isContactStep,
   referenceEventsForStep,
-  renderMessagePreview,
   stepConfig,
   templateById,
   templatesForChannelPurpose,
@@ -38,36 +39,31 @@ import type {
   PayflowStrategyCatalog,
   PayflowStrategyStep,
   PayflowStrategyStepConfig,
+  PayflowTextWarning,
 } from "../../types";
-import { REMINDER_STAGES } from "../../types/emailSubjects";
-import { EmailStepPerformance } from "./email-subjects/EmailStepPerformance";
 
-const SUBJECT_MAX = 255;
-const BODY_MAX = 5000;
-const SMS_BODY_MAX = 1000;
-const REMARKS_MAX = 2000;
-
-function AiSparklesIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden>
-      <path d="M12 2.5 13.6 8.4 19.5 10 13.6 11.6 12 17.5 10.4 11.6 4.5 10 10.4 8.4 12 2.5Z" />
-      <path d="M18.2 14.2 19 16.8 21.6 17.6 19 18.4 18.2 21 17.4 18.4 14.8 17.6 17.4 16.8 18.2 14.2Z" />
-    </svg>
-  );
-}
-
-/** Clear AI/reviewer text when channel or purpose changes so email copy does not stick on SMS. */
+/**
+ * Clear AI/reviewer text when channel or purpose changes so an SMS is not sent
+ * with an email's copy. Age versions and the main explanation go with it.
+ */
 function clearMessageTextPatch(
   patch: Partial<PayflowStrategyStepConfig>,
 ): Partial<PayflowStrategyStepConfig> {
-  return { ...patch, subject: null, body: null, sms_body: null, tone: null, content_origin: null };
+  return {
+    ...patch,
+    subject: null,
+    body: null,
+    sms_body: null,
+    tone: null,
+    content_origin: null,
+    brief: null,
+    translations: null,
+    versions: null,
+  };
 }
 
-function contentOriginAfterEdit(current?: string | null): Partial<PayflowStrategyStepConfig> {
-  if (current === "AI Generated") return { content_origin: "AI Generated, Human Edited" };
-  if (!current) return { content_origin: "Human Created" };
-  return {};
-}
+const CLEAR_MESSAGES_WARNING =
+  "This clears the step's texts and its age versions. Use Regenerate on the step to write them again.";
 
 /** Persist contact mode as no channel (matches AI / worker contract). */
 function channelPatch(channelLabel: string): Partial<PayflowStrategyStepConfig> {
@@ -150,28 +146,38 @@ export function StepConfigForm({
   showTitle = true,
   canWriteMessages = false,
   writingMessages = false,
+  saving = false,
+  unsaved = false,
+  savedConfig,
+  textWarnings,
   onChange,
   onToggleDisabled,
   onAddAfter,
   onRemove,
   onRewriteMessage,
+  onSaveVersion,
 }: {
   strategy: PayflowStrategy;
   step: PayflowStrategyStep;
   catalog?: PayflowStrategyCatalog | null;
   canEdit?: boolean;
   showTitle?: boolean;
-  /** Show Rewrite with AI (Draft / AI Proposed / Under Review only). */
+  /** Regenerate is allowed for Draft / AI Proposed / Under Review only. */
   canWriteMessages?: boolean;
   writingMessages?: boolean;
+  saving?: boolean;
+  unsaved?: boolean;
+  /** Server copy of this step, used to detect unsaved version text. */
+  savedConfig?: PayflowStrategyStepConfig | null;
+  textWarnings?: PayflowTextWarning[];
   onChange: (patch: Partial<PayflowStrategyStepConfig> & { title?: string }) => void;
   onToggleDisabled: () => void;
   onAddAfter: (kind: AddableStepKind) => void;
   onRemove?: () => void;
-  onRewriteMessage?: (remarks?: string) => void;
+  onRewriteMessage?: (remarks?: string, audience?: string) => Promise<boolean | void> | void;
+  onSaveVersion?: (patch?: Partial<PayflowStrategyStepConfig>) => Promise<boolean | void>;
 }) {
   const [addKind, setAddKind] = useState<AddableStepKind>("Communication");
-  const [rewriteRemarks, setRewriteRemarks] = useState("");
   const lists = catalogLists(catalog);
   const cfg = stepConfig(step);
   const contactStep = isContactStep(step);
@@ -184,12 +190,7 @@ export function StepConfigForm({
   const smsTemplates = templatesForChannelPurpose(lists.templates, "SMS", cfg.purpose);
   const activeTemplate = templateById(lists.templates, cfg.template_id) || templates[0];
   const activeSmsTemplate = smsTemplates[0];
-  const isEmail = !contactStep && channelLabel === "Email";
-  const isSms = !contactStep && channelLabel === "SMS";
   const hasOwnText = !!(cfg.subject || cfg.body || cfg.sms_body);
-  const previewSubject = renderMessagePreview(cfg.subject);
-  const previewBody = renderMessagePreview(cfg.body);
-  const previewSms = renderMessagePreview(cfg.sms_body);
   const conditionValueOptions =
     lists.conditionValues[cfg.attribute || ""] ||
     CONDITION_VALUES[cfg.attribute || ""] ||
@@ -229,7 +230,11 @@ export function StepConfigForm({
                     : [CONTACT_CHANNEL, ...lists.channels]
                 }
                 disabled={!canEdit}
-                onChange={(v) => onChange(channelPatch(v))}
+                onChange={(v) => {
+                  if (v === channelLabel) return;
+                  if (stepHasMessageContent(cfg) && !window.confirm(CLEAR_MESSAGES_WARNING)) return;
+                  onChange(channelPatch(v));
+                }}
               />
             </Field>
             <Field label="Message Purpose">
@@ -237,181 +242,20 @@ export function StepConfigForm({
                 value={cfg.purpose ?? lists.purposes[0]!}
                 options={lists.purposes}
                 disabled={!canEdit}
-                onChange={(v) =>
-                  onChange(clearMessageTextPatch({ purpose: v, template_id: "" }))
-                }
+                onChange={(v) => {
+                  if (v === (cfg.purpose ?? lists.purposes[0])) return;
+                  if (stepHasMessageContent(cfg) && !window.confirm(CLEAR_MESSAGES_WARNING)) return;
+                  onChange(clearMessageTextPatch({ purpose: v, template_id: "" }));
+                }}
               />
             </Field>
           </div>
 
-          <div className="space-y-2 rounded-lg border border-border/70 bg-surface/60 p-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="text-[12.5px] font-semibold text-foreground">Message text</p>
-                {contactStep ? <StatusPill tone="ai">{CONTACT_CHANNEL}</StatusPill> : null}
-                {cfg.tone ? <StatusPill tone="ai">{cfg.tone}</StatusPill> : null}
-                {cfg.content_origin ? <StatusPill tone="info">{cfg.content_origin}</StatusPill> : null}
-              </div>
-              {canWriteMessages && onRewriteMessage ? (
-                <button
-                  type="button"
-                  disabled={!canEdit || writingMessages}
-                  onClick={() =>
-                    onRewriteMessage(rewriteRemarks.trim() || undefined)
-                  }
-                  className="inline-flex items-center gap-1.5 rounded-full border border-ai/30 bg-ai/15 px-2.5 py-[5px] text-[11px] font-medium text-ai transition-colors hover:bg-ai/25 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <AiSparklesIcon className="size-3" />
-                  {writingMessages
-                    ? "Writing…"
-                    : hasOwnText
-                      ? "Rewrite with AI"
-                      : "Write with AI"}
-                </button>
-              ) : null}
-            </div>
-            <p className="text-[11.5px] text-muted-foreground">
-              {contactStep
-                ? "Write both versions. The worker sends Email or SMS for each customer (and failovers)."
-                : "Leave blank to send the template below. Edited text is saved with the step and becomes Human Modified."}
-            </p>
-            {canWriteMessages && onRewriteMessage ? (
-              <Field
-                label="Note for AI (optional)"
-                hint="Guides wording only — tone badge stays as set for this step."
-              >
-                <TextArea
-                  value={rewriteRemarks}
-                  disabled={!canEdit || writingMessages}
-                  onChange={(v) => setRewriteRemarks(v.slice(0, REMARKS_MAX))}
-                  placeholder="e.g. shorter, mention the payment plan"
-                />
-              </Field>
-            ) : null}
-            {(contactStep || isEmail) ? (
-              <Field label={contactStep ? "Email subject" : "Subject"} hint={`Max ${SUBJECT_MAX} characters.`}>
-                <TextInput
-                  value={cfg.subject ?? ""}
-                  disabled={!canEdit}
-                  onChange={(v) =>
-                    onChange({
-                      subject: v.slice(0, SUBJECT_MAX) || null,
-                      ...contentOriginAfterEdit(cfg.content_origin),
-                    })
-                  }
-                />
-              </Field>
-            ) : null}
-            {(contactStep || isEmail) ? (
-              <Field
-                label={contactStep ? "Email body" : "Body"}
-                hint={`Max ${BODY_MAX} characters. Use {{first_name}}, {{outstanding_balance}}, {{payment_link}}, {{brand_name}}, …`}
-              >
-                <TextArea
-                  value={cfg.body ?? ""}
-                  disabled={!canEdit}
-                  onChange={(v) =>
-                    onChange({
-                      body: v.slice(0, BODY_MAX) || null,
-                      ...contentOriginAfterEdit(cfg.content_origin),
-                    })
-                  }
-                />
-              </Field>
-            ) : null}
-            {contactStep ? (
-              <Field
-                label="SMS body"
-                hint={`Max ${SMS_BODY_MAX} characters. Start with {{brand_name}}: and end with Reply STOP to opt out.`}
-              >
-                <TextArea
-                  value={cfg.sms_body ?? ""}
-                  disabled={!canEdit}
-                  onChange={(v) =>
-                    onChange({ sms_body: v.slice(0, SMS_BODY_MAX) || null })
-                  }
-                />
-              </Field>
-            ) : null}
-            {isSms ? (
-              <Field
-                label="Body"
-                hint={`Max ${SMS_BODY_MAX} characters. Start with {{brand_name}}: and end with Reply STOP to opt out.`}
-              >
-                <TextArea
-                  value={cfg.body ?? ""}
-                  disabled={!canEdit}
-                  onChange={(v) => onChange({ body: v.slice(0, SMS_BODY_MAX) || null })}
-                />
-              </Field>
-            ) : null}
-            {hasOwnText ? (
-              <div className="rounded-lg border border-border/70 bg-card p-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Preview (sample values)
-                </p>
-                {(contactStep || isEmail) && previewSubject ? (
-                  <p className="mt-2 text-[12.5px] text-foreground">
-                    <span className="text-muted-foreground">Subject: </span>
-                    {previewSubject}
-                  </p>
-                ) : null}
-                {(contactStep || isEmail) ? (
-                  <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap font-sans text-[11.5px] leading-relaxed text-muted-foreground">
-                    {previewBody || "(empty email body)"}
-                  </pre>
-                ) : null}
-                {contactStep ? (
-                  <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap font-sans text-[11.5px] leading-relaxed text-muted-foreground">
-                    {previewSms || "(empty SMS body)"}
-                  </pre>
-                ) : null}
-                {isSms ? (
-                  <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap font-sans text-[11.5px] leading-relaxed text-muted-foreground">
-                    {previewBody || "(empty body)"}
-                  </pre>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-
-          {(contactStep || isEmail) && (
-            <>
-              <Field
-                label="Reminder stage"
-                hint="Compared with similar reminders. Leave unset and PayFlow infers it from the purpose and position."
-              >
-                <SelectInput
-                  value={cfg.reminder_stage || "Not set"}
-                  options={[
-                    "Not set",
-                    ...REMINDER_STAGES,
-                    ...(cfg.reminder_stage &&
-                    !(REMINDER_STAGES as readonly string[]).includes(cfg.reminder_stage)
-                      ? [cfg.reminder_stage]
-                      : []),
-                  ]}
-                  disabled={!canEdit}
-                  onChange={(v) => onChange({ reminder_stage: v === "Not set" ? null : v })}
-                />
-              </Field>
-              <EmailStepPerformance
-                clientId={strategy.client_id}
-                strategyId={strategy.id > 0 ? strategy.id : null}
-                stepId={step.id}
-                purpose={cfg.purpose}
-                reminderStage={cfg.reminder_stage}
-                canEdit={canEdit}
-                onApply={onChange}
-              />
-            </>
-          )}
-
           {!contactStep && templates.length > 0 && (
             <>
               <Field
-                label="Fallback template"
-                hint="Used when message text above is empty."
+                label="Template"
+                hint="What the customer receives at this step. Used when this step has no message text of its own."
               >
                 <SelectInput
                   value={activeTemplate?.name ?? ""}
@@ -429,12 +273,26 @@ export function StepConfigForm({
           {contactStep && !hasOwnText ? (
             <div className="space-y-2">
               <p className="text-[11.5px] text-muted-foreground">
-                No own text yet — worker will use purpose templates for Email and SMS.
+                No own text yet — the worker uses the purpose templates for Email and SMS.
               </p>
               <TemplatePreview template={activeTemplate} />
               {activeSmsTemplate ? <TemplatePreview template={activeSmsTemplate} /> : null}
             </div>
           ) : null}
+          <CommunicationVersionEditor
+            strategy={strategy}
+            step={step}
+            savedConfig={savedConfig}
+            canEdit={canEdit}
+            canWriteMessages={canWriteMessages}
+            writingMessages={writingMessages}
+            saving={saving}
+            unsaved={unsaved}
+            textWarnings={textWarnings}
+            onChange={onChange}
+            onSaveVersion={onSaveVersion}
+            onRewriteMessage={onRewriteMessage}
+          />
         </>
       )}
 
@@ -671,12 +529,16 @@ export function StepEditorDialog({
   error,
   canWriteMessages = false,
   writingMessages = false,
+  unsaved = false,
+  savedConfig,
+  textWarnings,
   onClose,
   onChange,
   onToggleDisabled,
   onAddAfter,
   onRemove,
   onRewriteMessage,
+  onSaveVersion,
 }: {
   strategy: PayflowStrategy;
   step: PayflowStrategyStep | null;
@@ -687,12 +549,16 @@ export function StepEditorDialog({
   error?: string;
   canWriteMessages?: boolean;
   writingMessages?: boolean;
+  unsaved?: boolean;
+  savedConfig?: PayflowStrategyStepConfig | null;
+  textWarnings?: PayflowTextWarning[];
   onClose: () => void;
   onChange: (patch: Partial<PayflowStrategyStepConfig> & { title?: string }) => void;
   onToggleDisabled: () => void;
   onAddAfter: (kind: AddableStepKind) => void;
   onRemove?: () => void;
-  onRewriteMessage?: (remarks?: string) => void;
+  onRewriteMessage?: (remarks?: string, audience?: string) => Promise<boolean | void> | void;
+  onSaveVersion?: (patch?: Partial<PayflowStrategyStepConfig>) => Promise<boolean | void>;
 }) {
   if (!open || !step) return null;
   return (
@@ -726,11 +592,16 @@ export function StepEditorDialog({
         showTitle={false}
         canWriteMessages={canWriteMessages}
         writingMessages={writingMessages}
+        saving={busy}
+        unsaved={unsaved}
+        savedConfig={savedConfig}
+        textWarnings={textWarnings}
         onChange={onChange}
         onToggleDisabled={onToggleDisabled}
         onAddAfter={onAddAfter}
         onRemove={onRemove}
         onRewriteMessage={onRewriteMessage}
+        onSaveVersion={onSaveVersion}
       />
     </Modal>
   );

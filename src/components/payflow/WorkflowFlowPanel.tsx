@@ -8,6 +8,7 @@ import {
   writePayflowWorkflowMessages,
 } from "../../api/payflow";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
+import { sameConfig } from "../../lib/message-versions";
 import {
   addStepAfter,
   canWriteWorkflowMessages,
@@ -26,6 +27,7 @@ import type {
   PayflowStrategyCatalog,
   PayflowStrategyStep,
   PayflowStrategyStepConfig,
+  PayflowTextWarning,
 } from "../../types";
 import { StrategyCanvas } from "./strategy-canvas";
 import { StepEditorDialog } from "./strategy-step-editor";
@@ -97,6 +99,9 @@ export function WorkflowFlowPanel({
   const [busy, setBusy] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [writingMessages, setWritingMessages] = useState(false);
+  const [textWarnings, setTextWarnings] = useState<PayflowTextWarning[]>([]);
+  const [baselineConfig, setBaselineConfig] = useState<PayflowStrategyStepConfig | null>(null);
+  const [baselineStep, setBaselineStep] = useState<PayflowStrategyStep | null>(null);
   const canMutate = canEdit && !isRejectedWorkflowStatus(strategy?.status);
 
   useEffect(() => {
@@ -153,14 +158,17 @@ export function WorkflowFlowPanel({
   );
 
   function openStep(id: string) {
+    const step = strategy ? findStep(strategy, id) : null;
     setSelectedId(id);
+    setBaselineConfig({ ...(step?.config || {}) });
+    setBaselineStep(step ? { ...step, config: { ...(step.config || {}) } } : null);
     setSaveError("");
     setDialogOpen(true);
   }
 
-  function commit(next: PayflowStrategy, focusId?: string | null) {
+  function commit(next: PayflowStrategy, focusId?: string | null, markDirty = true) {
     setStrategy(ensureStepLinks(next));
-    setDirty(true);
+    setDirty(markDirty);
     if (focusId) setSelectedId(focusId);
   }
 
@@ -168,19 +176,27 @@ export function WorkflowFlowPanel({
     if (!strategy || !selectedStep) return;
     const { title: nextTitle, ...cfgPatch } = patch;
     const nextCfg = { ...(selectedStep.config || {}), ...cfgPatch };
-    const updated: PayflowStrategyStep = {
-      ...selectedStep,
-      title: nextTitle !== undefined ? nextTitle : selectedStep.title,
-      config: nextCfg,
-      channel: stepChannelFor(selectedStep.kind, nextCfg, selectedStep.channel),
-      purpose: nextCfg.purpose ?? selectedStep.purpose,
-      origin: "Human Modified",
-    };
+    const restored =
+      baselineStep &&
+      (nextTitle !== undefined ? nextTitle : selectedStep.title) === baselineStep.title &&
+      !!selectedStep.disabled === !!baselineStep.disabled &&
+      sameConfig(nextCfg, baselineConfig || {});
+    const updated: PayflowStrategyStep = restored
+      ? { ...baselineStep, id: selectedStep.id }
+      : {
+          ...selectedStep,
+          title: nextTitle !== undefined ? nextTitle : selectedStep.title,
+          config: nextCfg,
+          channel: stepChannelFor(selectedStep.kind, nextCfg, selectedStep.channel),
+          purpose: nextCfg.purpose ?? selectedStep.purpose,
+          origin: "Human Modified",
+        };
     const steps = (strategy.steps || []).map((s, i) => {
       const id = s.id || `s${i + 1}`;
       return id === updated.id ? { ...updated, id } : s;
     });
-    commit({ ...strategy, steps }, updated.id);
+    const othersUntouched = steps.every((s) => s.id === updated.id || s.origin !== "Human Modified");
+    commit({ ...strategy, steps }, updated.id, !(restored && othersUntouched));
   }
 
   function toggleDisabled() {
@@ -200,44 +216,76 @@ export function WorkflowFlowPanel({
     commit({ ...strategy, steps: next }, selectedStep.id);
   }
 
-  async function closeDialog() {
-    if (busy || writingMessages) return;
-    if (!dirty || !strategy || !canMutate) {
-      setDialogOpen(false);
+  async function persistEdits(
+    extraPatch?: Partial<PayflowStrategyStepConfig>,
+    close = false,
+  ): Promise<boolean> {
+    if (busy || writingMessages) return false;
+    if (!strategy || !canMutate) {
+      if (close) setDialogOpen(false);
+      return false;
+    }
+    if (!dirty && !extraPatch) {
       setSaveError("");
-      return;
+      if (close) setDialogOpen(false);
+      return true;
     }
-    // Closing saves. On an approved workflow that takes it out of service, so ask.
     if (editDemotesWorkflow(strategy.status) && !window.confirm(EDIT_DEMOTES_WARNING)) {
-      return;
+      return false;
     }
+    const steps = (strategy.steps || []).map((s, i) => {
+      const id = s.id || `s${i + 1}`;
+      if (!extraPatch || !selectedStep || id !== selectedStep.id) return { ...s, id };
+      const cfg = { ...(s.config || {}), ...extraPatch };
+      return {
+        ...s,
+        id,
+        config: cfg,
+        channel: stepChannelFor(s.kind, cfg, s.channel),
+        purpose: cfg.purpose ?? s.purpose,
+        origin: "Human Modified",
+      };
+    });
     setBusy(true);
     setSaveError("");
     try {
       const updated = ensureStepLinks(
         await updatePayflowWorkflow(strategy.id, {
-          steps: toStepPayload(strategy.steps || []),
+          steps: toStepPayload(steps),
           entry_node_id: strategy.entry_node_id || undefined,
-          note: "Adjusted from the workflow map",
+          note: extraPatch
+            ? "Removed communication version"
+            : close
+              ? "Adjusted from the workflow map"
+              : "Saved communication version",
         }),
       );
       setStrategy(updated);
       setDirty(false);
-      setDialogOpen(false);
+      setTextWarnings(updated.text_warnings || []);
+      const focus = selectedStep?.id ? findStep(updated, selectedStep.id) : null;
+      setBaselineConfig({ ...(focus?.config || {}) });
+      if (close) setDialogOpen(false);
+      return true;
     } catch (err) {
       setSaveError(err instanceof ApiError ? err.detail : "Failed to save step changes");
+      return false;
     } finally {
       setBusy(false);
     }
   }
 
-  async function rewriteSelectedMessage(remarks?: string) {
-    if (!strategy || !selectedStep?.id) return;
+  async function closeDialog() {
+    await persistEdits(undefined, true);
+  }
+
+  async function rewriteSelectedMessage(remarks?: string, audience?: string): Promise<boolean> {
+    if (!strategy || !selectedStep?.id) return false;
     if (dirty) {
       setSaveError(
-        "Save step changes first (close the editor), then rewrite with AI. Writing uses the saved workflow.",
+        "Save this version first, then regenerate. Regenerating uses the saved workflow.",
       );
-      return;
+      return false;
     }
     setWritingMessages(true);
     setSaveError("");
@@ -246,12 +294,18 @@ export function WorkflowFlowPanel({
         await writePayflowWorkflowMessages(strategy.id, {
           step_id: selectedStep.id,
           remarks,
+          ...(audience ? { audience } : {}),
         }),
       );
       setStrategy(updated);
       setDirty(false);
+      setTextWarnings([]);
+      const focus = findStep(updated, selectedStep.id);
+      setBaselineConfig({ ...(focus?.config || {}) });
+      return true;
     } catch (err) {
       setSaveError(err instanceof ApiError ? err.detail : "Failed to rewrite message");
+      return false;
     } finally {
       setWritingMessages(false);
     }
@@ -331,13 +385,17 @@ export function WorkflowFlowPanel({
         error={saveError}
         canWriteMessages={allowWriteMessages}
         writingMessages={writingMessages}
+        unsaved={dirty}
+        savedConfig={baselineConfig}
+        textWarnings={textWarnings}
         onClose={() => {
           void closeDialog();
         }}
         onChange={patchStep}
         onToggleDisabled={toggleDisabled}
         onAddAfter={addAfter}
-        onRewriteMessage={(remarks) => void rewriteSelectedMessage(remarks)}
+        onSaveVersion={(patch) => persistEdits(patch, false)}
+        onRewriteMessage={(remarks, audience) => rewriteSelectedMessage(remarks, audience)}
       />
     </Panel>
   );

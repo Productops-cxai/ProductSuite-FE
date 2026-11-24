@@ -1194,6 +1194,77 @@ export interface PayflowStrategyStepConfig {
   content_origin?: string | null;
   /** One of the five reminder stages. Omitted when the server should infer it. */
   reminder_stage?: string | null;
+  /** Why the AI wrote the main text. `why` is the explanation shown first. */
+  brief?: PayflowMessageBrief | null;
+  /** Main text in other languages, keyed by language code (for example `FR`). */
+  translations?: Record<string, PayflowMessageTranslation> | null;
+  /**
+   * Age-group texts for this step, keyed by the version id (for example `age_65_plus`).
+   * Only versions the step actually has are present. Main text is the sibling fields above.
+   */
+  versions?: Record<string, PayflowMessageVersion> | null;
+}
+
+/** AI explanation stored on a message. `why` is the line reviewers read first. */
+export interface PayflowMessageBrief {
+  why?: string | null;
+  approach?: string | null;
+  tone?: string | null;
+  length?: string | null;
+  subject_style?: string | null;
+  lead_option?: string | null;
+  call_to_action?: string | null;
+}
+
+export interface PayflowMessageTranslation {
+  subject?: string | null;
+  body?: string | null;
+  sms_body?: string | null;
+}
+
+export interface PayflowMessageVersion {
+  label?: string | null;
+  subject?: string | null;
+  body?: string | null;
+  sms_body?: string | null;
+  brief?: PayflowMessageBrief | null;
+  translations?: Record<string, PayflowMessageTranslation> | null;
+  segment?: {
+    dimension?: string | null;
+    criteria?: { min_age?: number | null; max_age?: number | null } | null;
+  } | null;
+}
+
+/** Returned on workflow save. The save still succeeds; these are notes on the edited text. */
+export interface PayflowTextWarning {
+  step_id: string;
+  /** `"main"` or a version key such as `age_65_plus`. */
+  text: string;
+  /** `"Email"` or `"SMS"`. */
+  channel: string;
+  problem: string;
+}
+
+/** One row from GET /payflow/workflows/{id}/audiences. Matched to the version dropdown by `key`. */
+export interface PayflowWorkflowAudience {
+  key: string;
+  step_id?: string | null;
+  accounts?: number | null;
+  situation?: string | null;
+  profile?: PayflowAudienceProfile | null;
+}
+
+export interface PayflowAudienceProfile {
+  age?: Record<string, number> | null;
+  countries?: Record<string, number> | null;
+  regions?: Record<string, number> | null;
+  languages?: Record<string, number> | null;
+  avg_balance?: number | null;
+  balance_bands?: Record<string, number> | null;
+  contact_history?: string | Record<string, number> | null;
+  with_email_pct?: number | null;
+  with_mobile_pct?: number | null;
+  partly_paid_pct?: number | null;
 }
 
 export interface PayflowStrategyStep {
@@ -1309,6 +1380,8 @@ export interface PayflowStrategy {
   created_by?: string | null;
   human_modified?: boolean;
   awaiting_review?: boolean;
+  /** Present on the workflow update response when edited message text needs attention. */
+  text_warnings?: PayflowTextWarning[] | null;
   last_updated_label?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
