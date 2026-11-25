@@ -7,12 +7,12 @@ import type { EmailUnsubscribeReasonOption } from "../types";
  */
 export const EMAIL_UNSUBSCRIBE_REASON_OPTIONS: EmailUnsubscribeReasonOption[] = [
   { code: "too_many", label: "Too many emails / contacting too often" },
-  { code: "prefer_other_channel", label: "Prefer a different channel (SMS, phone, or mail)" },
-  { code: "already_paid", label: "Already paid or arranged a payment plan" },
-  { code: "wrong_person", label: "Not the right person / wrong contact details" },
-  { code: "dispute", label: "Dispute this debt / do not believe I owe this" },
-  { code: "attorney", label: "Working with an attorney or another agency" },
-  { code: "not_helpful", label: "Emails are not helpful or not relevant" },
+  { code: "prefer_other_channel", label: "Prefer a different channel (SMS, phone or mail)" },
+  { code: "already_paid", label: "Already paid or arranged a plan" },
+  { code: "wrong_person", label: "Not the right person / wrong contact" },
+  { code: "dispute", label: "Dispute this debt / don't believe I owe this" },
+  { code: "attorney", label: "Working with an attorney or agency" },
+  { code: "not_helpful", label: "Content not helpful or relevant" },
   { code: "prefer_no_email", label: "Prefer not to receive collection emails" },
   { code: "other", label: "Other" },
 ];
@@ -61,4 +61,77 @@ export function formatUnsubscribeBalance(value?: number | null): string {
     style: "currency",
     currency: "USD",
   }).format(value);
+}
+
+type UnsubscribeRuleIdentity = {
+  name?: string | null;
+  code?: string | null;
+  category?: string | null;
+  action?: string | null;
+};
+
+function norm(value?: string | null): string {
+  return (value || "").trim().toLowerCase();
+}
+
+/** Governance / compliance identity for Unsubscribe Option (formerly Consent & Opt-Out). */
+export function isUnsubscribeOptionIdentity(rule: UnsubscribeRuleIdentity): boolean {
+  const name = norm(rule.name);
+  const code = norm(rule.code);
+  const category = norm(rule.category);
+  const action = norm(rule.action);
+  if (code === "allow-unsubscribe-option" || code.includes("allow-unsubscribe")) return true;
+  if (action === "include unsubscribe option" || action.includes("unsubscribe option")) return true;
+  if (
+    category === "unsubscribe option" ||
+    category === "consent & opt-out" ||
+    category === "consent and opt-out"
+  ) {
+    return true;
+  }
+  if (
+    name === "allow unsubscribe option" ||
+    name === "unsubscribe option" ||
+    name === "consent & opt-out" ||
+    name === "consent and opt-out" ||
+    name.includes("unsubscribe option") ||
+    name.includes("allow unsubscribe") ||
+    name.includes("consent & opt-out") ||
+    name.includes("consent and opt-out")
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** Client governance selection (`governance_rules` names) includes Unsubscribe Option. */
+export function governanceSelectionIncludesUnsubscribe(names?: string[] | null): boolean {
+  return (names || []).some((name) =>
+    isUnsubscribeOptionIdentity({ name, code: name, category: name, action: name }),
+  );
+}
+
+type ClientUnsubscribeComplianceRule = UnsubscribeRuleIdentity & {
+  enabled?: boolean;
+  in_force?: boolean;
+  enforcement?: string | null;
+  status?: string | null;
+  locked?: boolean;
+};
+
+/**
+ * True when this client has Unsubscribe Option turned on,
+ * or a mandatory compliance rule in that category is in force.
+ */
+export function complianceRulesIncludeUnsubscribe(
+  rules?: ClientUnsubscribeComplianceRule[] | null,
+): boolean {
+  return (rules || []).some((rule) => {
+    if (!isUnsubscribeOptionIdentity(rule)) return false;
+    const status = norm(rule.status);
+    if (["draft", "inactive", "archived", "rejected", "retired"].includes(status)) return false;
+    const mandatory = norm(rule.enforcement) === "mandatory" || Boolean(rule.locked);
+    if (mandatory) return rule.in_force !== false;
+    return Boolean(rule.enabled || rule.in_force);
+  });
 }
