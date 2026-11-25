@@ -33,6 +33,7 @@ import {
 import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { usePayFlowAccess } from "../../context/PayFlowAccessContext";
 import { SHOW_PAYFLOW_DELETE } from "../../lib/payflow-features";
+import { sameConfig } from "../../lib/message-versions";
 import {
   addStepAfter,
   canWriteWorkflowMessages,
@@ -56,6 +57,7 @@ import type {
   PayflowStrategyCatalog,
   PayflowStrategyStep,
   PayflowStrategyStepConfig,
+  PayflowTextWarning,
 } from "../../types";
 
 type NoteAction = "update" | "approve" | "activate" | "reject";
@@ -166,6 +168,7 @@ export function PayFlowWorkflowDetailPage() {
   const [segmentDraft, setSegmentDraft] = useState<Record<string, string>>({});
   const [segmentDirty, setSegmentDirty] = useState(false);
   const [writingMessages, setWritingMessages] = useState(false);
+  const [textWarnings, setTextWarnings] = useState<PayflowTextWarning[]>([]);
 
   async function load() {
     const id = Number(strategyId);
@@ -190,6 +193,7 @@ export function PayFlowWorkflowDetailPage() {
       setSelectedId(null);
       setDraftStep(null);
       setPendingSteps(null);
+      setTextWarnings([]);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Failed to load workflow");
       setStrategy(null);
@@ -241,7 +245,7 @@ export function PayFlowWorkflowDetailPage() {
   function patchDraft(
     patch: Partial<PayflowStrategyStepConfig> & { title?: string },
   ) {
-    if (!draftStep) return;
+    if (!draftStep || !strategy) return;
     const { title, ...cfgPatch } = patch;
     const nextCfg = { ...(draftStep.config || {}), ...cfgPatch };
     const updated: PayflowStrategyStep = {
@@ -252,11 +256,28 @@ export function PayFlowWorkflowDetailPage() {
       purpose: nextCfg.purpose ?? draftStep.purpose,
       origin: "Human Modified",
     };
-    setDraftStep(updated);
     const steps = workingSteps().map((s, i) => {
       const id = s.id || `s${i + 1}`;
       return id === updated.id ? { ...updated, id } : s;
     });
+    const serverSteps = strategy.steps || [];
+    const backToSaved =
+      steps.length === serverSteps.length &&
+      steps.every((step) => {
+        const saved = serverSteps.find((item, index) => (item.id || `s${index + 1}`) === step.id);
+        if (!saved) return false;
+        return (
+          step.title === saved.title &&
+          !!step.disabled === !!saved.disabled &&
+          sameConfig(step.config || {}, saved.config || {})
+        );
+      });
+    if (backToSaved) {
+      setPendingSteps(null);
+      const saved = findStep(strategy, updated.id || "");
+      if (saved) setDraftStep({ ...saved, id: updated.id, config: { ...(saved.config || {}) } });
+      return;
+    }
     applyLocalSteps(steps, updated.id);
   }
 
@@ -279,11 +300,14 @@ export function PayFlowWorkflowDetailPage() {
     return true;
   }
 
-  async function persistSteps(note?: string) {
-    if (!strategy) return;
+  async function persistSteps(
+    note?: string,
+    extraPatch?: Partial<PayflowStrategyStepConfig>,
+  ): Promise<boolean> {
+    if (!strategy) return false;
     if (editDemotesWorkflow(strategy.status) && !window.confirm(EDIT_DEMOTES_WARNING)) {
       setNoteAction(null);
-      return;
+      return false;
     }
     setBusy(true);
     setError("");
@@ -293,7 +317,7 @@ export function PayFlowWorkflowDetailPage() {
         if (!draftStep || id !== draftStep.id) {
           return { ...s, id };
         }
-        const cfg = { ...(draftStep.config || {}) };
+        const cfg = { ...(draftStep.config || {}), ...(extraPatch || {}) };
         return {
           ...draftStep,
           id,
@@ -303,6 +327,7 @@ export function PayFlowWorkflowDetailPage() {
           origin: "Human Modified",
         };
       });
+      if (extraPatch && draftStep?.id) applyLocalSteps(steps, draftStep.id);
       const updated = ensureStepLinks(
         await updatePayflowWorkflow(strategy.id, {
           steps: toStepPayload(steps),
@@ -311,21 +336,27 @@ export function PayFlowWorkflowDetailPage() {
           note: note || undefined,
         }),
       );
+      const warnings = updated.text_warnings || [];
+      setTextWarnings(warnings);
       setStrategy(updated);
       setSegmentDraft({ ...(updated.segment || {}) });
       setSegmentDirty(false);
       setPendingSteps(null);
       setNotice(
-        strategy.status === "Approved" || strategy.status === "Active"
-          ? "Prior approved configuration archived. Changes recorded as Human Modified — not activated."
-          : "Change recorded as Human Modified. Workflow is not activated by editing.",
+        warnings.length
+          ? `Saved. ${warnings.length} message note${warnings.length === 1 ? "" : "s"} — the text was still saved.`
+          : strategy.status === "Approved" || strategy.status === "Active"
+            ? "Prior approved configuration archived. Changes recorded as Human Modified — not activated."
+            : "Change recorded as Human Modified. Workflow is not activated by editing.",
       );
       if (draftStep?.id) {
         const refreshed = findStep(updated, draftStep.id);
         if (refreshed) setDraftStep({ ...refreshed, id: draftStep.id });
       }
+      return true;
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Failed to update workflow");
+      return false;
     } finally {
       setBusy(false);
       setNoteAction(null);
@@ -443,14 +474,18 @@ export function PayFlowWorkflowDetailPage() {
    * AI writes message text on the server. Block when local step edits are unsaved
    * so we do not discard pending graph changes by refreshing from the response.
    */
-  async function writeMessages(opts?: { step_id?: string; remarks?: string }) {
-    if (!strategy) return;
+  async function writeMessages(opts?: {
+    step_id?: string;
+    remarks?: string;
+    audience?: string;
+  }): Promise<boolean> {
+    if (!strategy) return false;
     if (pendingSteps) {
       setError(
-        "Apply unsaved step changes first, then write messages. Writing uses the saved workflow on the server.",
+        "Save this version first, then regenerate. Regenerating uses the saved workflow on the server.",
       );
       setNoteAction(null);
-      return;
+      return false;
     }
     setWritingMessages(true);
     setBusy(true);
@@ -461,10 +496,12 @@ export function PayFlowWorkflowDetailPage() {
         await writePayflowWorkflowMessages(strategy.id, {
           step_id: opts?.step_id,
           remarks: opts?.remarks,
+          ...(opts?.audience ? { audience: opts.audience } : {}),
         }),
       );
       setStrategy(updated);
       setPendingSteps(null);
+      setTextWarnings([]);
       setSegmentDraft({ ...(updated.segment || {}) });
       setSegmentDirty(false);
       if (selectedId) {
@@ -474,13 +511,17 @@ export function PayFlowWorkflowDetailPage() {
         }
       }
       setNotice(
-        opts?.step_id
-          ? "Message text rewritten by AI for this step."
-          : "Message text written by AI for all email / SMS steps.",
+        opts?.audience
+          ? "This text was rewritten. Other versions and steps were left as they are."
+          : opts?.step_id
+            ? "This step was rewritten, including the main text and every version."
+            : "Message text written by AI for all email / SMS steps.",
       );
+      return true;
     } catch (err) {
       setNotice("");
       setError(err instanceof ApiError ? err.detail : "Failed to write messages");
+      return false;
     } finally {
       setWritingMessages(false);
       setBusy(false);
@@ -967,6 +1008,11 @@ export function PayFlowWorkflowDetailPage() {
             <Panel
               title={draftStep.kind}
               description={draftStep.title}
+              bodyClassName={
+                draftStep.kind === "Communication"
+                  ? "xl:max-h-[calc(100vh-7.5rem)] xl:overflow-y-auto"
+                  : undefined
+              }
               action={
                 <Btn variant="ghost" onClick={() => setExpandOpen(true)}>
                   Expand
@@ -980,10 +1026,19 @@ export function PayFlowWorkflowDetailPage() {
                 canEdit={!!canMutateGraph && !busy}
                 canWriteMessages={allowWriteMessages}
                 writingMessages={writingMessages}
+                saving={busy}
+                unsaved={!!pendingSteps || segmentDirty}
+                savedConfig={
+                  draftStep.id ? findStep(strategy, draftStep.id)?.config || null : null
+                }
+                textWarnings={textWarnings}
                 onChange={patchDraft}
-                onRewriteMessage={(remarks) => {
-                  if (!draftStep.id) return;
-                  void writeMessages({ step_id: draftStep.id, remarks });
+                onSaveVersion={(patch) =>
+                  persistSteps(patch ? "Removed communication version" : "Saved communication version", patch)
+                }
+                onRewriteMessage={(remarks, audience) => {
+                  if (!draftStep.id) return Promise.resolve(false);
+                  return writeMessages({ step_id: draftStep.id, remarks, audience });
                 }}
                 onToggleDisabled={() => {
                   const flipped = {
@@ -1196,11 +1251,17 @@ export function PayFlowWorkflowDetailPage() {
         canEdit={!!canMutateGraph && !busy}
         canWriteMessages={allowWriteMessages}
         writingMessages={writingMessages}
+        unsaved={!!pendingSteps || segmentDirty}
+        savedConfig={draftStep?.id ? findStep(strategy, draftStep.id)?.config || null : null}
+        textWarnings={textWarnings}
         onClose={() => setExpandOpen(false)}
         onChange={patchDraft}
-        onRewriteMessage={(remarks) => {
-          if (!draftStep?.id) return;
-          void writeMessages({ step_id: draftStep.id, remarks });
+        onSaveVersion={(patch) =>
+          persistSteps(patch ? "Removed communication version" : "Saved communication version", patch)
+        }
+        onRewriteMessage={(remarks, audience) => {
+          if (!draftStep?.id) return Promise.resolve(false);
+          return writeMessages({ step_id: draftStep.id, remarks, audience });
         }}
         onToggleDisabled={() => {
           if (!draftStep) return;

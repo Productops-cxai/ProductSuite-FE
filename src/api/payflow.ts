@@ -948,15 +948,24 @@ export async function regeneratePayflowWorkflow(
   });
 }
 
-/** AI writes / rewrites email & SMS step text. Status & origin stay unchanged. */
+/**
+ * AI writes / rewrites email & SMS step text. Status & origin stay unchanged.
+ * `audience` rewrites one text: `"main"` or a version key. Omit it to rewrite the
+ * step's main text and every version.
+ */
 export async function writePayflowWorkflowMessages(
   strategyId: number,
-  payload?: { step_id?: string; remarks?: string },
+  payload?: { step_id?: string; remarks?: string; audience?: string },
 ) {
   return apiRequest<PayflowStrategy>(`/payflow/workflows/${strategyId}/content`, {
     method: "POST",
     body: payload || {},
   });
+}
+
+/** Read-only audience profile for the main text and each age version. No AI, nothing saved. */
+export function getPayflowWorkflowAudiences(strategyId: number) {
+  return apiRequest<unknown>(`/payflow/workflows/${strategyId}/audiences`);
 }
 
 /** One background AI-suggest run (started by an import or an activation). */
