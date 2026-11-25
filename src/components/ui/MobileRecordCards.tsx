@@ -15,6 +15,7 @@ export function MobileRecordCards({
 
 export function MobileRecordCard({
   to,
+  onClick,
   title,
   subtitle,
   meta,
@@ -23,6 +24,7 @@ export function MobileRecordCard({
   className,
 }: {
   to?: string;
+  onClick?: () => void;
   title: ReactNode;
   subtitle?: ReactNode;
   meta?: ReactNode;
@@ -44,9 +46,23 @@ export function MobileRecordCard({
 
   return (
     <div
+      role={onClick && !to ? "button" : undefined}
+      tabIndex={onClick && !to ? 0 : undefined}
+      onClick={onClick}
+      onKeyDown={
+        onClick && !to
+          ? (event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onClick();
+              }
+            }
+          : undefined
+      }
       className={cn(
         "rounded-lg border border-border bg-card px-3.5 py-3 shadow-subtle",
-        to && "transition-colors hover:border-border-strong hover:bg-surface/60",
+        (to || onClick) && "transition-colors hover:border-border-strong hover:bg-surface/60",
+        onClick && !to && "cursor-pointer text-left",
         className,
       )}
     >

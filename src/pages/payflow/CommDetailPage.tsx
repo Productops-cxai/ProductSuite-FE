@@ -1,7 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
-import { getPayflowComm, resendPayflowCommunication } from "../../api/payflow";
+import { getClientComplianceRules } from "../../api/compliance";
+import { getPayflowClient, getPayflowComm, resendPayflowCommunication } from "../../api/payflow";
+import {
+  complianceRulesIncludeUnsubscribe,
+  governanceSelectionIncludesUnsubscribe,
+} from "../../lib/emailUnsubscribe";
 import {
   Btn,
   PageHeader,
@@ -152,6 +157,9 @@ export function PayFlowCommDetailPage() {
   const [resendMsg, setResendMsg] = useState("");
   const [reloadTick, setReloadTick] = useState(0);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [unsubscribeFooter, setUnsubscribeFooter] = useState<"loading" | "yes" | "no" | "unknown">(
+    "loading",
+  );
 
   useEffect(() => {
     const id = Number(communicationId);
@@ -179,6 +187,37 @@ export function PayFlowCommDetailPage() {
       cancelled = true;
     };
   }, [communicationId, reloadTick]);
+
+  useEffect(() => {
+    if (!comm) return;
+    if (comm.channel.toLowerCase() !== "email") {
+      setUnsubscribeFooter("no");
+      return;
+    }
+    if (typeof comm.include_unsubscribe === "boolean") {
+      setUnsubscribeFooter(comm.include_unsubscribe ? "yes" : "no");
+      return;
+    }
+    let cancelled = false;
+    setUnsubscribeFooter("loading");
+    Promise.all([
+      getPayflowClient(comm.client_id).catch(() => null),
+      getClientComplianceRules(comm.client_id).catch(() => null),
+    ]).then(([client, compliance]) => {
+      if (cancelled) return;
+      if (!client && !compliance) {
+        setUnsubscribeFooter("unknown");
+        return;
+      }
+      const applied =
+        governanceSelectionIncludesUnsubscribe(client?.governance_rules) ||
+        complianceRulesIncludeUnsubscribe(compliance?.rules);
+      setUnsubscribeFooter(applied ? "yes" : "no");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [comm]);
 
   if (loading) {
     return <p className="text-sm text-muted-foreground">Loading communication…</p>;
@@ -510,7 +549,8 @@ export function PayFlowCommDetailPage() {
                       )}
                     </div>
                     <p className="mt-1.5 text-[11px] text-muted-foreground">
-                      Customer email shows this Pay Now button only — no raw URL in the message.
+                      Unique secure payment link · opens the {brandName}-branded customer payment
+                      experience
                     </p>
                   </div>
                 ) : null}
@@ -519,8 +559,36 @@ export function PayFlowCommDetailPage() {
                   {comm.email_from && comm.channel === "Email" ? ` · ${comm.email_from}` : ""}
                   {comm.sms_sender_id && comm.channel === "SMS" ? ` · ${comm.sms_sender_id}` : ""}
                 </p>
+                {unsubscribeFooter === "yes" ? (
+                  <div className="border-t border-border pt-3">
+                    <p
+                      className="text-center text-[13px] text-primary underline decoration-primary/40 underline-offset-2"
+                      title="Shown in the customer email. Choosing it opens the unsubscribe page."
+                    >
+                      Unsubscribe from these emails
+                    </p>
+                  </div>
+                ) : null}
               </div>
             </div>
+            {comm.channel.toLowerCase() === "email" && unsubscribeFooter === "yes" ? (
+              <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+                Unsubscribe link is included because this client applies Unsubscribe Option (Consent
+                &amp; Opt-Out), or a mandatory compliance rule requires it.
+              </p>
+            ) : null}
+            {comm.channel.toLowerCase() === "email" && unsubscribeFooter === "no" ? (
+              <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+                Unsubscribe link is omitted. It appears only when this client applies Unsubscribe
+                Option (Consent &amp; Opt-Out), or when a mandatory compliance rule requires it.
+              </p>
+            ) : null}
+            {comm.channel.toLowerCase() === "email" && unsubscribeFooter === "unknown" ? (
+              <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+                Unsubscribe link is omitted in this preview because the client's Unsubscribe Option
+                rule could not be confirmed.
+              </p>
+            ) : null}
           </Panel>
 
           <Panel title="Engagement metrics" bodyClassName="p-0">
