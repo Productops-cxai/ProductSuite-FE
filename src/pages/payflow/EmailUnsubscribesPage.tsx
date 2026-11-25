@@ -3,19 +3,20 @@ import { Link } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import { listPayflowClients, listPayflowEmailUnsubscribes } from "../../api/payflow";
 import {
+  Btn,
   DataTable,
   EmptyState,
   FilterBar,
   FilterSelect,
   PageHeader,
   Panel,
-  PrimaryCell,
   SearchInput,
   StatusPill,
   Td,
   Tr,
 } from "../../components/payflow/lovable/payflow-ui";
 import { MobileRecordCard, MobileRecordCards } from "../../components/ui/MobileRecordCards";
+import { Modal } from "../../components/ui/Modal";
 import { Pagination } from "../../components/ui/Pagination";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useOffsetPagination } from "../../hooks/useOffsetPagination";
@@ -70,13 +71,81 @@ function reasonText(row: PayflowEmailUnsubscribeListItem) {
   return "—";
 }
 
-export function PayFlowEmailUnsubscribesPage() {
+function DetailLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid grid-cols-1 gap-0.5 border-b border-slate-100 py-2 sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-3">
+      <dt className="text-[12px] text-slate-500">{label}</dt>
+      <dd className="text-[13px] font-medium break-words text-slate-900">{value}</dd>
+    </div>
+  );
+}
+
+function UnsubscribeDetailModal({
+  row,
+  onClose,
+}: {
+  row: PayflowEmailUnsubscribeListItem | null;
+  onClose: () => void;
+}) {
+  return (
+    <Modal
+      open={row != null}
+      title={row?.customer_name || "Unsubscribe"}
+      description="Recorded when the customer confirmed unsubscribe. Suppression is immediate."
+      onClose={onClose}
+      showClose
+      size="wide"
+      titleExtra={
+        row?.review_required ? <StatusPill tone="warning">Review required</StatusPill> : undefined
+      }
+      footer={
+        <div className="mt-2 flex flex-wrap justify-end gap-2.5">
+          <Btn onClick={onClose}>Close</Btn>
+          {row ? (
+            <Link
+              to={`/payflow/cases/${row.account_id}`}
+              className="inline-flex h-9 items-center rounded-md bg-primary px-3.5 text-[13px] font-semibold text-primary-foreground shadow-brand hover:bg-primary/92"
+            >
+              Open case
+            </Link>
+          ) : null}
+        </div>
+      }
+    >
+      {row ? (
+        <>
+          {row.review_required ? (
+            <p className="mb-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12.5px] leading-relaxed text-slate-800">
+              Flagged for operations review because of the reason selected. The unsubscribe is
+              already in effect and is not waiting on this review.
+            </p>
+          ) : null}
+          <dl>
+            <DetailLine label="Customer" value={row.customer_name || "—"} />
+            <DetailLine label="Client" value={row.client_name || "—"} />
+            <DetailLine label="Account" value={row.account_reference || "—"} />
+            <DetailLine label="Email" value={row.email_masked || "—"} />
+            <DetailLine label="Balance" value={formatUnsubscribeBalance(row.outstanding_balance)} />
+            <DetailLine label="Reasons" value={reasonText(row)} />
+            <DetailLine label="Comments" value={row.comment?.trim() || "—"} />
+            <DetailLine label="Source" value={unsubscribeSourceLabel(row.source)} />
+            <DetailLine label="Unsubscribed" value={formatUnsubscribeStamp(row.unsubscribed_at)} />
+            <DetailLine label="Review" value={row.review_required ? "Review required" : "Not flagged"} />
+          </dl>
+        </>
+      ) : null}
+    </Modal>
+  );
+}
+
+export function PayFlowEmailUnsubscribesPage({ embedded = false }: { embedded?: boolean }) {
   const isMobile = useIsMobile();
   const [rows, setRows] = useState<PayflowEmailUnsubscribeListItem[]>([]);
   const [clients, setClients] = useState<PayflowClient[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [selected, setSelected] = useState<PayflowEmailUnsubscribeListItem | null>(null);
 
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -145,14 +214,16 @@ export function PayFlowEmailUnsubscribesPage() {
 
   return (
     <>
-      <PageHeader
-        title="Email Unsubscribes"
-        description="Latest unsubscribe for accounts that are not receiving collection email. Review-required reasons are flagged for follow-up. Opt-out is immediate."
-      />
+      {embedded ? null : (
+        <PageHeader
+          title="Unsubscribers"
+          description="Customers who opted out of collection email. The unsubscribe link is sent only when the client applies Unsubscribe Option (Consent & Opt-Out), or when a mandatory compliance rule requires it. Review flags do not delay the opt-out."
+        />
+      )}
 
       <Panel
-        title="Unsubscribed accounts"
-        description="Name, account reference, email, or client. Open the customer or account to see the case."
+        title="Unsubscribers"
+        description="Search by name, account, email, or client. Select a row for the recorded reason, comments, and review flag."
       >
         <FilterBar className="mb-3">
           <SearchInput
@@ -202,7 +273,7 @@ export function PayFlowEmailUnsubscribesPage() {
                 {rows.map((row) => (
                   <MobileRecordCard
                     key={row.event_id}
-                    to={`/payflow/cases/${row.account_id}`}
+                    onClick={() => setSelected(row)}
                     title={row.customer_name || "—"}
                     subtitle={`${row.client_name || "—"} · ${row.account_reference || "—"}`}
                     badges={
@@ -242,29 +313,12 @@ export function PayFlowEmailUnsubscribesPage() {
                 ]}
               >
                 {rows.map((row) => (
-                  <Tr key={row.event_id}>
+                  <Tr key={row.event_id} onClick={() => setSelected(row)}>
                     <Td className="whitespace-nowrap">
                       {formatUnsubscribeStamp(row.unsubscribed_at)}
                     </Td>
-                    <Td>
-                      <Link to={`/payflow/cases/${row.account_id}`}>
-                        <PrimaryCell
-                          title={
-                            <span className="text-primary hover:underline">
-                              {row.customer_name || "—"}
-                            </span>
-                          }
-                        />
-                      </Link>
-                    </Td>
-                    <Td className="tabular">
-                      <Link
-                        to={`/payflow/cases/${row.account_id}`}
-                        className="text-primary hover:underline"
-                      >
-                        {row.account_reference || "—"}
-                      </Link>
-                    </Td>
+                    <Td className="font-medium text-primary">{row.customer_name || "—"}</Td>
+                    <Td className="tabular">{row.account_reference || "—"}</Td>
                     <Td>{row.client_name || "—"}</Td>
                     <Td className="text-muted-foreground">{row.email_masked || "—"}</Td>
                     <Td className="tabular">{formatUnsubscribeBalance(row.outstanding_balance)}</Td>
@@ -296,6 +350,7 @@ export function PayFlowEmailUnsubscribesPage() {
           </>
         ) : null}
       </Panel>
+      <UnsubscribeDetailModal row={selected} onClose={() => setSelected(null)} />
     </>
   );
 }

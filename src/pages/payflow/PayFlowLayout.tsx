@@ -21,52 +21,24 @@ import {
 import type { MenuSection, PayflowNotification } from "../../types";
 import { normalizeMenuRoute } from "../../lib/utils";
 
-function withEmailUnsubscribesNav(sections: MenuSection[], canView: boolean): MenuSection[] {
-  if (!canView) return sections;
+/** Unsubscribers lives as a tab on Communications, not as its own sidebar row. */
+function withoutUnsubscribersNav(sections: MenuSection[]): MenuSection[] {
   const route = "/payflow/email-unsubscribes";
-  const already = sections.some((section) =>
-    section.items.some(
-      (entry) =>
-        entry.key === "email_unsubscribes" || normalizeMenuRoute(entry.route) === route,
-    ),
-  );
-  if (already) return sections;
-
-  const item = {
-    key: "email_unsubscribes",
-    label: "Email Unsubscribes",
-    route,
-    icon: "mail",
-    sort_order: 50,
-    is_coming_soon: false,
-    badge: null,
-  };
-  const sectionIndex = sections.findIndex((section) =>
-    section.items.some((entry) => {
-      const path = normalizeMenuRoute(entry.route);
-      return path === "/payflow/comms" || path.startsWith("/payflow/comms/");
-    }),
-  );
-  if (sectionIndex < 0) {
-    return [
-      ...sections,
-      { key: "communications", label: "COMMUNICATIONS", sort_order: 90, items: [item] },
-    ];
-  }
-  return sections.map((section, index) => {
-    if (index !== sectionIndex) return section;
-    const commsIndex = section.items.findIndex((entry) => {
-      const path = normalizeMenuRoute(entry.route);
-      return path === "/payflow/comms" || path.startsWith("/payflow/comms/");
-    });
-    const items = [...section.items];
-    const comms = items[commsIndex];
-    items.splice(commsIndex + 1, 0, {
-      ...item,
-      sort_order: (comms?.sort_order ?? items.length) + 1,
-    });
-    return { ...section, items };
-  });
+  return sections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((entry) => {
+        const path = normalizeMenuRoute(entry.route);
+        const label = (entry.label || "").trim().toLowerCase();
+        return (
+          entry.key !== "email_unsubscribes" &&
+          path !== route &&
+          label !== "unsubscribers" &&
+          label !== "email unsubscribes"
+        );
+      }),
+    }))
+    .filter((section) => section.items.length > 0);
 }
 
 function withComplianceRulesNav(sections: MenuSection[], canView: boolean): MenuSection[] {
@@ -593,11 +565,9 @@ function SidebarPanel({
 
 function PayFlowShell() {
   const { user, logout } = useAuth();
-  const { loading, error, menus, roleLabel, isOperationsAdmin, access, hasPermission } =
-    usePayFlowAccess();
+  const { loading, error, menus, roleLabel, isOperationsAdmin, access } = usePayFlowAccess();
   const canViewCompliance =
     Boolean(access?.is_operations_admin) || (access?.all_permissions || []).includes("view_rules");
-  const canViewUnsubscribes = hasPermission("view_communications");
   const navigate = useNavigate();
   const location = useLocation();
   const routePerms = permissionsForPath(location.pathname);
@@ -687,10 +657,7 @@ function PayFlowShell() {
   }
 
   // Worker logs live under Platform Admin only — hide any leftover PayFlow nav row.
-  const navSections = withEmailUnsubscribesNav(
-    withComplianceRulesNav(menus, canViewCompliance),
-    canViewUnsubscribes,
-  )
+  const navSections = withoutUnsubscribersNav(withComplianceRulesNav(menus, canViewCompliance))
     .map((section) => ({
       ...section,
       items: section.items.filter((item) => item.key !== "worker_logs"),

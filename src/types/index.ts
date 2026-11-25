@@ -1479,6 +1479,12 @@ export interface PayflowCommunication {
   rule_code?: string | null;
   next_eligible_at?: string | null;
   can_view_rule?: boolean;
+  /**
+   * When the API sends this, it is whether the collection email included the
+   * unsubscribe footer. When absent, the preview derives it from the client's
+   * Unsubscribe Option rule (Consent & Opt-Out).
+   */
+  include_unsubscribe?: boolean | null;
   created_at?: string | null;
   updated_at?: string | null;
 }

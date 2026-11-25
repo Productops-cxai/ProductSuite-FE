@@ -915,7 +915,9 @@ export function PayFlowCaseDetailPage() {
             </div>
           ) : canToggleEmailConsent ? (
             <p className="text-[11px] font-normal text-muted-foreground">
-              Reasons are optional. Customers can also use the unsubscribe link in collection emails.
+              Reasons are optional. The unsubscribe link is included on collection emails only when
+              this client applies Unsubscribe Option (Consent &amp; Opt-Out), or when a mandatory
+              compliance rule requires it. Opt-out is immediate.
             </p>
           ) : null}
         </div>

@@ -22,10 +22,12 @@ import {
   PrimaryCell,
   SearchInput,
   StatusPill,
+  TabBar,
   Td,
   Tr,
   type Tone,
 } from "../../components/payflow/lovable/payflow-ui";
+import { PayFlowEmailUnsubscribesPage } from "./EmailUnsubscribesPage";
 import { MobileRecordCard, MobileRecordCards } from "../../components/ui/MobileRecordCards";
 import { Pagination } from "../../components/ui/Pagination";
 import { useIsMobile } from "../../hooks/useIsMobile";
@@ -77,8 +79,11 @@ function engagementLabel(c: PayflowCommunication) {
   return c.engagement;
 }
 
+const COMM_TABS = ["Communications", "Unsubscribers"] as const;
+
 export function PayFlowCommsPage() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const showUnsubscribers = searchParams.get("tab") === "unsubscribers";
   const isMobile = useIsMobile();
   const [rows, setRows] = useState<PayflowCommunication[]>([]);
   const [clients, setClients] = useState<PayflowClient[]>([]);
@@ -215,6 +220,10 @@ export function PayFlowCommsPage() {
   );
 
   useEffect(() => {
+    if (showUnsubscribers) {
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     if (dateBounds.error) {
       setLoading(false);
@@ -253,7 +262,7 @@ export function PayFlowCommsPage() {
     return () => {
       cancelled = true;
     };
-  }, [listFilters, dateBounds.error, offset, pageSize]);
+  }, [listFilters, dateBounds.error, offset, pageSize, showUnsubscribers]);
 
   const rangeDirty = pendingFrom !== appliedFrom || pendingTo !== appliedTo;
   const rangeActive = Boolean(appliedFrom || appliedTo || date !== "All Dates");
@@ -291,9 +300,28 @@ export function PayFlowCommsPage() {
     <>
       <PageHeader
         title="Communications"
-        description="Monitor customer collection communications across Clients and channels."
+        description={
+          showUnsubscribers
+            ? "Customers who opted out of collection email. The link is included only when the client applies Unsubscribe Option (Consent & Opt-Out). Review flags do not delay the opt-out."
+            : "Monitor customer collection communications across Clients and channels."
+        }
       />
 
+      <TabBar
+        tabs={COMM_TABS}
+        active={showUnsubscribers ? "Unsubscribers" : "Communications"}
+        onChange={(next) => {
+          const params = new URLSearchParams(searchParams);
+          if (next === "Unsubscribers") params.set("tab", "unsubscribers");
+          else params.delete("tab");
+          setSearchParams(params, { replace: true });
+        }}
+      />
+
+      {showUnsubscribers ? <PayFlowEmailUnsubscribesPage embedded /> : null}
+
+      {showUnsubscribers ? null : (
+      <>
       <KpiGrid className="mb-4 grid-cols-2 lg:grid-cols-5 [&>*:last-child]:col-span-2 lg:[&>*:last-child]:col-span-1">
         <KpiCard label="Sent Today" value={String(summary.sent_today)} />
         <KpiCard label="Delivered" value={String(summary.delivered)} />
@@ -550,6 +578,8 @@ export function PayFlowCommsPage() {
         filters={listFilters}
         searchLabel={debouncedQuery.trim() || undefined}
       />
+      </>
+      )}
     </>
   );
 }
