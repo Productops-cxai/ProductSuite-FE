@@ -8,7 +8,7 @@ export type PayflowEmailPreferencePublic = {
   subscribed: boolean;
   email_consent?: boolean | null;
   unsubscribe_option_enabled?: boolean;
-  /** When true, show the optional reason checklist and comment. Empty reasons are valid. */
+  /** Legacy flag. The preference page always collects one reason and sends it on unsubscribe. */
   collect_reasons?: boolean;
   reason_options?: EmailUnsubscribeReasonOption[];
   last_unsubscribe?: EmailUnsubscribeEvent | null;

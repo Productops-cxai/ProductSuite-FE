@@ -85,27 +85,42 @@ export function EmailPreferencesPage() {
 
   async function handleUnsubscribe() {
     if (!token || busy) return;
+    const options = pref?.reason_options?.length
+      ? pref.reason_options
+      : EMAIL_UNSUBSCRIBE_REASON_OPTIONS;
+    const option = options.find((item) => item.code === selected);
+    if (!option) {
+      setMessage("");
+      setError("Select one reason to unsubscribe.");
+      return;
+    }
     setBusy(true);
     setMessage("");
     setError("");
-    const collectReasons = Boolean(pref?.collect_reasons || pref?.unsubscribe_option_enabled);
-    const allowed = new Set(
-      (pref?.reason_options?.length ? pref.reason_options : EMAIL_UNSUBSCRIBE_REASON_OPTIONS).map(
-        (option) => option.code,
-      ),
-    );
-    const reasons = collectReasons && selected && allowed.has(selected) ? [selected] : [];
-    const trimmed = comment.trim();
+    const note = option.code === "other" ? comment.trim() : "";
     try {
       const res = await unsubscribeEmailPreference(token, {
         source: "preference_page",
-        ...(reasons.length ? { reasons } : {}),
-        ...(trimmed && collectReasons ? { comment: trimmed } : {}),
+        reasons: [option.code],
+        ...(note ? { comment: note } : {}),
       });
-      setPref(res);
+      const echoed = res.last_unsubscribe;
+      setPref({
+        ...res,
+        subscribed: false,
+        last_unsubscribe: {
+          id: echoed?.id ?? 0,
+          reasons: echoed?.reasons?.length ? echoed.reasons : [option.code],
+          reason_labels: echoed?.reason_labels?.length ? echoed.reason_labels : [option.label],
+          comment: echoed?.comment ?? (note || null),
+          source: echoed?.source || "preference_page",
+          review_required: Boolean(echoed?.review_required),
+          unsubscribed_at: echoed?.unsubscribed_at || new Date().toISOString(),
+        },
+      });
       setSelected("");
       setComment("");
-      setMessage("You have been unsubscribed from collection emails.");
+      setMessage("");
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Unsubscribe failed");
     } finally {
@@ -150,14 +165,14 @@ export function EmailPreferencesPage() {
 
   const brand = pref?.brand_name || "this client";
   const subscribed = Boolean(pref?.subscribed);
-  const ruleApplies = Boolean(pref?.collect_reasons || pref?.unsubscribe_option_enabled);
-  const reasonOptions = ruleApplies
-    ? pref?.reason_options?.length
-      ? pref.reason_options
-      : EMAIL_UNSUBSCRIBE_REASON_OPTIONS
-    : [];
+  const reasonOptions = pref?.reason_options?.length
+    ? pref.reason_options
+    : EMAIL_UNSUBSCRIBE_REASON_OPTIONS;
   const showChecklist = subscribed && reasonOptions.length > 0;
   const last = !subscribed ? pref?.last_unsubscribe : null;
+  const reasonText = last?.reason_labels?.length
+    ? last.reason_labels.join("; ")
+    : "No reason was provided.";
 
   return (
     <PreferenceCard brand={pref?.brand_name}>
@@ -181,7 +196,8 @@ export function EmailPreferencesPage() {
             Unsubscribed {formatUnsubscribeStamp(last.unsubscribed_at)}
           </p>
           <p className="mt-1 leading-relaxed">
-            {last.reason_labels?.length ? last.reason_labels.join("; ") : "No reason was provided."}
+            <span className="font-medium text-slate-900">Reason: </span>
+            {reasonText}
           </p>
           {last.comment?.trim() ? (
             <p className="mt-1 leading-relaxed text-slate-600">{last.comment.trim()}</p>
@@ -191,10 +207,7 @@ export function EmailPreferencesPage() {
 
       {showChecklist ? (
         <fieldset disabled={busy} className="mt-5">
-          <legend className="text-[14px] font-semibold text-slate-900">
-            Why would you like to unsubscribe?{" "}
-            <span className="font-normal text-slate-500">(optional)</span>
-          </legend>
+          <legend className="text-[14px] font-semibold text-slate-900">Select the reason</legend>
           <div className="mt-2.5 space-y-2">
             {reasonOptions.map((option) => (
               <label
@@ -206,30 +219,30 @@ export function EmailPreferencesPage() {
                   name="unsubscribe-reason"
                   className="size-4 shrink-0 accent-blue-600"
                   checked={selected === option.code}
-                  onClick={(event) => {
-                    if (selected === option.code) {
-                      event.preventDefault();
-                      setSelected("");
-                    }
+                  onChange={() => {
+                    setSelected(option.code);
+                    if (option.code !== "other") setComment("");
+                    setError("");
                   }}
-                  onChange={() => setSelected(option.code)}
                 />
                 <span className="text-[14px] leading-snug text-slate-800">{option.label}</span>
               </label>
             ))}
           </div>
-          <label className="mt-4 block">
-            <span className="mb-1.5 block text-[14px] font-semibold text-slate-900">
-              Comments <span className="font-normal text-slate-500">(optional)</span>
-            </span>
-            <textarea
-              value={comment}
-              onChange={(event) => setComment(event.target.value)}
-              rows={4}
-              disabled={busy}
-              className="w-full resize-y rounded-lg border border-slate-200 px-3 py-2.5 text-[14px] text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
-            />
-          </label>
+          {selected === "other" ? (
+            <label className="mt-4 block">
+              <span className="mb-1.5 block text-[14px] font-semibold text-slate-900">
+                Comments <span className="font-normal text-slate-500">(optional)</span>
+              </span>
+              <textarea
+                value={comment}
+                onChange={(event) => setComment(event.target.value)}
+                rows={3}
+                disabled={busy}
+                className="w-full resize-y rounded-lg border border-slate-200 px-3 py-2.5 text-[14px] text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:opacity-60"
+              />
+            </label>
+          ) : null}
         </fieldset>
       ) : null}
 
