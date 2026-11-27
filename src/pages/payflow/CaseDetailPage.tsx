@@ -20,6 +20,7 @@ import {
   MarkUnsubscribedModal,
   type MarkUnsubscribedInput,
 } from "../../components/payflow/MarkUnsubscribedModal";
+import { AdaptiveCasePanel } from "../../components/payflow/AdaptiveCasePanel";
 import { WorkflowFlowPanel } from "../../components/payflow/WorkflowFlowPanel";
 import {
   Btn,
@@ -1184,9 +1185,20 @@ export function PayFlowCaseDetailPage() {
               </>
             ) : null}
           </Panel>
+
+          <AdaptiveCasePanel
+            accountId={account.id}
+            run={execution}
+            canEdit={hasPermission("create_edit_workflows")}
+            customerLanguage={account.language}
+            emailConsent={account.email_consent}
+            eligibility={eligibility}
+            onExecution={setExecution}
+          />
         </div>
 
         <div className="min-w-0 space-y-5">
+          <div id="human-review" className="scroll-mt-24">
           <Panel
             title="Human Review"
             description="Governance exceptions raised on this collection case"
@@ -1252,6 +1264,7 @@ export function PayFlowCaseDetailPage() {
               </ul>
             ) : null}
           </Panel>
+          </div>
 
           <Panel
             title="Activity Timeline"

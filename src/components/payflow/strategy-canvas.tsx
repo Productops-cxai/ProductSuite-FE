@@ -7,6 +7,7 @@ import {
   displayChannel,
   ensureStepLinks,
   entryNodeId,
+  isFollowUpStep,
   stepConfig,
   stepTone,
   stepsById,
@@ -276,6 +277,20 @@ function NodeBranch({
   if (!nodeId || depth > 24) return null;
   const node = nodes[nodeId];
   if (!node) return null;
+  if (isFollowUpStep(node)) {
+    return (
+      <NodeBranch
+        nodes={nodes}
+        nodeId={node.next}
+        selectedId={selectedId}
+        highlightId={highlightId}
+        onSelect={onSelect}
+        onExpand={onExpand}
+        templateSnippetFor={templateSnippetFor}
+        depth={depth + 1}
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col items-center">
@@ -468,6 +483,11 @@ export function StrategyMiniMap({ strategy }: { strategy: PayflowStrategy }) {
   while (current && guard < 6) {
     const node: PayflowStrategyStep | undefined = nodes[current];
     if (!node) break;
+    if (isFollowUpStep(node)) {
+      current = node.next ?? null;
+      guard += 1;
+      continue;
+    }
     if (node.kind === "Condition") {
       rows.push({ kinds: ["Condition"] });
       const yes = node.yes ? nodes[node.yes] : undefined;

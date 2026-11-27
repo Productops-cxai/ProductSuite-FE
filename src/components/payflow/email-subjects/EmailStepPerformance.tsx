@@ -8,6 +8,7 @@ import {
 } from "../../../api/emailSubjects";
 import { usePayFlowAccess } from "../../../context/PayFlowAccessContext";
 import { formatRate, formatWhen } from "../../../lib/emailSubjectFormat";
+import { FOLLOW_UP_REMINDER_STAGE } from "../../../lib/adaptive-workflow";
 import { REMINDER_STAGES } from "../../../types/emailSubjects";
 import type {
   EmailMessageHistoryItem,
@@ -141,7 +142,10 @@ export function EmailStepPerformance({
     }
   }
 
-  const stageKnown = !reminderStage || (REMINDER_STAGES as readonly string[]).includes(reminderStage);
+  const stageKnown =
+    !reminderStage ||
+    reminderStage === FOLLOW_UP_REMINDER_STAGE ||
+    (REMINDER_STAGES as readonly string[]).includes(reminderStage);
 
   return (
     <div className="space-y-3 rounded-lg border border-border/70 bg-surface p-3">

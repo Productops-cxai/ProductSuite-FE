@@ -121,8 +121,35 @@ function NotificationBell() {
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
 
-  // Show every loaded notification; panel scrolls so the header stays intact.
-  const shown = items;
+  // Unread AI decisions stay until the backend clears them. They are not Human Review.
+  const awaitingDecision = items.filter(
+    (n) => !n.read && n.notification_type === "adaptive_decision_awaiting",
+  );
+  const shown = items.filter(
+    (n) => n.read || n.notification_type !== "adaptive_decision_awaiting",
+  );
+
+  function openNotification(n: PayflowNotification, adaptive: boolean) {
+    void (async () => {
+      if (!adaptive && !n.read) {
+        try {
+          await markPayflowNotificationRead(n.id);
+          setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, read: true } : x)));
+          setUnread((c) => Math.max(0, c - 1));
+        } catch {
+          /* ignore */
+        }
+      }
+      setOpen(false);
+      if (!n.link) return;
+      const target = adaptive
+        ? n.link.includes("#adaptive-workflow")
+          ? n.link
+          : `${n.link}#adaptive-workflow`
+        : n.link;
+      navigate(target);
+    })();
+  }
 
   return (
     <div className="relative" ref={ref}>
@@ -152,11 +179,37 @@ function NotificationBell() {
         >
           <div className="shrink-0 border-b border-slate-100 px-3 py-2.5 dark:border-slate-800">
             <p className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
-              Needs your attention
+              {awaitingDecision.length > 0 ? "Awaiting your review" : "Needs your attention"}
             </p>
           </div>
           <div className="max-h-[min(420px,calc(100vh-9rem))] overflow-y-auto overscroll-contain py-1">
-            {shown.length === 0 ? (
+            {awaitingDecision.map((n) => (
+              <button
+                key={n.id}
+                type="button"
+                role="menuitem"
+                className="flex w-full items-start gap-2 px-3 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800"
+                onClick={() => openNotification(n, true)}
+              >
+                <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-red-500" aria-hidden />
+                <span className="flex min-w-0 flex-col items-start gap-0.5">
+                  <span className="text-[12px] font-medium text-slate-900 dark:text-slate-100">
+                    AI decision awaiting approval
+                  </span>
+                  <span className="line-clamp-2 text-[11px] text-slate-500">
+                    {n.body || n.title}
+                  </span>
+                </span>
+              </button>
+            ))}
+            {awaitingDecision.length > 0 && shown.length > 0 ? (
+              <div className="border-b border-slate-100 px-3 py-2 dark:border-slate-800">
+                <p className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+                  Needs your attention
+                </p>
+              </div>
+            ) : null}
+            {shown.length === 0 && awaitingDecision.length === 0 ? (
               <p className="px-3 py-4 text-[12px] text-slate-500">
                 Nothing needs a decision. Automation is running within governance.
               </p>
@@ -169,23 +222,7 @@ function NotificationBell() {
                   className={`flex w-full items-start gap-2 px-3 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800 ${
                     n.read ? "opacity-75" : ""
                   }`}
-                  onClick={() => {
-                    void (async () => {
-                      if (!n.read) {
-                        try {
-                          await markPayflowNotificationRead(n.id);
-                          setItems((prev) =>
-                            prev.map((x) => (x.id === n.id ? { ...x, read: true } : x)),
-                          );
-                          setUnread((c) => Math.max(0, c - 1));
-                        } catch {
-                          /* ignore */
-                        }
-                      }
-                      setOpen(false);
-                      if (n.link) navigate(n.link);
-                    })();
-                  }}
+                  onClick={() => openNotification(n, false)}
                 >
                   <span
                     className={`mt-1.5 size-1.5 shrink-0 rounded-full ${
@@ -207,8 +244,10 @@ function NotificationBell() {
           </div>
           <div className="flex shrink-0 items-center justify-between gap-2 border-t border-slate-100 px-3 py-2 dark:border-slate-800">
             <span className="text-[11px] text-slate-400">
-              {shown.length > 0
-                ? `${shown.length} notification${shown.length === 1 ? "" : "s"}`
+              {shown.length + awaitingDecision.length > 0
+                ? `${shown.length + awaitingDecision.length} notification${
+                    shown.length + awaitingDecision.length === 1 ? "" : "s"
+                  }`
                 : "Notifications"}
             </span>
             {unread > 0 && (

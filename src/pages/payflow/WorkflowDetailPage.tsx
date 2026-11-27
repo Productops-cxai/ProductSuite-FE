@@ -15,6 +15,7 @@ import {
   updatePayflowWorkflow,
   writePayflowWorkflowMessages,
 } from "../../api/payflow";
+import { AdaptiveFollowups } from "../../components/payflow/AdaptiveFollowups";
 import { StrategyCanvas } from "../../components/payflow/strategy-canvas";
 import { EmailOptimizationPanel } from "../../components/payflow/email-subjects/EmailOptimizationPanel";
 import {
@@ -1215,6 +1216,40 @@ export function PayFlowWorkflowDetailPage() {
           )}
         </div>
       </div>
+
+      <AdaptiveFollowups
+        strategy={displayStrategy}
+        savedStrategy={strategy}
+        canEdit={!!canMutateGraph}
+        canWrite={!!allowWriteMessages}
+        unsaved={!!pendingSteps || segmentDirty}
+        segment={segmentDraft}
+        segmentDirty={segmentDirty}
+        onBusy={setBusy}
+        onUpdated={(row) => {
+          const linked = ensureStepLinks(row);
+          setStrategy(linked);
+          setPendingSteps(null);
+          setTextWarnings(linked.text_warnings || []);
+          setSegmentDraft({ ...(linked.segment || {}) });
+          setSegmentDirty(false);
+          const focus = draftStep?.id;
+          if (focus) {
+            const refreshed = findStep(linked, focus);
+            if (refreshed) {
+              setDraftStep({ ...refreshed, id: focus, config: { ...(refreshed.config || {}) } });
+            }
+          }
+        }}
+        onNotice={(message) => {
+          setNotice(message);
+          if (message) setError("");
+        }}
+        onError={(message) => {
+          setError(message);
+          if (message) setNotice("");
+        }}
+      />
 
       <EmailOptimizationPanel
         strategy={strategy}
