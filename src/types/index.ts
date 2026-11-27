@@ -1,3 +1,5 @@
+import type { PayflowAdaptiveSnapshot } from "./adaptive";
+
 export type LoginNextStep =
   | "platform_admin"
   | "product_selection"
@@ -256,6 +258,8 @@ export interface PayflowWorkflowRun {
   deactivate_policy?: string | null;
   step_runs?: PayflowWorkflowStepRun[];
   activity?: PayflowWorkflowActivityItem[];
+  /** Adaptive engagement, decisions and follow-up usage for this run. Null when the case has no adaptive payload. */
+  adaptive?: PayflowAdaptiveSnapshot | null;
 }
 
 export interface PayflowAccountWorkflowExecutionResponse {
@@ -1203,6 +1207,13 @@ export interface PayflowStrategyStepConfig {
    * Only versions the step actually has are present. Main text is the sibling fields above.
    */
   versions?: Record<string, PayflowMessageVersion> | null;
+  /**
+   * Set on adaptive follow-up steps. A step with this set is a follow-up and is not drawn on the flowchart.
+   * Allowed values come from GET /payflow/adaptive/follow-up-types.
+   */
+  follow_up_for?: string | null;
+  /** 1 = First Time. Missing means 1. 2 = Repeat. */
+  follow_up_level?: number | null;
 }
 
 /** AI explanation stored on a message. `why` is the line reviewers read first. */
@@ -1380,6 +1391,11 @@ export interface PayflowStrategy {
   created_by?: string | null;
   human_modified?: boolean;
   awaiting_review?: boolean;
+  /**
+   * Adaptive workflow switch. On by default. Off runs the fixed flowchart with no follow-ups or decisions.
+   * Saved on its own with POST /payflow/workflows/{id}/update and does not send the workflow back to review.
+   */
+  adaptive?: boolean | null;
   /** Present on the workflow update response when edited message text needs attention. */
   text_warnings?: PayflowTextWarning[] | null;
   last_updated_label?: string | null;

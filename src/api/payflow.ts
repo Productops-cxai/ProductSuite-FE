@@ -1,3 +1,10 @@
+import type {
+  PayflowAdaptiveDecision,
+  PayflowAdaptiveFollowUpTypesResponse,
+  PayflowAdaptiveModifyPayload,
+  PayflowAdaptiveReassessResponse,
+  PayflowAdaptiveSnapshot,
+} from "../types/adaptive";
 import { ApiError, apiRequest, apiRequestBlob, apiRequestMultipart } from "./client";
 import { cachedAsync, invalidateCache } from "../lib/dedupeAsync";
 import { deletionSource } from "../lib/deletionSource";
@@ -872,6 +879,8 @@ export async function updatePayflowWorkflow(
     steps?: PayflowWorkflowStepPayload[];
     entry_node_id?: string;
     note?: string;
+    /** Adaptive switch only. Omit steps so the save does not send the workflow back to review. */
+    adaptive?: boolean;
   },
 ) {
   return apiRequest<PayflowStrategy>(`/payflow/workflows/${strategyId}/update`, {
@@ -955,7 +964,13 @@ export async function regeneratePayflowWorkflow(
  */
 export async function writePayflowWorkflowMessages(
   strategyId: number,
-  payload?: { step_id?: string; remarks?: string; audience?: string },
+  payload?: {
+    step_id?: string;
+    remarks?: string;
+    audience?: string;
+    /** Adds missing follow-ups and writes only the ones without text. Do not send with step_id or audience. */
+    follow_ups_only?: boolean;
+  },
 ) {
   return apiRequest<PayflowStrategy>(`/payflow/workflows/${strategyId}/content`, {
     method: "POST",
@@ -1072,6 +1087,44 @@ export function getAccountWorkflowExecution(accountId: number) {
 
 export function getPayflowWorkflowRun(runId: number) {
   return apiRequest<PayflowWorkflowRun>(`/payflow/workflow-runs/${runId}`);
+}
+
+/** Follow-up type catalog: names, triggers, waiting period, First Time / Repeat. Read-only, no AI. */
+export function listAdaptiveFollowUpTypes() {
+  return apiRequest<PayflowAdaptiveFollowUpTypesResponse>("/payflow/adaptive/follow-up-types");
+}
+
+/** Adaptive card for one workflow run. The case page normally reads this from execution.adaptive. */
+export function getWorkflowRunAdaptive(runId: number) {
+  return apiRequest<PayflowAdaptiveSnapshot>(`/payflow/workflow-runs/${runId}/adaptive`);
+}
+
+export function approveAdaptiveDecision(decisionId: number, payload?: { note?: string }) {
+  return apiRequest<PayflowAdaptiveDecision>(`/payflow/adaptive-decisions/${decisionId}/approve`, {
+    method: "POST",
+    body: payload?.note ? { note: payload.note } : {},
+  });
+}
+
+export function rejectAdaptiveDecision(decisionId: number, payload?: { note?: string }) {
+  return apiRequest<PayflowAdaptiveDecision>(`/payflow/adaptive-decisions/${decisionId}/reject`, {
+    method: "POST",
+    body: payload?.note ? { note: payload.note } : {},
+  });
+}
+
+export function modifyAdaptiveDecision(decisionId: number, payload: PayflowAdaptiveModifyPayload) {
+  return apiRequest<PayflowAdaptiveDecision>(`/payflow/adaptive-decisions/${decisionId}/modify`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
+/** Queues a fresh rules + AI look. The plan keeps running. Not the case "Suggest for case" call. */
+export function reassessWorkflowRun(runId: number) {
+  return apiRequest<PayflowAdaptiveReassessResponse>(`/payflow/workflow-runs/${runId}/reassess`, {
+    method: "POST",
+  });
 }
 
 export interface PayflowCommListParams {
