@@ -316,6 +316,14 @@ export function conditionLabel(step: PayflowStrategyStep): string | undefined {
   return `${cfg.attribute} ${(cfg.operator || "Equals").toLowerCase()} ${cfg.value || ""}`.trim();
 }
 
+/** A communication step kept for adaptive follow-ups. It is not part of the flowchart. */
+export function isFollowUpStep(step: {
+  config?: { follow_up_for?: string | null } | null;
+}): boolean {
+  const key = step.config?.follow_up_for;
+  return typeof key === "string" && key.trim().length > 0;
+}
+
 /** Index steps by id for graph traversal (canvas / minimap). */
 export function stepsById(strategy: PayflowStrategy): Record<string, PayflowStrategyStep> {
   const map: Record<string, PayflowStrategyStep> = {};
@@ -327,36 +335,51 @@ export function stepsById(strategy: PayflowStrategy): Record<string, PayflowStra
 }
 
 export function entryNodeId(strategy: PayflowStrategy): string | null {
-  if (strategy.entry_node_id) return strategy.entry_node_id;
-  const first = strategy.steps?.[0];
-  return first?.id || (first ? "s1" : null);
+  const steps = strategy.steps || [];
+  const idOf = (step: PayflowStrategyStep, index: number) => step.id || `s${index + 1}`;
+  if (strategy.entry_node_id) {
+    const entry = steps.find((step, index) => idOf(step, index) === strategy.entry_node_id);
+    if (entry && !isFollowUpStep(entry)) return strategy.entry_node_id;
+  }
+  const index = steps.findIndex((step) => !isFollowUpStep(step));
+  if (index < 0) return null;
+  return idOf(steps[index]!, index);
 }
 
-/** If BE returns a flat list without next links, synthesize a linear chain for preview. */
+/**
+ * If BE returns a flat list without next links, synthesize a linear chain for preview.
+ * Follow-up steps stay unlinked: they are listed in Adaptive Follow-ups, not on the canvas.
+ */
 export function ensureStepLinks(strategy: PayflowStrategy): PayflowStrategy {
   const steps = (strategy.steps || []).map((s, i) => ({
     ...s,
     id: s.id || `s${i + 1}`,
   }));
-  const hasLinks = steps.some((s) => s.next || s.yes || s.no);
-  if (hasLinks || steps.length === 0) {
-    return { ...strategy, steps, entry_node_id: strategy.entry_node_id || steps[0]?.id || null };
+  const flow = steps.filter((s) => !isFollowUpStep(s));
+  const hasLinks = flow.some((s) => s.next || s.yes || s.no);
+  const entry = entryNodeId({ ...strategy, steps });
+  if (hasLinks || flow.length === 0) {
+    return { ...strategy, steps, entry_node_id: strategy.entry_node_id || entry };
   }
-  const linked = steps.map((s, i) => {
+  const nextOf = new Map<string, string | null>();
+  flow.forEach((step, index) => nextOf.set(step.id!, flow[index + 1]?.id ?? null));
+  const linked = steps.map((s) => {
+    if (isFollowUpStep(s)) return s;
+    const nextId = nextOf.get(s.id!) ?? null;
     if (s.kind === "Condition") {
       return {
         ...s,
         next: null,
         yes: s.yes || null,
-        no: s.no || steps[i + 1]?.id || null,
+        no: s.no || nextId,
       };
     }
-    return { ...s, next: s.next ?? steps[i + 1]?.id ?? null };
+    return { ...s, next: s.next ?? nextId };
   });
   return {
     ...strategy,
     steps: linked,
-    entry_node_id: strategy.entry_node_id || linked[0]?.id || null,
+    entry_node_id: strategy.entry_node_id || entry,
   };
 }
 

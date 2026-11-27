@@ -35,6 +35,7 @@ import type {
   PayflowTextWarning,
   PayflowWorkflowAudience,
 } from "../../types";
+import { FOLLOW_UP_REMINDER_STAGE } from "../../lib/adaptive-workflow";
 import { REMINDER_STAGES } from "../../types/emailSubjects";
 import { EmailStepPerformance } from "./email-subjects/EmailStepPerformance";
 import { Btn, Field, SelectInput, StatusPill, TextArea, TextInput } from "./lovable/payflow-ui";
@@ -49,6 +50,7 @@ export function CommunicationVersionEditor({
   saving = false,
   unsaved = false,
   textWarnings = [],
+  followUp = false,
   onChange,
   onSaveVersion,
   onRewriteMessage,
@@ -64,6 +66,8 @@ export function CommunicationVersionEditor({
   /** Any unsaved step edit, including fields outside the selected version's text. */
   unsaved?: boolean;
   textWarnings?: PayflowTextWarning[];
+  /** Follow-up text: channel is chosen at send time, and the reminder stage stays Follow-up. */
+  followUp?: boolean;
   onChange: (patch: Partial<PayflowStrategyStepConfig>) => void;
   onSaveVersion?: (patch?: Partial<PayflowStrategyStepConfig>) => Promise<boolean | void>;
   /** `audience` omitted rewrites the whole step. `"main"` or a version key rewrites that text. */
@@ -216,7 +220,7 @@ export function CommunicationVersionEditor({
         </StatusPill>
       </div>
       <div className="flex flex-wrap gap-1.5">
-        {mode === "email_sms" ? <StatusPill tone="ai">Email + SMS</StatusPill> : null}
+        {mode === "email_sms" && !followUp ? <StatusPill tone="ai">Email + SMS</StatusPill> : null}
         {cfg.tone ? <StatusPill tone="ai">{cfg.tone}</StatusPill> : null}
         {cfg.content_origin ? <StatusPill tone="info">{cfg.content_origin}</StatusPill> : null}
       </div>
@@ -523,19 +527,24 @@ export function CommunicationVersionEditor({
           <div className="mt-3 space-y-3">
             <Field
               label="Reminder stage"
-              hint="Compared with similar reminders. Leave unset and PayFlow infers it from the purpose and position."
+              hint={
+                followUp
+                  ? "Follow-up results are counted apart from the planned reminders."
+                  : "Compared with similar reminders. Leave unset and PayFlow infers it from the purpose and position."
+              }
             >
               <SelectInput
-                value={cfg.reminder_stage || "Not set"}
+                value={cfg.reminder_stage || (followUp ? FOLLOW_UP_REMINDER_STAGE : "Not set")}
                 options={[
-                  "Not set",
+                  followUp ? FOLLOW_UP_REMINDER_STAGE : "Not set",
                   ...REMINDER_STAGES,
                   ...(cfg.reminder_stage &&
+                  cfg.reminder_stage !== FOLLOW_UP_REMINDER_STAGE &&
                   !(REMINDER_STAGES as readonly string[]).includes(cfg.reminder_stage)
                     ? [cfg.reminder_stage]
                     : []),
                 ]}
-                disabled={!canEdit}
+                disabled={!canEdit || followUp}
                 onChange={(value) =>
                   onChange({ reminder_stage: value === "Not set" ? null : value })
                 }
@@ -546,7 +555,7 @@ export function CommunicationVersionEditor({
               strategyId={strategy.id > 0 ? strategy.id : null}
               stepId={step.id}
               purpose={cfg.purpose}
-              reminderStage={cfg.reminder_stage}
+              reminderStage={cfg.reminder_stage || (followUp ? FOLLOW_UP_REMINDER_STAGE : null)}
               canEdit={editable}
               onApply={(patch) => {
                 const changes: { subject?: string; email?: string } = {};
